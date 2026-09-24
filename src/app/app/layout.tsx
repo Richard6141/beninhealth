@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import { HeartPulse, LogOut } from "lucide-react";
+import Image from "next/image";
+import { LogOut } from "lucide-react";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { logoutAction } from "@/modules/identity/actions";
@@ -42,12 +43,17 @@ export default async function EspaceAuthentifieLayout({
   return (
     <div className="flex min-h-screen flex-col">
       <header className="sans-impression border-b border-bordure bg-surface">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
-          <div className="flex items-center gap-2">
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-accent-clair text-accent">
-              <HeartPulse size={18} aria-hidden="true" />
-            </span>
-            <span className="text-[15px] font-bold text-encre">
+        <div className="conteneur-page flex items-center justify-between gap-4 px-4 py-3 sm:px-6">
+          <div className="flex items-center gap-3">
+            <Image
+              src="/image.png"
+              alt="Ministere de la Sante, Republique du Benin"
+              width={141}
+              height={40}
+              className="h-10 w-auto"
+              priority
+            />
+            <span className="hidden text-[12px] font-semibold text-encre-secondaire sm:inline">
               Bénin Health Intelligence Platform
             </span>
           </div>

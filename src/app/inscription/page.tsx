@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useActionState } from "react";
 import { registerPatientAction } from "@/modules/identity/actions";
@@ -15,7 +16,15 @@ export default function InscriptionPage() {
   });
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-plan px-4 py-10">
+    <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-plan px-4 py-10">
+      <Image
+        src="/image.png"
+        alt="Ministere de la Sante, Republique du Benin"
+        width={169}
+        height={48}
+        className="h-12 w-auto"
+        priority
+      />
       <div className="w-full max-w-xl">
         <Card
           title="Créer mon espace santé"

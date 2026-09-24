@@ -190,7 +190,7 @@ export default function Home() {
     <div className="min-h-screen bg-plan pb-24">
       <NavigationProgressBar progress={avancement} active={barreActive} />
 
-      <main className="mx-auto flex max-w-5xl flex-col gap-12 px-4 py-10 sm:px-6">
+      <main className="conteneur-page flex flex-col gap-12 px-4 py-10 sm:px-6">
         <header className="sans-impression flex flex-col gap-3">
           <div className="flex items-center gap-3">
             <span className="flex h-9 w-9 items-center justify-center rounded-full bg-accent-clair text-accent">

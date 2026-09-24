@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useActionState } from "react";
 import { loginAction } from "@/modules/identity/actions";
@@ -14,7 +15,15 @@ export default function ConnexionPage() {
   });
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-plan px-4 py-10">
+    <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-plan px-4 py-10">
+      <Image
+        src="/image.png"
+        alt="Ministere de la Sante, Republique du Benin"
+        width={169}
+        height={48}
+        className="h-12 w-auto"
+        priority
+      />
       <div className="w-full max-w-md">
         <Card
           title="Connexion"

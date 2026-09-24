@@ -29,6 +29,22 @@ async function main() {
     },
   });
 
+  const centreParakou = await prisma.etablissementSanitaire.create({
+    data: {
+      nom: "Hopital de Zone de Parakou",
+      type: "hopital",
+      localisation: "Parakou",
+      latitude: 9.3372,
+      longitude: 2.6303,
+      servicesDisponibles: JSON.stringify([
+        "consultation_generale",
+        "pediatrie",
+        "chirurgie",
+      ]),
+      capacite: 120,
+    },
+  });
+
   const medecin = await prisma.user.create({
     data: {
       nom: "Ahouansou",
@@ -93,7 +109,7 @@ async function main() {
     },
   });
 
-  await prisma.user.create({
+  const patientUser = await prisma.user.create({
     data: {
       nom: "Agossou",
       prenom: "Beatrice",
@@ -115,10 +131,25 @@ async function main() {
               lienParente: "Pere",
             },
           ]),
+          allergies: JSON.stringify(["Penicilline", "Arachide"]),
+          antecedents: JSON.stringify(["Paludisme (2022)", "Appendicectomie (2015)"]),
+          maladiesChroniques: JSON.stringify(["Asthme leger"]),
         },
       },
     },
+    include: { patient: true },
   });
+
+  if (patientUser.patient) {
+    await prisma.consentement.create({
+      data: {
+        patientId: patientUser.patient.id,
+        acteurAutoriseId: medecin.id,
+        typeAcces: "dossier_complet",
+        statut: "actif",
+      },
+    });
+  }
 
   console.log("Jeu de donnees de demonstration cree.");
   console.log(`Mot de passe pour tous les comptes de demo : ${MOT_DE_PASSE_DEMO}`);

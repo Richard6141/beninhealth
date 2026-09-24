@@ -31,6 +31,9 @@ model User {
   patient       Patient?
   professionnel ProfessionnelSante?
   journalAudit  JournalAudit[]
+  // Consentements ou cet utilisateur est l'acteur autorise par un patient
+  // (typiquement un professionnel de sante), pas ses propres consentements.
+  consentementsRecus Consentement[]
 }
 
 // Attribution d'un role a un utilisateur (un utilisateur peut cumuler
@@ -72,8 +75,9 @@ model ProfessionnelSante {
 }
 
 // Correspond a Patient dans src/types/domain-patient.ts.
-// Phase 2 : profil minimal cree a l'inscription. Le dossier complet
-// (antecedents, consentements...) arrive en Phase 3.
+// Phase 3 : dossier patient (antecedents, allergies, maladies chroniques,
+// consentement). Les champs de type liste sont stockes en chaine JSON
+// (SQLite ne supporte pas les listes scalaires Prisma).
 model Patient {
   id                          String   @id @default(cuid())
   userId                      String   @unique
@@ -84,6 +88,32 @@ model Patient {
   sexe                        String
   groupeSanguin               String   @default("inconnu")
   contactsUrgence             String   @default("[]")
+  allergies                   String   @default("[]")
+  antecedents                 String   @default("[]")
+  maladiesChroniques          String   @default("[]")
+
+  consentements Consentement[]
+}
+
+// Correspond a Consentement dans src/types/domain-patient.ts.
+// Autorisation qu'un patient accorde a un acteur (ici un professionnel de
+// sante) pour acceder a tout ou partie de son dossier. Le patient doit
+// pouvoir l'accorder puis le retirer a tout moment (voir src/security/README.md).
+model Consentement {
+  id                 String    @id @default(cuid())
+  patientId          String
+  patient            Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  acteurAutoriseId   String
+  acteurAutorise     User      @relation(fields: [acteurAutoriseId], references: [id])
+  typeAcces          String
+  dateDebut          DateTime  @default(now())
+  dateFin            DateTime?
+  statut             String    @default("actif")
+
+  // Une seule ligne par couple (patient, acteur) : accorder de nouveau apres
+  // un retrait met a jour cette meme ligne (statut + dates), plutot que
+  // d'empiler des lignes. L'historique des evenements vit dans JournalAudit.
+  @@unique([patientId, acteurAutoriseId])
 }
 
 // Correspond a JournalAudit dans src/types/domain-audit.ts.
