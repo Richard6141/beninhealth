@@ -24,3 +24,46 @@ cookie httpOnly `session`). Le contrôle d'accès par rôle (RBAC) s'appuie sur
 Rappel : mot de passe jamais stocké ni journalisé en clair (hash bcryptjs),
 message d'erreur générique à la connexion, traçabilité systématique des
 événements d'authentification via JournalAudit.
+
+## Hiérarchie de provisionnement (Phase 6)
+
+Implémentation dans `src/modules/identity/gestion-comptes.ts` (Server Actions,
+réexportées par `src/modules/identity/index.ts`).
+
+Règle métier : tout repose sur un établissement, et il n'existe aucune
+auto-inscription en dehors du patient. Le provisionnement des comptes suit
+une chaîne stricte en trois niveaux :
+
+1. **Ministère (admin_national) crée un établissement.** `creerEtablissementAction`
+   crée, dans une même transaction, l'`EtablissementSanitaire` et le compte
+   administrateur unique de cet établissement (`User` + rôle
+   `admin_etablissement` + `ProfessionnelSante` de spécialité conventionnelle
+   `"Administration"`, statut de validation `"valide"` d'emblée). C'est ce
+   `ProfessionnelSante` qui rattache l'administrateur à son établissement,
+   exactement comme pour tout autre professionnel.
+2. **L'administrateur d'établissement (admin_etablissement) crée son personnel.**
+   `creerProfessionnelAction` crée un compte (`User` + rôle + `ProfessionnelSante`)
+   pour un rôle professionnel de l'établissement de l'appelant : `medecin`,
+   `infirmier`, `agent_communautaire`, `pharmacien` ou `laboratoire`. Les rôles
+   `admin_etablissement`, `admin_national` et `patient` sont explicitement
+   exclus de cette fonction. Le professionnel créé est directement `"valide"` :
+   l'administrateur d'établissement fait foi de la validité du compte qu'il crée.
+   L'établissement de rattachement n'est jamais transmis par le formulaire : il
+   est déduit du `ProfessionnelSante` (spécialité `"Administration"`) de
+   l'appelant, via `getSession().userId`.
+3. **Consultation.** `listEtablissementsDetail` (réservé à `admin_national`)
+   et `listPersonnelEtablissement` (réservé à `admin_etablissement`, personnel
+   de son propre établissement uniquement, administrateur exclu de la liste)
+   alimentent les écrans de gestion correspondants.
+
+Chaque création génère un mot de passe temporaire aléatoire et lisible
+(`node:crypto`, jamais `Math.random`), retourné en clair une seule fois dans
+`GestionCompteActionState.motDePasseTemporaire` pour être communiqué à la
+personne concernée, jamais stocké ni journalisé en clair. `changerMotDePasseAction`,
+ouverte à tous les rôles connectés, permet ensuite à chaque personne de
+remplacer ce mot de passe temporaire par le sien.
+
+Comme dans `actions.ts` : vérification du rôle de l'appelant dans la fonction
+elle-même (Zero Trust, jamais seulement côté écran), hash bcryptjs (12 rounds),
+et traçabilité systématique (JournalAudit) de toute création ou modification
+de compte.

@@ -235,7 +235,16 @@ export async function loginAction(
     return { error: MESSAGE_ERREUR_GENERIQUE };
   }
 
-  redirect(roles.includes("patient") ? "/app/patient" : "/app/medecin");
+  if (roles.includes("patient")) {
+    redirect("/app/patient");
+  }
+  if (roles.includes("admin_national")) {
+    redirect("/app/ministere");
+  }
+  if (roles.includes("admin_etablissement")) {
+    redirect("/app/etablissement");
+  }
+  redirect("/app/medecin");
 }
 
 /**

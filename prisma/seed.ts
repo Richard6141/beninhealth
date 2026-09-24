@@ -94,6 +94,18 @@ async function main() {
       motDePasseHash,
       statut: "actif",
       roles: { create: [{ nom: "admin_etablissement" }] },
+      // Rattache a un etablissement via ProfessionnelSante (specialite
+      // "Administration"), meme mecanisme que les autres roles professionnels :
+      // necessaire pour que le tableau de bord etablissement (Phase 6) sache
+      // a quel etablissement rattacher les statistiques de ce compte.
+      professionnel: {
+        create: {
+          specialite: "Administration",
+          numeroProfessionnel: "BJ-ADM-0001",
+          etablissementId: centreCotonou.id,
+          statutValidation: "valide",
+        },
+      },
     },
   });
 

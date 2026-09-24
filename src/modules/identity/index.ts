@@ -10,3 +10,19 @@ export {
   logoutAction,
   type AuthActionState,
 } from "./actions";
+
+// Phase 6 : Server Actions de provisionnement de la hierarchie
+// organisationnelle (ministere -> etablissement -> personnel) et de
+// changement de mot de passe. Voir src/modules/identity/gestion-comptes.ts
+// pour l'implementation et src/modules/identity/README.md pour le flux
+// metier complet.
+export {
+  listEtablissementsDetail,
+  creerEtablissementAction,
+  listPersonnelEtablissement,
+  creerProfessionnelAction,
+  changerMotDePasseAction,
+  type GestionCompteActionState,
+  type EtablissementDetail,
+  type MembrePersonnel,
+} from "./gestion-comptes";

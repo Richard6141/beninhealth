@@ -7,6 +7,8 @@ import { getSession } from "@/lib/session";
  *
  * - Pas de session : ecran de connexion.
  * - Session avec le role patient : tableau de bord patient.
+ * - Session avec le role admin_national : tableau de bord ministere.
+ * - Session avec le role admin_etablissement : tableau de bord etablissement.
  * - Session avec un autre role : espace professionnel.
  */
 export default async function Home() {
@@ -18,6 +20,14 @@ export default async function Home() {
 
   if (session.roles.includes("patient")) {
     redirect("/app/patient");
+  }
+
+  if (session.roles.includes("admin_national")) {
+    redirect("/app/ministere");
+  }
+
+  if (session.roles.includes("admin_etablissement")) {
+    redirect("/app/etablissement");
   }
 
   redirect("/app/medecin");
