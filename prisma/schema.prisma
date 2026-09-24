@@ -1,0 +1,100 @@
+// Schema Prisma, Phase 2 (authentification et roles).
+// Base locale : SQLite, pour une mise en route rapide sans Docker.
+// A migrer vers PostgreSQL (+ PostGIS) avant la demonstration finale,
+// voir src/database/schema-notes.md pour le schema PostgreSQL cible complet.
+// Les champs qui seraient des tableaux natifs sous PostgreSQL sont stockes
+// ici en chaine JSON (SQLite ne supporte pas les listes scalaires Prisma).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Compte utilisateur de la plateforme, tous roles confondus.
+// Correspond a User dans src/types/domain-identity.ts.
+model User {
+  id                String    @id @default(cuid())
+  nom               String
+  prenom            String
+  email             String    @unique
+  telephone         String
+  motDePasseHash    String
+  statut            String    @default("actif")
+  dateCreation      DateTime  @default(now())
+  derniereConnexion DateTime?
+
+  roles         UserRole[]
+  patient       Patient?
+  professionnel ProfessionnelSante?
+  journalAudit  JournalAudit[]
+}
+
+// Attribution d'un role a un utilisateur (un utilisateur peut cumuler
+// plusieurs roles). nom correspond au type NomRole.
+model UserRole {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  nom    String
+
+  @@unique([userId, nom])
+}
+
+// Correspond a EtablissementSanitaire dans src/types/domain-facility.ts.
+model EtablissementSanitaire {
+  id                  String @id @default(cuid())
+  nom                 String
+  type                String
+  localisation        String
+  latitude            Float
+  longitude           Float
+  servicesDisponibles String @default("[]")
+  capacite            Int
+
+  professionnels ProfessionnelSante[]
+}
+
+// Correspond a ProfessionnelSante dans src/types/domain-identity.ts.
+// Extension metier d'un User, jamais de donnee medicale ici.
+model ProfessionnelSante {
+  id                  String @id @default(cuid())
+  userId              String @unique
+  user                User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  specialite          String
+  numeroProfessionnel String @unique
+  etablissementId     String
+  etablissement       EtablissementSanitaire @relation(fields: [etablissementId], references: [id])
+  statutValidation    String @default("en_attente")
+}
+
+// Correspond a Patient dans src/types/domain-patient.ts.
+// Phase 2 : profil minimal cree a l'inscription. Le dossier complet
+// (antecedents, consentements...) arrive en Phase 3.
+model Patient {
+  id                          String   @id @default(cuid())
+  userId                      String   @unique
+  user                        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  identifiantSante            String   @unique
+  referenceIdentiteNationale  String?
+  dateNaissance               DateTime
+  sexe                        String
+  groupeSanguin               String   @default("inconnu")
+  contactsUrgence             String   @default("[]")
+}
+
+// Correspond a JournalAudit dans src/types/domain-audit.ts.
+// Trace obligatoire de toute action sensible (connexion, deconnexion...).
+model JournalAudit {
+  id               String   @id @default(cuid())
+  utilisateurId    String
+  utilisateur      User     @relation(fields: [utilisateurId], references: [id])
+  action           String
+  donneeConcernee  String
+  date             DateTime @default(now())
+  adresseTechnique String
+  justification    String
+}

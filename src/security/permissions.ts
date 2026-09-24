@@ -1,0 +1,137 @@
+/**
+ * Système de permissions RBAC (Phase 2).
+ *
+ * Matrice de permissions fonctionnelle, alignée sur le tableau "Rôle -> accès
+ * principal" de src/security/README.md. Reste volontairement fail-safe :
+ * toute combinaison (rôle, action, ressource) non listée explicitement ici
+ * est refusée.
+ *
+ * Rappel des principes du README à respecter par les appelants de `can` :
+ * Zero Trust (vérifier systématiquement, ne jamais présumer un accès), MFA
+ * obligatoire pour les actions sensibles des professionnels, traçabilité
+ * (toute vérification portant sur une donnée médicale doit être accompagnée
+ * d'une entrée JournalAudit côté appelant), et consentement contrôlable pour
+ * l'accès d'un professionnel au dossier d'un patient.
+ */
+
+import type { NomRole } from '@/types';
+
+/** Rôle applicatif, aligné sur NomRole (src/types/domain-identity.ts). */
+export type Role = NomRole;
+
+/** Action possible sur une ressource, au sens RBAC. */
+export type Action = 'read' | 'create' | 'update' | 'delete';
+
+/**
+ * Permission élémentaire, sous la forme "action:ressource" (ex : "read:patient",
+ * "create:prescription").
+ */
+export type Permission = `${Action}:${string}`;
+
+/**
+ * Matrice RBAC : pour chaque rôle, l'ensemble fermé des permissions
+ * accordées. Toute permission absente de cet ensemble est refusée.
+ *
+ * Ressources utilisées ici (alignées sur src/types et src/security/README.md) :
+ * - propre_dossier : dossier du patient connecte lui-meme (Patient, Consultation,
+ *   Prescription, ExamenMedical, DocumentMedical qui le concernent)
+ * - patient : dossier d'un patient consulte par un professionnel de sante
+ * - consultation, prescription, examen_medical, document_medical : actes et
+ *   pieces du dossier clinique
+ * - consentement, rendez_vous : geres par le patient lui-meme
+ * - suivi_communautaire : donnees de suivi limitees de l'agent communautaire
+ * - medicament : catalogue et delivrance geres par le pharmacien
+ * - etablissement_sanitaire, professionnel_sante : gestion administrative locale
+ * - analytics : donnees agregees uniquement, jamais nominatives
+ */
+const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
+  patient: new Set<Permission>([
+    'read:propre_dossier',
+    'update:propre_dossier',
+    'read:consultation',
+    'read:prescription',
+    'read:examen_medical',
+    'read:document_medical',
+    'read:consentement',
+    'create:consentement',
+    'update:consentement',
+    'delete:consentement',
+    'create:rendez_vous',
+    'read:rendez_vous',
+    'update:rendez_vous',
+  ]),
+
+  medecin: new Set<Permission>([
+    'read:patient',
+    'read:consultation',
+    'create:consultation',
+    'update:consultation',
+    'read:prescription',
+    'create:prescription',
+    'update:prescription',
+    'read:examen_medical',
+    'read:document_medical',
+    'create:document_medical',
+    'read:rendez_vous',
+  ]),
+
+  infirmier: new Set<Permission>([
+    'read:patient',
+    'read:consultation',
+    'update:consultation',
+    'read:prescription',
+    'read:examen_medical',
+    'read:rendez_vous',
+  ]),
+
+  agent_communautaire: new Set<Permission>([
+    'read:suivi_communautaire',
+    'create:suivi_communautaire',
+    'update:suivi_communautaire',
+  ]),
+
+  pharmacien: new Set<Permission>([
+    'read:prescription',
+    'update:prescription',
+    'read:medicament',
+    'create:medicament',
+    'update:medicament',
+  ]),
+
+  laboratoire: new Set<Permission>([
+    'read:examen_medical',
+    'update:examen_medical',
+  ]),
+
+  admin_etablissement: new Set<Permission>([
+    'read:etablissement_sanitaire',
+    'create:etablissement_sanitaire',
+    'update:etablissement_sanitaire',
+    'delete:etablissement_sanitaire',
+    'read:professionnel_sante',
+    'create:professionnel_sante',
+    'update:professionnel_sante',
+    'delete:professionnel_sante',
+  ]),
+
+  admin_national: new Set<Permission>([
+    'read:analytics',
+  ]),
+};
+
+/**
+ * Vérifie si un rôle donné est autorisé à effectuer une action sur une
+ * ressource, selon la matrice RBAC ci-dessus.
+ *
+ * Fail-safe : toute combinaison non explicitement listée retourne false,
+ * y compris pour un rôle qui ne serait pas (ou plus) une clé de la matrice.
+ */
+export function can(role: Role, action: Action, resource: string): boolean {
+  const permissions = MATRICE_PERMISSIONS[role];
+
+  if (!permissions) {
+    return false;
+  }
+
+  return permissions.has(`${action}:${resource}` as Permission);
+}

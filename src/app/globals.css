@@ -1,0 +1,220 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light;
+
+  --plan: #f4f5f9;
+  --surface: #ffffff;
+  --surface-appui: #eceef5;
+  --encre: #090e1e;
+  --encre-secondaire: #3f4a63;
+  --encre-attenuee: #5c6680;
+  --bordure: #dde0ea;
+  --bordure-forte: #bdc3d5;
+
+  --accent: #0c1a45;
+  --accent-fonce: #070e24;
+  --accent-clair: #0c1a451a;
+
+  --statut-bon: #0ea572;
+  --statut-bon-clair: #0ea57214;
+  --statut-vigilance: #d97706;
+  --statut-vigilance-clair: #d9770617;
+  --statut-critique: #dc2626;
+  --statut-critique-clair: #dc262612;
+  --info: #2563eb;
+  --info-clair: #2563eb12;
+
+  --marque-turquoise: #34bed5;
+  --marque-turquoise-fonce: #1a9db8;
+
+  --ombre-carte: 0 1px 2px rgba(20, 20, 20, 0.04);
+
+  --radius-carte: 16px;
+  --radius-champ: 8px;
+}
+
+@theme inline {
+  --color-plan: var(--plan);
+  --color-surface: var(--surface);
+  --color-surface-appui: var(--surface-appui);
+  --color-encre: var(--encre);
+  --color-encre-secondaire: var(--encre-secondaire);
+  --color-encre-attenuee: var(--encre-attenuee);
+  --color-bordure: var(--bordure);
+  --color-bordure-forte: var(--bordure-forte);
+  --color-accent: var(--accent);
+  --color-accent-fonce: var(--accent-fonce);
+  --color-accent-clair: var(--accent-clair);
+  --color-bon: var(--statut-bon);
+  --color-bon-clair: var(--statut-bon-clair);
+  --color-vigilance: var(--statut-vigilance);
+  --color-vigilance-clair: var(--statut-vigilance-clair);
+  --color-critique: var(--statut-critique);
+  --color-critique-clair: var(--statut-critique-clair);
+  --color-info: var(--info);
+  --color-info-clair: var(--info-clair);
+  --color-marque-turquoise: var(--marque-turquoise);
+  --color-marque-turquoise-fonce: var(--marque-turquoise-fonce);
+  --radius-carte: 16px;
+  --radius-champ: 8px;
+}
+
+body {
+  background: var(--plan);
+  color: var(--encre);
+}
+
+/* Chiffres alignes : a poser sur toute valeur numerique affichee en colonne
+   ou cote a cote (montants, scores, dates) pour qu'ils ne dansent pas d'une
+   ligne a l'autre. */
+.chiffres {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Utilitaires d'impression (voir bloc @media print plus bas) : caches a
+   l'ecran par defaut, ou l'inverse pour l'en-tete reserve au papier. */
+.seulement-impression {
+  display: none;
+}
+
+/*
+  Animations nommees necessaires aux composants (tiroir de modale, reflet de
+  la barre de progression de navigation, ondulation du squelette de
+  chargement), voir le tableau de mouvement de la base de design. Les
+  utilitaires .anim-* appliquent ces animations ; elles sont toutes coupees
+  d'un bloc plus bas sous prefers-reduced-motion.
+*/
+@keyframes tiroir-droite {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes tiroir-bas {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes reflet-nav {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(220%);
+  }
+}
+
+@keyframes squelette-onde {
+  0% {
+    background-position: -150% 0;
+  }
+  100% {
+    background-position: 150% 0;
+  }
+}
+
+.anim-tiroir-droite {
+  animation: tiroir-droite 0.24s ease-out;
+}
+
+.anim-tiroir-bas {
+  animation: tiroir-bas 0.24s ease-out;
+}
+
+.anim-reflet-nav {
+  animation: reflet-nav 1.1s ease-in-out infinite;
+}
+
+.anim-squelette-onde {
+  animation: squelette-onde 1.4s ease-in-out infinite;
+}
+
+/* Mouvement fonctionnel, jamais decoratif : toutes les animations du
+   document sont neutralisees sous prefers-reduced-motion, sans exception. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/*
+  Impression : un rapport imprime n'est pas une capture de l'ecran.
+  Fond blanc pur, texte noir pur, cartes redevenues de simples sections,
+  titres en police a empattements, couleurs porteuses de sens conservees.
+*/
+@media print {
+  @page {
+    size: A4;
+    margin: 16mm 14mm;
+  }
+
+  :root {
+    --plan: #ffffff;
+    --surface: #ffffff;
+    --surface-appui: #ffffff;
+    --encre: #000000;
+    --encre-secondaire: #000000;
+    --encre-attenuee: #262626;
+    --bordure: #cccccc;
+    --bordure-forte: #cccccc;
+    --ombre-carte: none;
+  }
+
+  body {
+    background: #ffffff;
+    color: #000000;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: Georgia, "Times New Roman", serif;
+  }
+
+  .carte {
+    background: transparent;
+    border: none;
+    border-bottom: 0.5pt solid #ccc;
+    border-radius: 0;
+    box-shadow: none;
+    margin-bottom: 12pt;
+    padding-bottom: 12pt;
+    break-inside: avoid;
+  }
+
+  .badge,
+  .alerte,
+  .porte-couleur {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .sans-impression {
+    display: none !important;
+  }
+
+  .seulement-impression {
+    display: block !important;
+  }
+
+  .reveal-defilement {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}
