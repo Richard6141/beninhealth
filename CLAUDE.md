@@ -26,13 +26,15 @@ Le développement est réparti entre plusieurs agents, chacun avec un périmètr
 Reprend la Partie 9 §5 et la Partie 11 §7 du cahier des charges. Version détaillée et cochable : voir docs/roadmap.md.
 
 - Phase 0 (fait) : initialisation du dépôt Git, scaffold Next.js/TypeScript/Tailwind, structure de dossiers.
-- Phase 1 (en cours) : environnement, architecture (types, modules, sécurité, schéma de données), design system.
-- Phase 2 (à venir) : authentification et gestion des rôles (RBAC fonctionnel).
-- Phase 3 (à venir) : dossier patient (profil, antécédents, consentement).
-- Phase 4 (à venir) : espace professionnel et consultation médicale.
-- Phase 5 (à venir) : prescription électronique.
+- Phase 1 (fait) : environnement, architecture (types, modules, sécurité, schéma de données), design system et identité institutionnelle du ministère de la Santé.
+- Phase 2 (fait) : authentification et gestion des rôles (RBAC fonctionnel pour 8 rôles). MFA reporté à la Phase 7.
+- Phase 3 (fait) : dossier patient (profil, antécédents, consentement).
+- Phase 4 (fait) : espace professionnel, prise de rendez-vous et consultation médicale.
+- Phase 5 (fait) : prescription électronique.
 - Phase 6 (à venir) : tableau de bord (établissement puis ministère, données agrégées uniquement, jamais de données nominatives).
 - Phase 7 (à venir) : sécurité, tests, durcissement, jeu de données de démonstration à contexte béninois, répétition du scénario de démo (citoyen crée son espace, prend rendez-vous, médecin consulte et prescrit, ministère voit les données agrégées).
+
+Détail cochable phase par phase : voir `docs/roadmap.md`.
 
 ## Workflow Git
 
