@@ -1,3 +1,3 @@
-// TODO (Phase 3-4) : implémentation du module clinical, aucune logique métier en Phase 1.
+// Module clinical : consultations et contenu clinique (Phase 4).
 
-export {};
+export * from "./actions";

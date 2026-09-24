@@ -1,3 +1,3 @@
-// TODO (phase ultérieure) : implémentation du module facility, aucune logique métier en Phase 1.
+// Module facility : etablissements sanitaires et rendez-vous (Phase 4).
 
-export {};
+export * from "./actions";

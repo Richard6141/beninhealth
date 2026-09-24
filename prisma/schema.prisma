@@ -59,6 +59,8 @@ model EtablissementSanitaire {
   capacite            Int
 
   professionnels ProfessionnelSante[]
+  rendezVous     RendezVous[]
+  consultations  Consultation[]
 }
 
 // Correspond a ProfessionnelSante dans src/types/domain-identity.ts.
@@ -72,6 +74,9 @@ model ProfessionnelSante {
   etablissementId     String
   etablissement       EtablissementSanitaire @relation(fields: [etablissementId], references: [id])
   statutValidation    String @default("en_attente")
+
+  rendezVous    RendezVous[]
+  consultations Consultation[]
 }
 
 // Correspond a Patient dans src/types/domain-patient.ts.
@@ -93,6 +98,8 @@ model Patient {
   maladiesChroniques          String   @default("[]")
 
   consentements Consentement[]
+  rendezVous    RendezVous[]
+  consultations Consultation[]
 }
 
 // Correspond a Consentement dans src/types/domain-patient.ts.
@@ -114,6 +121,50 @@ model Consentement {
   // un retrait met a jour cette meme ligne (statut + dates), plutot que
   // d'empiler des lignes. L'historique des evenements vit dans JournalAudit.
   @@unique([patientId, acteurAutoriseId])
+}
+
+// Correspond a RendezVous dans src/types/domain-facility.ts.
+// Le patient choisit un etablissement et, optionnellement, un professionnel
+// precis. Prendre rendez-vous n'exige pas de consentement prealable (aucune
+// donnee clinique n'est echangee a cette etape) : seule la consultation qui
+// en decoule, plus tard, en exige un (voir Consultation ci-dessous).
+model RendezVous {
+  id              String    @id @default(cuid())
+  patientId       String
+  patient         Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  etablissementId String
+  etablissement   EtablissementSanitaire @relation(fields: [etablissementId], references: [id])
+  professionnelId String?
+  professionnel   ProfessionnelSante? @relation(fields: [professionnelId], references: [id])
+  date            DateTime
+  motif           String
+  statut          String    @default("demande")
+  dateCreation    DateTime  @default(now())
+
+  consultation Consultation?
+}
+
+// Correspond a Consultation dans src/types/domain-clinical.ts.
+// Cree par un professionnel de sante, uniquement si un Consentement actif
+// (typeAcces "dossier_complet" ou "consultations") existe pour ce couple
+// (patient, professionnel) : verifie cote module, pas au niveau du schema.
+model Consultation {
+  id              String    @id @default(cuid())
+  patientId       String
+  patient         Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  professionnelId String
+  professionnel   ProfessionnelSante @relation(fields: [professionnelId], references: [id])
+  etablissementId String
+  etablissement   EtablissementSanitaire @relation(fields: [etablissementId], references: [id])
+  rendezVousId    String?   @unique
+  rendezVous      RendezVous? @relation(fields: [rendezVousId], references: [id])
+  date            DateTime  @default(now())
+  motif           String
+  symptomes       String    @default("[]")
+  constantes      String    @default("")
+  observations    String    @default("")
+  conclusion      String    @default("")
+  statut          String    @default("terminee")
 }
 
 // Correspond a JournalAudit dans src/types/domain-audit.ts.

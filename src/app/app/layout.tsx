@@ -42,20 +42,17 @@ export default async function EspaceAuthentifieLayout({
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="sans-impression border-b border-bordure bg-surface">
+      <header className="sans-impression border-b border-bordure bg-[#162233]">
         <div className="conteneur-page flex items-center justify-between gap-4 px-4 py-3 sm:px-6">
           <div className="flex items-center gap-3">
             <Image
               src="/image.png"
               alt="Ministere de la Sante, Republique du Benin"
-              width={141}
-              height={40}
-              className="h-10 w-auto"
+              width={197}
+              height={56}
+              className="h-14 w-auto"
               priority
             />
-            <span className="hidden text-[12px] font-semibold text-encre-secondaire sm:inline">
-              Bénin Health Intelligence Platform
-            </span>
           </div>
 
           <div className="flex items-center gap-3">

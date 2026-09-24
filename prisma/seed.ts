@@ -149,6 +149,70 @@ async function main() {
         statut: "actif",
       },
     });
+
+    const medecinProfil = await prisma.professionnelSante.findUniqueOrThrow({
+      where: { userId: medecin.id },
+    });
+
+    const maintenant = new Date();
+    const ilYA20Jours = new Date(maintenant);
+    ilYA20Jours.setDate(ilYA20Jours.getDate() - 20);
+    const dansQuelquesHeures = new Date(maintenant);
+    dansQuelquesHeures.setHours(dansQuelquesHeures.getHours() + 4);
+    const dansQuatreJours = new Date(maintenant);
+    dansQuatreJours.setDate(dansQuatreJours.getDate() + 4);
+
+    // Rendez-vous passe, deja transforme en consultation terminee.
+    const rendezVousPasse = await prisma.rendezVous.create({
+      data: {
+        patientId: patientUser.patient.id,
+        etablissementId: centreCotonou.id,
+        professionnelId: medecinProfil.id,
+        date: ilYA20Jours,
+        motif: "Douleurs abdominales",
+        statut: "termine",
+      },
+    });
+
+    await prisma.consultation.create({
+      data: {
+        patientId: patientUser.patient.id,
+        professionnelId: medecinProfil.id,
+        etablissementId: centreCotonou.id,
+        rendezVousId: rendezVousPasse.id,
+        date: ilYA20Jours,
+        motif: "Douleurs abdominales",
+        symptomes: JSON.stringify(["Douleurs abdominales", "Fievre legere"]),
+        constantes: "Temperature 37.8C, tension 12/8",
+        observations: "Suspicion de paludisme, test rapide propose.",
+        conclusion: "Paludisme simple confirme, traitement prescrit.",
+        statut: "terminee",
+      },
+    });
+
+    // Rendez-vous confirme le jour meme, pour peupler "Patients du jour".
+    await prisma.rendezVous.create({
+      data: {
+        patientId: patientUser.patient.id,
+        etablissementId: centreCotonou.id,
+        professionnelId: medecinProfil.id,
+        date: dansQuelquesHeures,
+        motif: "Suivi de traitement",
+        statut: "confirme",
+      },
+    });
+
+    // Demande de rendez-vous en attente de confirmation.
+    await prisma.rendezVous.create({
+      data: {
+        patientId: patientUser.patient.id,
+        etablissementId: centreCotonou.id,
+        professionnelId: medecinProfil.id,
+        date: dansQuatreJours,
+        motif: "Renouvellement ordonnance",
+        statut: "demande",
+      },
+    });
   }
 
   console.log("Jeu de donnees de demonstration cree.");

@@ -1,9 +1,63 @@
 import type { LucideIcon } from "lucide-react";
+import Link from "next/link";
 import { Bell, CalendarClock, Users } from "lucide-react";
 import { getSession } from "@/lib/session";
 import type { NomRole } from "@/types";
+import {
+  getRendezVousDuProfessionnel,
+  type RendezVousResume,
+} from "@/modules/facility/actions";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
+
+/**
+ * Roles porteurs d'un profil ProfessionnelSante susceptible d'avoir des
+ * rendez-vous personnels (voir src/types/domain-identity.ts, docstring de
+ * ProfessionnelSante). admin_national en est volontairement exclu : ce role
+ * pilote des indicateurs nationaux, pas un planning individuel de patients.
+ */
+const rolesAvecRendezVous: NomRole[] = [
+  "medecin",
+  "infirmier",
+  "agent_communautaire",
+  "pharmacien",
+  "laboratoire",
+  "admin_etablissement",
+];
+
+function estAujourdHui(dateIso: string): boolean {
+  const date = new Date(dateIso);
+  const maintenant = new Date();
+  return (
+    date.getFullYear() === maintenant.getFullYear() &&
+    date.getMonth() === maintenant.getMonth() &&
+    date.getDate() === maintenant.getDate()
+  );
+}
+
+function formaterHeure(dateIso: string): string {
+  try {
+    return new Date(dateIso).toLocaleTimeString("fr-FR", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return dateIso;
+  }
+}
+
+function formaterDateHeure(dateIso: string): string {
+  try {
+    return new Date(dateIso).toLocaleString("fr-FR", {
+      dateStyle: "long",
+      timeStyle: "short",
+    });
+  } catch {
+    return dateIso;
+  }
+}
+
+const NOMBRE_MAX_PROCHAINS_RENDEZ_VOUS = 4;
 
 /**
  * Libellés des rôles applicatifs. Repris de src/app/app/layout.tsx (non
@@ -47,12 +101,14 @@ function EtatVide({
   icon: Icon,
   titre,
   description,
-  phase,
+  badgeTexte,
+  badgeTone = "info",
 }: {
   icon: LucideIcon;
   titre: string;
   description: string;
-  phase: string;
+  badgeTexte: string;
+  badgeTone?: "info" | "neutral";
 }) {
   return (
     <div className="flex flex-col items-center gap-2 rounded-champ border border-dashed border-bordure-forte bg-plan px-4 py-8 text-center">
@@ -61,24 +117,123 @@ function EtatVide({
       </span>
       <p className="text-[14px] font-semibold text-encre">{titre}</p>
       <p className="max-w-[30ch] text-[13px] text-encre-attenuee">{description}</p>
-      <Badge tone="info">{phase}</Badge>
+      <Badge tone={badgeTone}>{badgeTexte}</Badge>
     </div>
   );
 }
 
+function libelleStatutRendezVous(statut: string): { texte: string; tone: "warning" | "good" } {
+  return statut === "demande"
+    ? { texte: "En attente", tone: "warning" }
+    : { texte: "Confirme", tone: "good" };
+}
+
 /**
- * Espace professionnel (Phase 2) : écran générique pour tous les rôles non
+ * Liste des rendez-vous confirmes du jour, avec un raccourci direct vers le
+ * demarrage de la consultation correspondante.
+ */
+function ListePatientsDuJour({ rendezVous }: { rendezVous: RendezVousResume[] }) {
+  if (rendezVous.length === 0) {
+    return (
+      <p className="text-[13px] text-encre-attenuee">
+        Aucun patient confirme pour aujourd&apos;hui.
+      </p>
+    );
+  }
+
+  return (
+    <ul className="flex flex-col gap-3">
+      {rendezVous.map((rdv) => (
+        <li
+          key={rdv.id}
+          className="flex flex-col gap-1.5 border-b border-bordure pb-3 last:border-0 last:pb-0"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-semibold text-encre">
+              {rdv.patientNomComplet ?? "Patient non precise"}
+            </span>
+            <span className="text-[13px] text-encre-secondaire">{formaterHeure(rdv.date)}</span>
+          </div>
+          <span className="text-[13px] text-encre-secondaire">{rdv.motif}</span>
+          <Link
+            href={`/app/medecin/consultations/nouvelle?patientId=${encodeURIComponent(
+              rdv.patientId
+            )}&rendezVousId=${encodeURIComponent(rdv.id)}`}
+            className="w-fit text-[13px] font-semibold text-accent hover:underline"
+          >
+            Demarrer la consultation
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Aperçu des prochains rendez-vous (demande ou confirme), hors ceux du jour deja montres dans "Patients du jour". */
+function ListeProchainsRendezVous({ rendezVous }: { rendezVous: RendezVousResume[] }) {
+  if (rendezVous.length === 0) {
+    return (
+      <p className="text-[13px] text-encre-attenuee">
+        Aucun autre rendez-vous a venir pour le moment.
+      </p>
+    );
+  }
+
+  return (
+    <ul className="flex flex-col gap-3">
+      {rendezVous.map((rdv) => {
+        const statut = libelleStatutRendezVous(rdv.statut);
+        return (
+          <li
+            key={rdv.id}
+            className="flex flex-col gap-1 border-b border-bordure pb-3 last:border-0 last:pb-0"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-semibold text-encre">
+                {rdv.patientNomComplet ?? "Patient non precise"}
+              </span>
+              <Badge tone={statut.tone}>{statut.texte}</Badge>
+            </div>
+            <span className="text-[13px] text-encre-secondaire">
+              {formaterDateHeure(rdv.date)}
+            </span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/**
+ * Espace professionnel (Phase 4) : écran générique pour tous les rôles non
  * patients (médecin, infirmier, agent communautaire, pharmacien,
  * laboratoire, administrateurs). L'en-tête est personnalisé selon les rôles
- * réels de l'utilisateur connecté (getSession()). Uniquement des états vides
- * honnêtes, aucune donnée simulée ; les zones seront branchées à des données
- * réelles en Phase 3+.
+ * réels de l'utilisateur connecté (getSession()). "Patients du jour" et
+ * "Rendez-vous" sont branchés sur getRendezVousDuProfessionnel (module
+ * facility, autre agent) pour les rôles porteurs d'un profil
+ * ProfessionnelSante pertinent ; "Alertes" reste un état vide honnête,
+ * fonctionnalité prévue pour une phase ultérieure.
  */
 export default async function EspaceProfessionnelPage() {
   const session = await getSession();
   const roles = session?.roles ?? [];
   const rolePrincipal = roles[0];
   const message = rolePrincipal ? messagesParRole[rolePrincipal] : messageParDefaut;
+
+  const gereRendezVous = rolePrincipal ? rolesAvecRendezVous.includes(rolePrincipal) : false;
+  const rendezVous = gereRendezVous ? await getRendezVousDuProfessionnel() : [];
+
+  const patientsDuJour = rendezVous.filter(
+    (rdv) => rdv.statut === "confirme" && estAujourdHui(rdv.date)
+  );
+  const idsPatientsDuJour = new Set(patientsDuJour.map((rdv) => rdv.id));
+  const prochainRendezVous = rendezVous
+    .filter(
+      (rdv) =>
+        (rdv.statut === "demande" || rdv.statut === "confirme") &&
+        !idsPatientsDuJour.has(rdv.id)
+    )
+    .slice(0, NOMBRE_MAX_PROCHAINS_RENDEZ_VOUS);
 
   return (
     <div className="conteneur-page mx-auto flex flex-col gap-8 px-4 py-8 sm:px-6">
@@ -108,38 +263,58 @@ export default async function EspaceProfessionnelPage() {
         <div className="grid gap-4 md:grid-cols-3">
           <Card
             title="Patients du jour"
-            description="Consultations prévues aujourd'hui."
-            actions={<Badge tone="info">Phase 4</Badge>}
+            description="Rendez-vous confirmés pour aujourd'hui."
+            actions={<Badge tone="accent">{patientsDuJour.length}</Badge>}
           >
-            <EtatVide
-              icon={Users}
-              titre="Aucun patient à afficher"
-              description="La liste des patients du jour arrivera avec le module Consultations, en phase 4 du projet."
-              phase="Phase 4"
-            />
+            {gereRendezVous ? (
+              <ListePatientsDuJour rendezVous={patientsDuJour} />
+            ) : (
+              <EtatVide
+                icon={Users}
+                titre="Non applicable à votre rôle"
+                description="Les patients du jour concernent les rôles disposant d'un planning individuel de consultations, pas le pilotage national."
+                badgeTexte="Non applicable"
+                badgeTone="neutral"
+              />
+            )}
           </Card>
           <Card
             title="Rendez-vous"
-            description="Planning des prochains jours."
-            actions={<Badge tone="info">Phase 4</Badge>}
+            description="Prochains rendez-vous à venir."
+            actions={<Badge tone="accent">{prochainRendezVous.length}</Badge>}
           >
-            <EtatVide
-              icon={CalendarClock}
-              titre="Aucun rendez-vous planifié"
-              description="Votre planning de rendez-vous sera disponible ici dès que le module Rendez-vous sera activé, en phase 4."
-              phase="Phase 4"
-            />
+            <div className="flex flex-col gap-4">
+              {gereRendezVous ? (
+                <ListeProchainsRendezVous rendezVous={prochainRendezVous} />
+              ) : (
+                <EtatVide
+                  icon={CalendarClock}
+                  titre="Non applicable à votre rôle"
+                  description="Le planning de rendez-vous individuels ne concerne pas le pilotage national."
+                  badgeTexte="Non applicable"
+                  badgeTone="neutral"
+                />
+              )}
+              {gereRendezVous ? (
+                <Link
+                  href="/app/medecin/rendez-vous"
+                  className="w-fit text-[13px] font-semibold text-accent hover:underline"
+                >
+                  Voir tous mes rendez-vous
+                </Link>
+              ) : null}
+            </div>
           </Card>
           <Card
             title="Alertes"
             description="Signaux nécessitant une attention."
-            actions={<Badge tone="info">Phase 4</Badge>}
+            actions={<Badge tone="info">Phase 5</Badge>}
           >
             <EtatVide
               icon={Bell}
               titre="Aucune alerte pour le moment"
-              description="Les alertes cliniques et de suivi apparaîtront ici dès que les modules correspondants seront disponibles."
-              phase="Phase 4"
+              description="Les alertes cliniques et de suivi apparaîtront ici dès que les modules correspondants seront disponibles, à une phase ultérieure du projet."
+              badgeTexte="Phase 5"
             />
           </Card>
         </div>

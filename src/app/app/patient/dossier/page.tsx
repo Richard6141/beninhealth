@@ -10,6 +10,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { getMonDossierPatient } from "@/modules/patient/actions";
+import { getMesConsultations } from "@/modules/clinical/actions";
 import { Alert } from "@/components/ui/Alert";
 import { Badge } from "@/components/ui/Badge";
 import type { BadgeTone } from "@/components/ui/Badge";
@@ -26,6 +27,10 @@ function formaterDate(date: string): string {
   } catch {
     return date;
   }
+}
+
+function capitaliser(texte: string): string {
+  return texte.length > 0 ? texte.charAt(0).toUpperCase() + texte.slice(1) : texte;
 }
 
 function ListeOuVide({
@@ -107,12 +112,16 @@ function EtatVide({
 /**
  * Ecran "dossier santé" complet (Phase 3, Partie 4 §7 du cahier des charges) :
  * lecture détaillée du résumé santé (getMonDossierPatient), regroupée en
- * trois blocs logiques (identité, santé, contacts), puis formulaire
- * d'édition branché sur updatePatientProfileAction. Consultations et
- * documents restent des états vides honnêtes (Phase 4/5).
+ * trois blocs logiques (identité, santé, contacts), historique des
+ * consultations passées (getMesConsultations, module clinical, Phase 4),
+ * puis formulaire d'édition branché sur updatePatientProfileAction. Les
+ * documents médicaux restent un état vide honnête (Phase 5).
  */
 export default async function DossierPatientPage() {
-  const dossier = await getMonDossierPatient();
+  const [dossier, consultations] = await Promise.all([
+    getMonDossierPatient(),
+    getMesConsultations(),
+  ]);
 
   return (
     <div className="conteneur-page mx-auto flex flex-col gap-8 px-4 py-8 sm:px-6">
@@ -267,15 +276,48 @@ export default async function DossierPatientPage() {
         <div className="grid gap-4 md:grid-cols-2">
           <Card
             title="Consultations passées"
-            description="Historique de vos consultations."
-            actions={<Badge tone="info">Phase 4</Badge>}
+            description="Historique de vos consultations, la plus récente en premier."
+            actions={
+              consultations.length > 0 ? (
+                <Badge tone="accent">{consultations.length}</Badge>
+              ) : undefined
+            }
           >
-            <EtatVide
-              icon={Stethoscope}
-              titre="Aucune consultation enregistrée"
-              description="L'historique de vos consultations apparaîtra ici dès que le module Consultations sera disponible."
-              phase="Phase 4"
-            />
+            {consultations.length > 0 ? (
+              <ol className="flex flex-col gap-4">
+                {consultations.map((consultation) => (
+                  <li
+                    key={consultation.id}
+                    className="flex flex-col gap-1 border-b border-bordure pb-4 last:border-0 last:pb-0"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-[14px] font-semibold text-encre">
+                        {formaterDate(consultation.date)}
+                      </span>
+                      <Badge tone="neutral">{capitaliser(consultation.statut)}</Badge>
+                    </div>
+                    <span className="text-[13px] text-encre-secondaire">
+                      {consultation.motif}
+                      {consultation.professionnelNomComplet
+                        ? `, suivi par ${consultation.professionnelNomComplet}`
+                        : ""}
+                    </span>
+                    {consultation.conclusion ? (
+                      <p className="text-[13px] text-encre-attenuee">
+                        Conclusion : {consultation.conclusion}
+                      </p>
+                    ) : null}
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <EtatVide
+                icon={Stethoscope}
+                titre="Aucune consultation enregistrée"
+                description="L'historique de vos consultations apparaîtra ici après votre première visite chez un professionnel de santé."
+                phase="Disponible"
+              />
+            )}
           </Card>
           <Card
             title="Documents médicaux"

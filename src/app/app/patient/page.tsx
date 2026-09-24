@@ -17,6 +17,7 @@ import {
   getMonDossierPatient,
   type DossierPatientResume,
 } from "@/modules/patient/actions";
+import { getMesRendezVous, type RendezVousResume } from "@/modules/facility/actions";
 import { cn } from "@/lib/cn";
 import { Alert } from "@/components/ui/Alert";
 import { Badge } from "@/components/ui/Badge";
@@ -24,8 +25,8 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Tooltip } from "@/components/ui/Tooltip";
 
-const actionsRapides = [
-  { label: "Prendre rendez-vous" },
+const actionsRapides: { label: string; href?: string }[] = [
+  { label: "Prendre rendez-vous", href: "/app/patient/rendez-vous" },
   { label: "Consulter mon dossier" },
   { label: "Voir mes traitements" },
 ];
@@ -43,6 +44,34 @@ function formaterDate(date: string): string {
   } catch {
     return date;
   }
+}
+
+function formaterDateHeure(date: string): string {
+  try {
+    return new Date(date).toLocaleString("fr-FR", {
+      dateStyle: "long",
+      timeStyle: "short",
+    });
+  } catch {
+    return date;
+  }
+}
+
+/**
+ * Rendez-vous "à venir" pour le tableau de bord : statut demande ou
+ * confirme, dont la date n'est pas déjà passée. getMesRendezVous() renvoie
+ * déjà les rendez-vous triés par date croissante ; le tri est refait ici par
+ * prudence, sans hypothèse sur l'ordre reçu.
+ */
+function rendezVousAVenir(rendezVous: RendezVousResume[]): RendezVousResume[] {
+  const maintenant = Date.now();
+  return rendezVous
+    .filter(
+      (rdv) =>
+        (rdv.statut === "demande" || rdv.statut === "confirme") &&
+        new Date(rdv.date).getTime() >= maintenant
+    )
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 }
 
 /**
@@ -134,21 +163,24 @@ function EtatVide({
 }
 
 /**
- * Tableau de bord patient (Phase 3) : le résumé santé provient de
- * getMonDossierPatient() et le résumé des autorisations de
- * getMesConsentements() (module patient). Les zones rendez-vous, traitements
- * et documents restent des états vides honnêtes : elles seront branchées à
- * des données réelles en Phase 4/5.
+ * Tableau de bord patient : le résumé santé provient de
+ * getMonDossierPatient(), le résumé des autorisations de
+ * getMesConsentements() (module patient), et les prochains rendez-vous de
+ * getMesRendezVous() (module facility, Phase 4). Les zones traitements et
+ * documents restent des états vides honnêtes : elles seront branchées à des
+ * données réelles en Phase 5.
  */
 export default async function PatientPage() {
-  const [dossier, consentements] = await Promise.all([
+  const [dossier, consentements, rendezVous] = await Promise.all([
     getMonDossierPatient(),
     getMesConsentements(),
+    getMesRendezVous(),
   ]);
 
   const consentementsActifs = consentements.filter((c) => c.statut === "actif");
   const completude = dossier ? calculerCompletudeDossier(dossier) : null;
   const manquants = dossier ? champsManquants(dossier) : [];
+  const prochainsRendezVous = rendezVousAVenir(rendezVous).slice(0, 3);
 
   return (
     <div className="conteneur-page mx-auto flex flex-col gap-8 px-4 py-8 sm:px-6">
@@ -331,25 +363,73 @@ export default async function PatientPage() {
               <Card
                 title="Prochains rendez-vous"
                 description="Consultations planifiées."
-                actions={<Badge tone="info">Phase 4</Badge>}
+                actions={
+                  prochainsRendezVous.length > 0 ? (
+                    <Badge tone="accent">{prochainsRendezVous.length}</Badge>
+                  ) : undefined
+                }
               >
-                <EtatVide
-                  icon={CalendarClock}
-                  titre="Aucun rendez-vous planifié"
-                  description="La prise de rendez-vous en ligne arrivera avec le module Rendez-vous, en phase 4 du projet."
-                  phase="Phase 4"
-                />
+                {prochainsRendezVous.length > 0 ? (
+                  <ul className="flex flex-col gap-3">
+                    {prochainsRendezVous.map((rdv) => {
+                      const estConfirme = rdv.statut === "confirme";
+                      return (
+                        <li
+                          key={rdv.id}
+                          className="flex flex-col gap-1 rounded-champ border border-bordure bg-plan px-4 py-3"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-[14px] font-semibold text-encre">
+                              {formaterDateHeure(rdv.date)}
+                            </span>
+                            <Badge tone={estConfirme ? "good" : "info"}>
+                              {estConfirme ? "Confirmé" : "Demande envoyée"}
+                            </Badge>
+                          </div>
+                          <span className="text-[13px] text-encre-secondaire">
+                            {rdv.etablissementNom}
+                            {rdv.professionnelNomComplet
+                              ? `, ${rdv.professionnelNomComplet}`
+                              : ""}
+                          </span>
+                          <span className="text-[13px] text-encre-attenuee">{rdv.motif}</span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : (
+                  <div className="flex flex-col items-center gap-2 rounded-champ border border-dashed border-bordure-forte bg-plan px-4 py-8 text-center">
+                    <span className="flex h-11 w-11 items-center justify-center rounded-full bg-accent-clair text-accent">
+                      <CalendarClock size={20} aria-hidden="true" />
+                    </span>
+                    <p className="text-[14px] font-semibold text-encre">
+                      Aucun rendez-vous à venir
+                    </p>
+                    <p className="max-w-[30ch] text-[13px] text-encre-attenuee">
+                      Prenez rendez-vous auprès d&apos;un établissement de santé.
+                    </p>
+                  </div>
+                )}
+                <Link
+                  href="/app/patient/rendez-vous"
+                  className="mt-4 inline-flex items-center gap-1 text-[13px] font-semibold text-accent hover:underline"
+                >
+                  {prochainsRendezVous.length > 0
+                    ? "Voir tous mes rendez-vous"
+                    : "Prendre rendez-vous"}
+                  <ChevronRight size={14} aria-hidden="true" />
+                </Link>
               </Card>
               <Card
                 title="Traitements actifs"
                 description="Prescriptions en cours."
-                actions={<Badge tone="info">Phase 4</Badge>}
+                actions={<Badge tone="info">Phase 5</Badge>}
               >
                 <EtatVide
                   icon={Activity}
                   titre="Aucun traitement en cours affiché"
-                  description="Vos prescriptions actives apparaîtront ici dès que le module Prescriptions sera disponible."
-                  phase="Phase 4"
+                  description="Vos prescriptions actives apparaîtront ici dès que le module Prescriptions sera disponible, en phase 5 du projet."
+                  phase="Phase 5"
                 />
               </Card>
               <Card
@@ -400,17 +480,30 @@ export default async function PatientPage() {
             description="Ces actions seront activées au fil des prochaines phases."
           >
             <div className="flex flex-col gap-3">
-              {actionsRapides.map((action) => (
-                <div key={action.label} className="flex items-center gap-2">
-                  <Button variant="secondary" disabled className="w-full justify-start">
+              {actionsRapides.map((action) =>
+                action.href ? (
+                  <Link
+                    key={action.label}
+                    href={action.href}
+                    className={cn(
+                      styleBoutonLien,
+                      "w-full justify-start border border-bordure-forte bg-surface text-encre hover:bg-surface-appui"
+                    )}
+                  >
                     {action.label}
-                  </Button>
-                  <Tooltip
-                    content="Bientôt disponible"
-                    label={`${action.label} : bientôt disponible`}
-                  />
-                </div>
-              ))}
+                  </Link>
+                ) : (
+                  <div key={action.label} className="flex items-center gap-2">
+                    <Button variant="secondary" disabled className="w-full justify-start">
+                      {action.label}
+                    </Button>
+                    <Tooltip
+                      content="Bientôt disponible"
+                      label={`${action.label} : bientôt disponible`}
+                    />
+                  </div>
+                )
+              )}
             </div>
           </Card>
         </div>

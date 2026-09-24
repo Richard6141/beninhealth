@@ -19,9 +19,9 @@ export default function ConnexionPage() {
       <Image
         src="/image.png"
         alt="Ministere de la Sante, Republique du Benin"
-        width={169}
-        height={48}
-        className="h-12 w-auto"
+        width={225}
+        height={64}
+        className="h-16 w-auto"
         priority
       />
       <div className="w-full max-w-md">
@@ -54,7 +54,7 @@ export default function ConnexionPage() {
             <Button
               type="submit"
               variant="primary"
-              className="mt-2 w-full"
+              className="mt-2 w-full bg-[#162233] hover:bg-[#0e1826]"
               disabled={pending}
             >
               {pending ? "Connexion en cours..." : "Se connecter"}
