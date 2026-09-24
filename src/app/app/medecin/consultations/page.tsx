@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft, Stethoscope } from "lucide-react";
+import { ArrowLeft, Pill, Stethoscope } from "lucide-react";
 import {
   getConsultationsDuProfessionnel,
   type ConsultationResume,
@@ -40,6 +40,22 @@ function LienNouvelleConsultation() {
       )}
     >
       Nouvelle consultation
+    </Link>
+  );
+}
+
+/** Lien vers la creation d'une prescription pour cette consultation, style comme un bouton secondaire discret. */
+function LienPrescrire({ consultationId }: { consultationId: string }) {
+  return (
+    <Link
+      href={`/app/medecin/prescriptions/nouvelle?consultationId=${encodeURIComponent(consultationId)}`}
+      className={cn(
+        "inline-flex h-9 w-fit items-center justify-center gap-1.5 rounded-champ border border-bordure-forte bg-surface px-3 text-[13px] font-semibold text-encre transition-colors motion-reduce:transition-none hover:bg-surface-appui",
+        "focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+      )}
+    >
+      <Pill size={14} aria-hidden="true" />
+      Prescrire
     </Link>
   );
 }
@@ -94,6 +110,10 @@ function CarteConsultation({ consultation }: { consultation: ConsultationResume 
           <p className="text-[14px] text-encre">
             {consultation.conclusion || "Aucune conclusion renseignee."}
           </p>
+        </div>
+
+        <div className="flex justify-end">
+          <LienPrescrire consultationId={consultation.id} />
         </div>
       </div>
     </Card>

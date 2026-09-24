@@ -34,6 +34,7 @@ model User {
   // Consentements ou cet utilisateur est l'acteur autorise par un patient
   // (typiquement un professionnel de sante), pas ses propres consentements.
   consentementsRecus Consentement[]
+  evenementsPrescription EvenementPrescription[]
 }
 
 // Attribution d'un role a un utilisateur (un utilisateur peut cumuler
@@ -77,6 +78,7 @@ model ProfessionnelSante {
 
   rendezVous    RendezVous[]
   consultations Consultation[]
+  prescriptions Prescription[]
 }
 
 // Correspond a Patient dans src/types/domain-patient.ts.
@@ -100,6 +102,7 @@ model Patient {
   consentements Consentement[]
   rendezVous    RendezVous[]
   consultations Consultation[]
+  prescriptions Prescription[]
 }
 
 // Correspond a Consentement dans src/types/domain-patient.ts.
@@ -165,6 +168,74 @@ model Consultation {
   observations    String    @default("")
   conclusion      String    @default("")
   statut          String    @default("terminee")
+
+  prescriptions Prescription[]
+}
+
+// Correspond a Medicament dans src/types/domain-clinical.ts.
+// Referentiel de medicaments, independant d'une prescription precise.
+model Medicament {
+  id                          String @id @default(cuid())
+  nom                          String
+  principeActif                String
+  dosage                        String
+  forme                          String
+  informationsComplementaires   String @default("")
+
+  lignesPrescription LignePrescription[]
+}
+
+// Correspond a Prescription dans src/types/domain-clinical.ts.
+// Toujours rattachee a une Consultation et a un professionnel identifie
+// (regle metier du cahier des charges, Partie 3 section 4). patientId est
+// denormalise depuis la consultation pour simplifier les requetes du
+// dossier patient, mais reste toujours coherent avec consultation.patientId
+// (verifie cote module a la creation, jamais modifie ensuite).
+model Prescription {
+  id                    String   @id @default(cuid())
+  consultationId        String
+  consultation          Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+  medecinPrescripteurId String
+  medecinPrescripteur   ProfessionnelSante @relation(fields: [medecinPrescripteurId], references: [id])
+  patientId             String
+  patient               Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  date                  DateTime @default(now())
+  // creee | validee | delivree_partiellement | delivree | annulee
+  // Phase 5 : le medecin cree directement une prescription "validee" (il a
+  // examine le patient). Les statuts delivree/delivree_partiellement relevent
+  // du module pharmacie, hors perimetre de cette phase (voir README).
+  statut                String   @default("validee")
+  instructions          String   @default("")
+
+  lignes     LignePrescription[]
+  historique EvenementPrescription[]
+}
+
+// Correspond a LignePrescription dans src/types/domain-clinical.ts : un
+// medicament du catalogue avec sa posologie pour cette prescription precise.
+model LignePrescription {
+  id                   String @id @default(cuid())
+  prescriptionId       String
+  prescription         Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  medicamentId         String
+  medicament           Medicament @relation(fields: [medicamentId], references: [id])
+  posologie            String
+  quantite             Int
+  dureeTraitementJours Int
+}
+
+// Correspond a EvenementHistoriquePrescription dans src/types/domain-clinical.ts.
+// Historique obligatoire du cycle de vie d'une prescription (creation,
+// modification, validation, delivrance).
+model EvenementPrescription {
+  id             String   @id @default(cuid())
+  prescriptionId String
+  prescription   Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  type           String
+  date           DateTime @default(now())
+  utilisateurId  String
+  utilisateur    User     @relation(fields: [utilisateurId], references: [id])
+  commentaire    String?
 }
 
 // Correspond a JournalAudit dans src/types/domain-audit.ts.

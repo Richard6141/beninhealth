@@ -174,7 +174,7 @@ async function main() {
       },
     });
 
-    await prisma.consultation.create({
+    const consultationPassee = await prisma.consultation.create({
       data: {
         patientId: patientUser.patient.id,
         professionnelId: medecinProfil.id,
@@ -187,6 +187,72 @@ async function main() {
         observations: "Suspicion de paludisme, test rapide propose.",
         conclusion: "Paludisme simple confirme, traitement prescrit.",
         statut: "terminee",
+      },
+    });
+
+    const arthemeterLumefantrine = await prisma.medicament.create({
+      data: {
+        nom: "Coartem",
+        principeActif: "Arthemeter / Lumefantrine",
+        dosage: "20 mg / 120 mg",
+        forme: "comprime",
+        informationsComplementaires: "Antipaludique de premiere intention (paludisme simple).",
+      },
+    });
+
+    const paracetamol = await prisma.medicament.create({
+      data: {
+        nom: "Doliprane",
+        principeActif: "Paracetamol",
+        dosage: "500 mg",
+        forme: "comprime",
+        informationsComplementaires: "Antalgique et antipyretique.",
+      },
+    });
+
+    await prisma.medicament.create({
+      data: {
+        nom: "Amodex",
+        principeActif: "Amoxicilline",
+        dosage: "500 mg",
+        forme: "gelule",
+        informationsComplementaires: "Antibiotique a large spectre.",
+      },
+    });
+
+    const prescriptionPassee = await prisma.prescription.create({
+      data: {
+        consultationId: consultationPassee.id,
+        medecinPrescripteurId: medecinProfil.id,
+        patientId: patientUser.patient.id,
+        date: ilYA20Jours,
+        statut: "validee",
+        instructions: "Traitement a prendre avec de la nourriture. Bien s'hydrater.",
+        lignes: {
+          create: [
+            {
+              medicamentId: arthemeterLumefantrine.id,
+              posologie: "2 comprimes matin et soir",
+              quantite: 24,
+              dureeTraitementJours: 3,
+            },
+            {
+              medicamentId: paracetamol.id,
+              posologie: "1 comprime toutes les 6 heures si douleur ou fievre",
+              quantite: 12,
+              dureeTraitementJours: 3,
+            },
+          ],
+        },
+      },
+    });
+
+    await prisma.evenementPrescription.create({
+      data: {
+        prescriptionId: prescriptionPassee.id,
+        type: "creation",
+        utilisateurId: medecin.id,
+        commentaire: "Prescription initiale suite a la consultation.",
       },
     });
 

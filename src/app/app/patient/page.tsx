@@ -18,6 +18,11 @@ import {
   type DossierPatientResume,
 } from "@/modules/patient/actions";
 import { getMesRendezVous, type RendezVousResume } from "@/modules/facility/actions";
+import {
+  getMesPrescriptions,
+  type PrescriptionResume,
+} from "@/modules/prescription/actions";
+import { estPrescriptionEnCours } from "./prescriptions/lib";
 import { cn } from "@/lib/cn";
 import { Alert } from "@/components/ui/Alert";
 import { Badge } from "@/components/ui/Badge";
@@ -72,6 +77,17 @@ function rendezVousAVenir(rendezVous: RendezVousResume[]): RendezVousResume[] {
         new Date(rdv.date).getTime() >= maintenant
     )
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+}
+
+/**
+ * Prescriptions "en cours" pour le tableau de bord : getMesPrescriptions()
+ * renvoie déjà les prescriptions triées par date décroissante, il suffit donc
+ * de filtrer sur estPrescriptionEnCours (voir ./prescriptions/lib.ts, règle
+ * partagée avec l'historique complet) pour obtenir les plus récentes en
+ * premier.
+ */
+function prescriptionsEnCours(prescriptions: PrescriptionResume[]): PrescriptionResume[] {
+  return prescriptions.filter(estPrescriptionEnCours);
 }
 
 /**
@@ -171,16 +187,18 @@ function EtatVide({
  * données réelles en Phase 5.
  */
 export default async function PatientPage() {
-  const [dossier, consentements, rendezVous] = await Promise.all([
+  const [dossier, consentements, rendezVous, prescriptions] = await Promise.all([
     getMonDossierPatient(),
     getMesConsentements(),
     getMesRendezVous(),
+    getMesPrescriptions(),
   ]);
 
   const consentementsActifs = consentements.filter((c) => c.statut === "actif");
   const completude = dossier ? calculerCompletudeDossier(dossier) : null;
   const manquants = dossier ? champsManquants(dossier) : [];
   const prochainsRendezVous = rendezVousAVenir(rendezVous).slice(0, 3);
+  const traitementsEnCours = prescriptionsEnCours(prescriptions).slice(0, 3);
 
   return (
     <div className="conteneur-page mx-auto flex flex-col gap-8 px-4 py-8 sm:px-6">
@@ -423,14 +441,64 @@ export default async function PatientPage() {
               <Card
                 title="Traitements actifs"
                 description="Prescriptions en cours."
-                actions={<Badge tone="info">Phase 5</Badge>}
+                actions={
+                  traitementsEnCours.length > 0 ? (
+                    <Badge tone="accent">{traitementsEnCours.length}</Badge>
+                  ) : undefined
+                }
               >
-                <EtatVide
-                  icon={Activity}
-                  titre="Aucun traitement en cours affiché"
-                  description="Vos prescriptions actives apparaîtront ici dès que le module Prescriptions sera disponible, en phase 5 du projet."
-                  phase="Phase 5"
-                />
+                {traitementsEnCours.length > 0 ? (
+                  <ul className="flex flex-col gap-3">
+                    {traitementsEnCours.map((prescription) => {
+                      const [lignePrincipale] = prescription.lignes;
+                      const autresLignes = prescription.lignes.length - 1;
+                      return (
+                        <li
+                          key={prescription.id}
+                          className="flex flex-col gap-1 rounded-champ border border-bordure bg-plan px-4 py-3"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-[14px] font-semibold text-encre">
+                              {lignePrincipale?.medicamentNom ?? "Médicament non précisé"}
+                            </span>
+                            <Badge tone="good">En cours</Badge>
+                          </div>
+                          {lignePrincipale ? (
+                            <span className="text-[13px] text-encre-secondaire">
+                              {lignePrincipale.posologie}
+                            </span>
+                          ) : null}
+                          {autresLignes > 0 ? (
+                            <span className="text-[12px] text-encre-attenuee">
+                              + {autresLignes} autre{autresLignes > 1 ? "s" : ""} médicament
+                              {autresLignes > 1 ? "s" : ""}
+                            </span>
+                          ) : null}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : (
+                  <div className="flex flex-col items-center gap-2 rounded-champ border border-dashed border-bordure-forte bg-plan px-4 py-8 text-center">
+                    <span className="flex h-11 w-11 items-center justify-center rounded-full bg-accent-clair text-accent">
+                      <Activity size={20} aria-hidden="true" />
+                    </span>
+                    <p className="text-[14px] font-semibold text-encre">
+                      Aucun traitement en cours
+                    </p>
+                    <p className="max-w-[30ch] text-[13px] text-encre-attenuee">
+                      Vos prescriptions actives apparaîtront ici après une
+                      consultation médicale.
+                    </p>
+                  </div>
+                )}
+                <Link
+                  href="/app/patient/prescriptions"
+                  className="mt-4 inline-flex items-center gap-1 text-[13px] font-semibold text-accent hover:underline"
+                >
+                  Voir toutes mes prescriptions
+                  <ChevronRight size={14} aria-hidden="true" />
+                </Link>
               </Card>
               <Card
                 title="Documents récents"

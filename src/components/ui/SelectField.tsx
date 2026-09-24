@@ -31,6 +31,7 @@ export function SelectField({
   id,
   className,
   defaultValue,
+  value,
   ...props
 }: SelectFieldProps) {
   const generatedId = useId();
@@ -38,6 +39,12 @@ export function SelectField({
   const hintId = hint ? `${fieldId}-hint` : undefined;
   const errorId = error ? `${fieldId}-error` : undefined;
   const describedBy = [hintId, errorId].filter(Boolean).join(" ") || undefined;
+  /**
+   * Un select controle (value fourni par l'appelant, ex. SelecteurPatient)
+   * ne doit jamais recevoir aussi defaultValue : React leve une erreur des
+   * qu'un select porte les deux props en meme temps.
+   */
+  const estControle = value !== undefined;
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -67,7 +74,10 @@ export function SelectField({
           required={required}
           aria-describedby={describedBy}
           aria-invalid={Boolean(error) || undefined}
-          defaultValue={defaultValue ?? (placeholder ? "" : undefined)}
+          value={value}
+          defaultValue={
+            estControle ? undefined : defaultValue ?? (placeholder ? "" : undefined)
+          }
           className={cn(
             "h-11 w-full appearance-none rounded-champ border bg-surface px-3 pr-10 text-[16px] text-encre transition-colors motion-reduce:transition-none",
             "focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2",
