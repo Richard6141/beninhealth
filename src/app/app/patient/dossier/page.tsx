@@ -226,7 +226,7 @@ export default async function DossierPatientPage() {
             <TitreSection icon={Stethoscope} id="titre-sante">
               Informations médicales
             </TitreSection>
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
               <Card
                 title="Allergies"
                 description="Substances ou éléments à éviter."
@@ -322,13 +322,13 @@ export default async function DossierPatientPage() {
           <Card
             title="Documents médicaux"
             description="Résultats, comptes-rendus, imagerie."
-            actions={<Badge tone="info">Phase 5</Badge>}
+            actions={<Badge tone="info">À venir</Badge>}
           >
             <EtatVide
               icon={FolderOpen}
               titre="Aucun document disponible"
-              description="Vos résultats d'examens et comptes-rendus seront consultables ici en phase 5 du projet."
-              phase="Phase 5"
+              description="Vos résultats d'examens et comptes-rendus seront consultables ici dans une phase ultérieure du projet."
+              phase="À venir"
             />
           </Card>
         </div>

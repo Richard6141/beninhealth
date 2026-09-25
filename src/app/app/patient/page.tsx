@@ -7,7 +7,8 @@ import {
   ChevronRight,
   ClipboardList,
   Droplet,
-  FolderOpen,
+  FlaskConical,
+  Pill,
   ShieldCheck,
   TriangleAlert,
   UserRound,
@@ -22,19 +23,14 @@ import {
   getMesPrescriptions,
   type PrescriptionResume,
 } from "@/modules/prescription/actions";
+import { getMesExamens } from "@/modules/laboratoire/actions";
 import { estPrescriptionEnCours } from "./prescriptions/lib";
 import { cn } from "@/lib/cn";
 import { Alert } from "@/components/ui/Alert";
 import { Badge } from "@/components/ui/Badge";
-import { Button } from "@/components/ui/Button";
+import type { BadgeTone } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { Tooltip } from "@/components/ui/Tooltip";
-
-const actionsRapides: { label: string; href?: string }[] = [
-  { label: "Prendre rendez-vous", href: "/app/patient/rendez-vous" },
-  { label: "Consulter mon dossier" },
-  { label: "Voir mes traitements" },
-];
 
 const styleBoutonLien =
   "inline-flex h-11 items-center justify-center rounded-champ px-4 text-[15px] font-semibold transition-colors motion-reduce:transition-none focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2";
@@ -60,6 +56,16 @@ function formaterDateHeure(date: string): string {
   } catch {
     return date;
   }
+}
+
+/** Meme mapping statut -> libelle/ton que src/app/app/patient/examens/page.tsx. */
+function libelleStatutExamen(statut: string): { texte: string; tone: BadgeTone } {
+  const cle = statut.trim().toLowerCase();
+  if (cle === "demande") return { texte: "Demande", tone: "info" };
+  if (cle === "en_cours") return { texte: "En cours", tone: "warning" };
+  if (cle === "termine") return { texte: "Terminé", tone: "good" };
+  if (cle === "annule") return { texte: "Annulé", tone: "critical" };
+  return { texte: statut, tone: "neutral" };
 }
 
 /**
@@ -144,36 +150,12 @@ function TuileStat({
       >
         <Icon size={18} aria-hidden="true" />
       </span>
-      <div className="flex flex-col">
+      <div className="flex min-w-0 flex-col">
         <span className="text-[12px] font-semibold uppercase tracking-[0.06em] text-encre-attenuee">
           {label}
         </span>
         <span className="text-[15px] font-bold text-encre">{value}</span>
       </div>
-    </div>
-  );
-}
-
-/** Etat vide qualitatif : icône, texte explicite sur ce qui arrive et à quelle phase. */
-function EtatVide({
-  icon: Icon,
-  titre,
-  description,
-  phase,
-}: {
-  icon: LucideIcon;
-  titre: string;
-  description: string;
-  phase: string;
-}) {
-  return (
-    <div className="flex flex-col items-center gap-2 rounded-champ border border-dashed border-bordure-forte bg-plan px-4 py-8 text-center">
-      <span className="flex h-11 w-11 items-center justify-center rounded-full bg-accent-clair text-accent">
-        <Icon size={20} aria-hidden="true" />
-      </span>
-      <p className="text-[14px] font-semibold text-encre">{titre}</p>
-      <p className="max-w-[30ch] text-[13px] text-encre-attenuee">{description}</p>
-      <Badge tone="info">{phase}</Badge>
     </div>
   );
 }
@@ -187,18 +169,20 @@ function EtatVide({
  * données réelles en Phase 5.
  */
 export default async function PatientPage() {
-  const [dossier, consentements, rendezVous, prescriptions] = await Promise.all([
+  const [dossier, consentements, rendezVous, prescriptions, examens] = await Promise.all([
     getMonDossierPatient(),
     getMesConsentements(),
     getMesRendezVous(),
     getMesPrescriptions(),
+    getMesExamens(),
   ]);
 
   const consentementsActifs = consentements.filter((c) => c.statut === "actif");
   const completude = dossier ? calculerCompletudeDossier(dossier) : null;
   const manquants = dossier ? champsManquants(dossier) : [];
-  const prochainsRendezVous = rendezVousAVenir(rendezVous).slice(0, 3);
-  const traitementsEnCours = prescriptionsEnCours(prescriptions).slice(0, 3);
+  const prochainsRendezVous = rendezVousAVenir(rendezVous).slice(0, 2);
+  const traitementsEnCours = prescriptionsEnCours(prescriptions).slice(0, 2);
+  const examensRecents = examens.slice(0, 2);
 
   return (
     <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-8 px-4 py-8 sm:px-6 lg:px-8">
@@ -209,8 +193,8 @@ export default async function PatientPage() {
           </p>
           <h1 className="text-[28px] font-black text-encre">Mon tableau de bord</h1>
           <p className="max-w-2xl text-[15px] text-encre-secondaire">
-            Retrouvez ici vos rendez-vous, vos traitements et vos documents dès
-            que ces fonctionnalités seront disponibles.
+            Votre résumé santé, vos rendez-vous, vos traitements et vos
+            examens, réunis au même endroit.
           </p>
         </div>
 
@@ -258,7 +242,7 @@ export default async function PatientPage() {
                 title="Résumé santé"
                 description={`Identifiant santé : ${dossier.identifiantSante} · Né(e) le ${formaterDate(dossier.dateNaissance)}`}
               >
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   <TuileStat
                     icon={Droplet}
                     label="Groupe sanguin"
@@ -394,23 +378,28 @@ export default async function PatientPage() {
                       return (
                         <li
                           key={rdv.id}
-                          className="flex flex-col gap-1 rounded-champ border border-bordure bg-plan px-4 py-3"
+                          className="flex items-start gap-3 rounded-champ border border-bordure bg-plan px-4 py-3"
                         >
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <span className="text-[14px] font-semibold text-encre">
-                              {formaterDateHeure(rdv.date)}
-                            </span>
-                            <Badge tone={estConfirme ? "good" : "info"}>
-                              {estConfirme ? "Confirmé" : "Demande envoyée"}
-                            </Badge>
-                          </div>
-                          <span className="text-[13px] text-encre-secondaire">
-                            {rdv.etablissementNom}
-                            {rdv.professionnelNomComplet
-                              ? `, ${rdv.professionnelNomComplet}`
-                              : ""}
+                          <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface text-accent">
+                            <CalendarClock size={16} aria-hidden="true" />
                           </span>
-                          <span className="text-[13px] text-encre-attenuee">{rdv.motif}</span>
+                          <div className="flex min-w-0 flex-1 flex-col gap-1">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="text-[14px] font-semibold text-encre">
+                                {formaterDateHeure(rdv.date)}
+                              </span>
+                              <Badge tone={estConfirme ? "good" : "info"}>
+                                {estConfirme ? "Confirmé" : "Demande envoyée"}
+                              </Badge>
+                            </div>
+                            <span className="text-[13px] text-encre-secondaire">
+                              {rdv.etablissementNom}
+                              {rdv.professionnelNomComplet
+                                ? `, ${rdv.professionnelNomComplet}`
+                                : ""}
+                            </span>
+                            <span className="text-[13px] text-encre-attenuee">{rdv.motif}</span>
+                          </div>
                         </li>
                       );
                     })}
@@ -455,25 +444,30 @@ export default async function PatientPage() {
                       return (
                         <li
                           key={prescription.id}
-                          className="flex flex-col gap-1 rounded-champ border border-bordure bg-plan px-4 py-3"
+                          className="flex items-start gap-3 rounded-champ border border-bordure bg-plan px-4 py-3"
                         >
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <span className="text-[14px] font-semibold text-encre">
-                              {lignePrincipale?.medicamentNom ?? "Médicament non précisé"}
-                            </span>
-                            <Badge tone="good">En cours</Badge>
+                          <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface text-accent">
+                            <Pill size={16} aria-hidden="true" />
+                          </span>
+                          <div className="flex min-w-0 flex-1 flex-col gap-1">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="text-[14px] font-semibold text-encre">
+                                {lignePrincipale?.medicamentNom ?? "Médicament non précisé"}
+                              </span>
+                              <Badge tone="good">En cours</Badge>
+                            </div>
+                            {lignePrincipale ? (
+                              <span className="text-[13px] text-encre-secondaire">
+                                {lignePrincipale.posologie}
+                              </span>
+                            ) : null}
+                            {autresLignes > 0 ? (
+                              <span className="text-[12px] text-encre-attenuee">
+                                + {autresLignes} autre{autresLignes > 1 ? "s" : ""} médicament
+                                {autresLignes > 1 ? "s" : ""}
+                              </span>
+                            ) : null}
                           </div>
-                          {lignePrincipale ? (
-                            <span className="text-[13px] text-encre-secondaire">
-                              {lignePrincipale.posologie}
-                            </span>
-                          ) : null}
-                          {autresLignes > 0 ? (
-                            <span className="text-[12px] text-encre-attenuee">
-                              + {autresLignes} autre{autresLignes > 1 ? "s" : ""} médicament
-                              {autresLignes > 1 ? "s" : ""}
-                            </span>
-                          ) : null}
                         </li>
                       );
                     })}
@@ -501,16 +495,65 @@ export default async function PatientPage() {
                 </Link>
               </Card>
               <Card
-                title="Documents récents"
-                description="Résultats et comptes-rendus."
-                actions={<Badge tone="info">Phase 5</Badge>}
+                title="Mes examens"
+                description="Demandes et résultats de laboratoire."
+                actions={
+                  examensRecents.length > 0 ? (
+                    <Badge tone="accent">{examensRecents.length}</Badge>
+                  ) : undefined
+                }
               >
-                <EtatVide
-                  icon={FolderOpen}
-                  titre="Aucun document disponible"
-                  description="Vos résultats d'examens et comptes-rendus seront consultables ici en phase 5 du projet."
-                  phase="Phase 5"
-                />
+                {examensRecents.length > 0 ? (
+                  <ul className="flex flex-col gap-3">
+                    {examensRecents.map((examen) => {
+                      const statut = libelleStatutExamen(examen.statut);
+                      return (
+                        <li
+                          key={examen.id}
+                          className="flex items-start gap-3 rounded-champ border border-bordure bg-plan px-4 py-3"
+                        >
+                          <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface text-accent">
+                            <FlaskConical size={16} aria-hidden="true" />
+                          </span>
+                          <div className="flex min-w-0 flex-1 flex-col gap-1">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="text-[14px] font-semibold text-encre">
+                                {examen.typeExamen}
+                              </span>
+                              <Badge tone={statut.tone}>{statut.texte}</Badge>
+                            </div>
+                            <span className="text-[13px] text-encre-secondaire">
+                              {examen.laboratoireNom}
+                            </span>
+                            <span className="text-[13px] text-encre-attenuee">
+                              Demandé le {formaterDate(examen.date)}
+                            </span>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : (
+                  <div className="flex flex-col items-center gap-2 rounded-champ border border-dashed border-bordure-forte bg-plan px-4 py-8 text-center">
+                    <span className="flex h-11 w-11 items-center justify-center rounded-full bg-accent-clair text-accent">
+                      <FlaskConical size={20} aria-hidden="true" />
+                    </span>
+                    <p className="text-[14px] font-semibold text-encre">
+                      Aucun examen pour le moment
+                    </p>
+                    <p className="max-w-[30ch] text-[13px] text-encre-attenuee">
+                      Vos examens de laboratoire apparaîtront ici après une
+                      demande de votre médecin.
+                    </p>
+                  </div>
+                )}
+                <Link
+                  href="/app/patient/examens"
+                  className="mt-4 inline-flex items-center gap-1 text-[13px] font-semibold text-accent hover:underline"
+                >
+                  Voir tous mes examens
+                  <ChevronRight size={14} aria-hidden="true" />
+                </Link>
               </Card>
             </div>
           </section>
@@ -541,38 +584,6 @@ export default async function PatientPage() {
               Gérer mes autorisations d&apos;accès
               <ChevronRight size={14} aria-hidden="true" />
             </Link>
-          </Card>
-
-          <Card
-            title="Actions rapides"
-            description="Ces actions seront activées au fil des prochaines phases."
-          >
-            <div className="flex flex-col gap-3">
-              {actionsRapides.map((action) =>
-                action.href ? (
-                  <Link
-                    key={action.label}
-                    href={action.href}
-                    className={cn(
-                      styleBoutonLien,
-                      "w-full justify-start border border-bordure-forte bg-surface text-encre hover:bg-surface-appui"
-                    )}
-                  >
-                    {action.label}
-                  </Link>
-                ) : (
-                  <div key={action.label} className="flex items-center gap-2">
-                    <Button variant="secondary" disabled className="w-full justify-start">
-                      {action.label}
-                    </Button>
-                    <Tooltip
-                      content="Bientôt disponible"
-                      label={`${action.label} : bientôt disponible`}
-                    />
-                  </div>
-                )
-              )}
-            </div>
           </Card>
         </div>
       </div>

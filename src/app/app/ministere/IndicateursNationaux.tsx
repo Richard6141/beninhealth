@@ -22,7 +22,7 @@ function TuileStat({
       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface text-accent">
         <Icon size={18} aria-hidden="true" />
       </span>
-      <div className="flex flex-col">
+      <div className="flex min-w-0 flex-col">
         <span className="text-[12px] font-semibold uppercase tracking-[0.06em] text-encre-attenuee">
           {label}
         </span>
@@ -46,7 +46,7 @@ export interface IndicateursNationauxProps {
 export function IndicateursNationaux({ statistiques }: IndicateursNationauxProps) {
   return (
     <div className="flex flex-col gap-6">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <TuileStat icon={Building2} label="Etablissements" value={statistiques.totalEtablissements} />
         <TuileStat icon={Stethoscope} label="Professionnels" value={statistiques.totalProfessionnels} />
         <TuileStat icon={Users} label="Patients" value={statistiques.totalPatients} />

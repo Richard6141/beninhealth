@@ -62,7 +62,7 @@ function TuileStatistique({
       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent-clair text-accent">
         <Icon size={20} aria-hidden="true" />
       </span>
-      <div className="flex flex-col">
+      <div className="flex min-w-0 flex-col">
         <span className="text-[12px] font-semibold uppercase tracking-[0.06em] text-encre-attenuee">
           {label}
         </span>
@@ -94,7 +94,7 @@ function SectionIndicateurs({
         {statistiques.etablissementNom}
       </p>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <Card>
           <TuileStatistique
             icon={Stethoscope}

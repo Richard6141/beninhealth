@@ -129,10 +129,20 @@ function libelleStatutRendezVous(statut: string): { texte: string; tone: "warnin
 }
 
 /**
- * Liste des rendez-vous confirmes du jour, avec un raccourci direct vers le
- * demarrage de la consultation correspondante.
+ * Liste des rendez-vous confirmes du jour. Le raccourci de demarrage de
+ * consultation n'est affiche que pour le role medecin : c'est le seul a
+ * detenir create:consultation dans la matrice RBAC (voir
+ * src/security/permissions.ts). L'afficher aux autres roles (infirmier,
+ * agent communautaire, pharmacien, laboratoire, admin_etablissement) menerait
+ * a un formulaire qui echoue au moment de la soumission, une fois rempli.
  */
-function ListePatientsDuJour({ rendezVous }: { rendezVous: RendezVousResume[] }) {
+function ListePatientsDuJour({
+  rendezVous,
+  peutDemarrerConsultation,
+}: {
+  rendezVous: RendezVousResume[];
+  peutDemarrerConsultation: boolean;
+}) {
   if (rendezVous.length === 0) {
     return (
       <p className="text-[13px] text-encre-attenuee">
@@ -155,14 +165,16 @@ function ListePatientsDuJour({ rendezVous }: { rendezVous: RendezVousResume[] })
             <span className="text-[13px] text-encre-secondaire">{formaterHeure(rdv.date)}</span>
           </div>
           <span className="text-[13px] text-encre-secondaire">{rdv.motif}</span>
-          <Link
-            href={`/app/medecin/consultations/nouvelle?patientId=${encodeURIComponent(
-              rdv.patientId
-            )}&rendezVousId=${encodeURIComponent(rdv.id)}`}
-            className="w-fit text-[13px] font-semibold text-accent hover:underline"
-          >
-            Demarrer la consultation
-          </Link>
+          {peutDemarrerConsultation ? (
+            <Link
+              href={`/app/medecin/consultations/nouvelle?patientId=${encodeURIComponent(
+                rdv.patientId
+              )}&rendezVousId=${encodeURIComponent(rdv.id)}`}
+              className="w-fit text-[13px] font-semibold text-accent hover:underline"
+            >
+              Demarrer la consultation
+            </Link>
+          ) : null}
         </li>
       ))}
     </ul>
@@ -264,14 +276,17 @@ export default async function EspaceProfessionnelPage() {
         <h2 id="titre-activite" className="text-[20px] font-bold text-encre">
           Mon activité
         </h2>
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <Card
             title="Patients du jour"
             description="Rendez-vous confirmés pour aujourd'hui."
             actions={<Badge tone="accent">{patientsDuJour.length}</Badge>}
           >
             {gereRendezVous ? (
-              <ListePatientsDuJour rendezVous={patientsDuJour} />
+              <ListePatientsDuJour
+                rendezVous={patientsDuJour}
+                peutDemarrerConsultation={rolePrincipal === "medecin"}
+              />
             ) : (
               <EtatVide
                 icon={Users}
@@ -312,13 +327,13 @@ export default async function EspaceProfessionnelPage() {
           <Card
             title="Alertes"
             description="Signaux nécessitant une attention."
-            actions={<Badge tone="info">Phase 5</Badge>}
+            actions={<Badge tone="info">À venir</Badge>}
           >
             <EtatVide
               icon={Bell}
               titre="Aucune alerte pour le moment"
               description="Les alertes cliniques et de suivi apparaîtront ici dès que les modules correspondants seront disponibles, à une phase ultérieure du projet."
-              badgeTexte="Phase 5"
+              badgeTexte="À venir"
             />
           </Card>
         </div>
