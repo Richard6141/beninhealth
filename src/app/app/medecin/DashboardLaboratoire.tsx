@@ -1,11 +1,19 @@
 import Link from "next/link";
 import { FlaskConical } from "lucide-react";
 import { getExamensPourLaboratoire, type ExamenResume } from "@/modules/laboratoire/actions";
+import { getMonProfil } from "@/modules/identity/actions";
+import { getMonQrCode } from "@/modules/verification/actions";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 
 const NOMBRE_MAX_APERCU = 5;
 const STATUTS_EN_ATTENTE = new Set(["demande", "en_cours"]);
+
+/** Salutation dependante de l'heure du serveur, meme logique que src/app/app/patient/page.tsx. */
+function salutation(): string {
+  const heure = new Date().getHours();
+  return heure >= 5 && heure < 18 ? "Bonjour" : "Bonsoir";
+}
 
 function formaterDate(date: string): string {
   try {
@@ -36,7 +44,11 @@ function ApercuExamen({ examen }: { examen: ExamenResume }) {
  * RBAC, voir src/security/permissions.ts).
  */
 export async function DashboardLaboratoire() {
-  const examens = await getExamensPourLaboratoire();
+  const [profil, examens, qrCode] = await Promise.all([
+    getMonProfil(),
+    getExamensPourLaboratoire(),
+    getMonQrCode(),
+  ]);
   const enAttente = examens.filter((examen) => STATUTS_EN_ATTENTE.has(examen.statut));
   const apercu = enAttente.slice(0, NOMBRE_MAX_APERCU);
 
@@ -44,10 +56,10 @@ export async function DashboardLaboratoire() {
     <div className="mx-auto flex w-full max-w-[1100px] flex-col gap-8 px-4 py-8 sm:px-6 lg:px-8">
       <header className="flex flex-col gap-4 rounded-carte border border-bordure bg-surface px-6 py-6 shadow-[var(--ombre-carte)] sm:flex-row sm:items-start sm:justify-between sm:px-8">
         <div className="flex flex-col gap-2">
-          <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-accent">
-            Espace Laboratoire
-          </p>
-          <h1 className="text-[28px] font-black text-encre">Tableau de bord laboratoire</h1>
+          <h1 className="text-[28px] font-black text-encre">
+            {salutation()}
+            {profil ? `, ${profil.prenom}` : ""}
+          </h1>
           <p className="max-w-2xl text-[15px] text-encre-secondaire">
             Retrouvez ici les examens assignés à votre établissement, en
             attente de résultat.
@@ -99,6 +111,28 @@ export async function DashboardLaboratoire() {
           </Link>
         </Card>
       </section>
+
+      {qrCode ? (
+        <section aria-labelledby="titre-qr" className="flex flex-col gap-4">
+          <h2 id="titre-qr" className="text-[20px] font-bold text-encre">
+            Mon compte
+          </h2>
+          <div className="max-w-xs">
+            <Card title="Mon QR code" description="À présenter pour vérification (badge professionnel).">
+              <div className="flex flex-col items-center gap-3">
+                {/* eslint-disable-next-line @next/next/no-img-element -- data URL genere localement, pas une image distante */}
+                <img
+                  src={qrCode.dataUrl}
+                  alt="QR code de vérification de mon compte"
+                  width={140}
+                  height={140}
+                  className="rounded-champ border border-bordure"
+                />
+              </div>
+            </Card>
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }

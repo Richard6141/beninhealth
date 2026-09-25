@@ -3,8 +3,16 @@ import {
   getRendezVousDeLEtablissementDuProfessionnel,
   type RendezVousResume,
 } from "@/modules/facility/actions";
+import { getMonProfil } from "@/modules/identity/actions";
+import { getMonQrCode } from "@/modules/verification/actions";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
+
+/** Salutation dependante de l'heure du serveur, meme logique que src/app/app/patient/page.tsx. */
+function salutation(): string {
+  const heure = new Date().getHours();
+  return heure >= 5 && heure < 18 ? "Bonjour" : "Bonsoir";
+}
 
 function estAujourdHui(dateIso: string): boolean {
   const date = new Date(dateIso);
@@ -134,7 +142,11 @@ function ListeProchainsRendezVous({ rendezVous }: { rendezVous: RendezVousResume
  * src/security/permissions.ts).
  */
 export async function DashboardInfirmier() {
-  const rendezVous = await getRendezVousDeLEtablissementDuProfessionnel();
+  const [profil, rendezVous, qrCode] = await Promise.all([
+    getMonProfil(),
+    getRendezVousDeLEtablissementDuProfessionnel(),
+    getMonQrCode(),
+  ]);
 
   const patientsDuJour = rendezVous.filter(
     (rdv) => rdv.statut === "confirme" && estAujourdHui(rdv.date)
@@ -152,10 +164,10 @@ export async function DashboardInfirmier() {
     <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-8 px-4 py-8 sm:px-6 lg:px-8">
       <header className="flex flex-col gap-4 rounded-carte border border-bordure bg-surface px-6 py-6 shadow-[var(--ombre-carte)] sm:flex-row sm:items-start sm:justify-between sm:px-8">
         <div className="flex flex-col gap-2">
-          <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-accent">
-            Espace Infirmier
-          </p>
-          <h1 className="text-[28px] font-black text-encre">Tableau de bord infirmier</h1>
+          <h1 className="text-[28px] font-black text-encre">
+            {salutation()}
+            {profil ? `, ${profil.prenom}` : ""}
+          </h1>
           <p className="max-w-2xl text-[15px] text-encre-secondaire">
             Retrouvez ici les patients à suivre aujourd&apos;hui et votre
             planning de soins.
@@ -180,7 +192,7 @@ export async function DashboardInfirmier() {
         <h2 id="titre-activite" className="text-[20px] font-bold text-encre">
           Mon activité
         </h2>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <Card
             title="Patients à suivre aujourd'hui"
             description="Rendez-vous confirmés pour aujourd'hui."
@@ -201,6 +213,20 @@ export async function DashboardInfirmier() {
               </Link>
             </div>
           </Card>
+          {qrCode ? (
+            <Card title="Mon QR code" description="À présenter pour vérification (badge professionnel).">
+              <div className="flex flex-col items-center gap-3">
+                {/* eslint-disable-next-line @next/next/no-img-element -- data URL genere localement, pas une image distante */}
+                <img
+                  src={qrCode.dataUrl}
+                  alt="QR code de vérification de mon compte"
+                  width={140}
+                  height={140}
+                  className="rounded-champ border border-bordure"
+                />
+              </div>
+            </Card>
+          ) : null}
         </div>
       </section>
     </div>
