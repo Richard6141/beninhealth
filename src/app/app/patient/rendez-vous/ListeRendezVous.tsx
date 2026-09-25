@@ -1,8 +1,8 @@
 "use client";
 
-import { useActionState, useEffect, useRef } from "react";
+import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Building2, CalendarX2, UserRound } from "lucide-react";
+import { Building2, CalendarX2, Search, UserRound, X } from "lucide-react";
 import {
   annulerRendezVousAction,
   type FacilityActionState,
@@ -13,8 +13,9 @@ import { Badge } from "@/components/ui/Badge";
 import type { BadgeTone } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { cn } from "@/lib/cn";
+import { IconButton } from "@/components/ui/IconButton";
 import { Modal, type ModalHandle } from "@/components/ui/Modal";
-import { Tabs } from "@/components/ui/Tabs";
 
 const etatInitial: FacilityActionState = { error: null, success: false };
 
@@ -145,29 +146,108 @@ function TableauRendezVous({ rendezVous }: { rendezVous: RendezVousResume[] }) {
   );
 }
 
+type FiltreStatut = "tous" | "a-venir" | "termines" | "annules";
+
+const OPTIONS_FILTRE_STATUT: { id: FiltreStatut; label: string }[] = [
+  { id: "tous", label: "Tous" },
+  { id: "a-venir", label: "À venir" },
+  { id: "termines", label: "Terminés" },
+  { id: "annules", label: "Annulés" },
+];
+
+function correspondAuFiltreStatut(rendezVous: RendezVousResume, filtre: FiltreStatut): boolean {
+  if (filtre === "tous") return true;
+  if (filtre === "a-venir") return STATUTS_A_VENIR.has(rendezVous.statut);
+  if (filtre === "termines") return rendezVous.statut === "termine";
+  return rendezVous.statut === "annule";
+}
+
 /**
- * Liste des rendez-vous du patient connecté, présentée en un tableau unique
- * avec des filtres (onglets "Tous" / "À venir" / "Terminés" / "Annulés")
- * plutôt que des sections fixes. L'annulation (via LigneRendezVous) suit le
- * même schéma que le retrait de consentement en Phase 3 : bouton,
- * confirmation par Modal, puis soumission du formulaire.
+ * Liste des rendez-vous du patient connecté : un bouton segmenté (statut) et
+ * un champ de recherche (établissement, professionnel, motif) filtrent la
+ * même liste en direct, plutôt que des onglets qui recalculaient et
+ * démontaient un tableau séparé par statut. L'annulation (via
+ * LigneRendezVous) suit le même schéma que le retrait de consentement en
+ * Phase 3 : bouton, confirmation par Modal, puis soumission du formulaire.
  */
 export function ListeRendezVous({ rendezVous }: ListeRendezVousProps) {
-  const aVenir = rendezVous.filter((rdv) => STATUTS_A_VENIR.has(rdv.statut));
-  const termines = rendezVous.filter((rdv) => rdv.statut === "termine");
-  const annules = rendezVous.filter((rdv) => rdv.statut === "annule");
+  const [filtreStatut, setFiltreStatut] = useState<FiltreStatut>("tous");
+  const [recherche, setRecherche] = useState("");
+
+  const compteurs = useMemo(
+    () => ({
+      tous: rendezVous.length,
+      "a-venir": rendezVous.filter((rdv) => STATUTS_A_VENIR.has(rdv.statut)).length,
+      termines: rendezVous.filter((rdv) => rdv.statut === "termine").length,
+      annules: rendezVous.filter((rdv) => rdv.statut === "annule").length,
+    }),
+    [rendezVous]
+  );
+
+  const rendezVousFiltres = useMemo(() => {
+    const terme = recherche.trim().toLowerCase();
+
+    return rendezVous.filter((rdv) => {
+      if (!correspondAuFiltreStatut(rdv, filtreStatut)) return false;
+      if (!terme) return true;
+
+      return (
+        rdv.etablissementNom.toLowerCase().includes(terme) ||
+        (rdv.professionnelNomComplet?.toLowerCase().includes(terme) ?? false) ||
+        rdv.motif.toLowerCase().includes(terme)
+      );
+    });
+  }, [rendezVous, filtreStatut, recherche]);
 
   return (
-    <Tabs
-      label="Filtrer mes rendez-vous"
-      defaultActiveId="tous"
-      items={[
-        { id: "tous", label: `Tous · ${rendezVous.length}`, content: <TableauRendezVous rendezVous={rendezVous} /> },
-        { id: "a-venir", label: `À venir · ${aVenir.length}`, content: <TableauRendezVous rendezVous={aVenir} /> },
-        { id: "termines", label: `Terminés · ${termines.length}`, content: <TableauRendezVous rendezVous={termines} /> },
-        { id: "annules", label: `Annulés · ${annules.length}`, content: <TableauRendezVous rendezVous={annules} /> },
-      ]}
-    />
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div
+          role="radiogroup"
+          aria-label="Filtrer par statut"
+          className="inline-flex w-fit items-center gap-1 rounded-champ bg-surface-appui p-1"
+        >
+          {OPTIONS_FILTRE_STATUT.map((option) => {
+            const actif = filtreStatut === option.id;
+            return (
+              <button
+                key={option.id}
+                type="button"
+                role="radio"
+                aria-checked={actif}
+                onClick={() => setFiltreStatut(option.id)}
+                className={cn(
+                  "rounded-[calc(var(--radius-champ)-4px)] px-3 py-1.5 text-[13px] font-semibold transition-colors motion-reduce:transition-none",
+                  actif
+                    ? "bg-surface text-accent shadow-[var(--ombre-carte)]"
+                    : "text-encre-attenuee hover:text-encre"
+                )}
+              >
+                {option.label} · {compteurs[option.id]}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="relative w-full sm:w-72">
+          <Search
+            size={16}
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-encre-attenuee"
+            aria-hidden="true"
+          />
+          <input
+            type="search"
+            value={recherche}
+            onChange={(evenement) => setRecherche(evenement.target.value)}
+            placeholder="Rechercher un établissement, un motif..."
+            aria-label="Rechercher parmi mes rendez-vous"
+            className="h-10 w-full rounded-champ border border-bordure-forte bg-surface pl-9 pr-3 text-[14px] text-encre placeholder:text-encre-attenuee transition-colors motion-reduce:transition-none focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+          />
+        </div>
+      </div>
+
+      <TableauRendezVous rendezVous={rendezVousFiltres} />
+    </div>
   );
 }
 
@@ -221,15 +301,13 @@ function LigneRendezVous({ rendezVous }: { rendezVous: RendezVousResume }) {
       <td className={`${styleCellule} text-right`}>
         {peutAnnuler ? (
           <>
-            <Button
-              type="button"
-              variant="danger"
-              size="sm"
-              className="w-fit"
+            <IconButton
+              icon={X}
+              label="Annuler ce rendez-vous"
+              danger
+              className="ml-auto"
               onClick={() => modalRef.current?.showModal()}
-            >
-              Annuler
-            </Button>
+            />
             <Modal
               ref={modalRef}
               title="Annuler ce rendez-vous ?"
