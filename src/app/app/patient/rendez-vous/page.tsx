@@ -7,7 +7,7 @@ import {
 } from "@/modules/facility/actions";
 import { Alert } from "@/components/ui/Alert";
 import { ListeRendezVous } from "./ListeRendezVous";
-import { FormulaireNouveauRendezVous } from "./FormulaireNouveauRendezVous";
+import { BoutonNouveauRendezVous } from "./FormulaireNouveauRendezVous";
 
 /** Formate une date en chaîne "AAAA-MM-JJTHH:mm", au format attendu par un
  * champ datetime-local, à partir des composantes locales de la requête
@@ -18,13 +18,16 @@ function formaterDateTimeLocal(date: Date): string {
 }
 
 /**
- * Écran de gestion des rendez-vous (Phase 4) : liste des rendez-vous du
- * patient connecté (getMesRendezVous), groupée visuellement entre "à venir"
- * (statuts demande/confirme) et "passés et annulés" (statuts termine/annule),
- * et formulaire de prise de rendez-vous (listEtablissements +
- * listProfessionnelsParEtablissement + creerRendezVousAction). L'annulation
- * (annulerRendezVousAction) est gérée dans ListeRendezVous, avec confirmation
- * via Modal avant soumission, comme le retrait de consentement en Phase 3.
+ * Écran de gestion des rendez-vous (Phase 4, refonte tableau) : liste des
+ * rendez-vous du patient connecté (getMesRendezVous), présentée en tableau,
+ * groupée entre "à venir" (statuts demande/confirme) et "passés et annulés"
+ * (statuts termine/annule). La prise de rendez-vous (listEtablissements +
+ * listProfessionnelsParEtablissement + creerRendezVousAction) se fait dans
+ * une Modal ouverte depuis le bouton "Prendre un rendez-vous"
+ * (BoutonNouveauRendezVous), plutôt qu'un formulaire affiché en permanence.
+ * L'annulation (annulerRendezVousAction) reste gérée dans ListeRendezVous,
+ * avec confirmation via Modal avant soumission, comme le retrait de
+ * consentement en Phase 3.
  *
  * Les professionnels de tous les établissements sont récupérés en une seule
  * fois côté serveur puis transmis au formulaire client, qui filtre en
@@ -64,35 +67,29 @@ export default async function RendezVousPage() {
         </p>
       </header>
 
-      <div className="grid gap-8 lg:grid-cols-3">
-        <section
-          aria-labelledby="titre-mes-rendez-vous"
-          className="flex flex-col gap-4 lg:col-span-2"
-        >
+      <section aria-labelledby="titre-mes-rendez-vous" className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 id="titre-mes-rendez-vous" className="text-[20px] font-bold text-encre">
             Mes rendez-vous
           </h2>
-          <ListeRendezVous rendezVous={rendezVous} />
-        </section>
-
-        <section aria-labelledby="titre-nouveau-rdv" className="flex flex-col gap-4">
-          <h2 id="titre-nouveau-rdv" className="text-[20px] font-bold text-encre">
-            Prendre un nouveau rendez-vous
-          </h2>
           {etablissements.length > 0 ? (
-            <FormulaireNouveauRendezVous
+            <BoutonNouveauRendezVous
               etablissements={etablissements}
               professionnels={professionnels}
               dateMinimum={dateMinimum}
             />
-          ) : (
-            <Alert level="info" title="Aucun établissement disponible">
-              Aucun établissement de santé n&apos;est disponible pour le
-              moment.
-            </Alert>
-          )}
-        </section>
-      </div>
+          ) : null}
+        </div>
+
+        {etablissements.length === 0 ? (
+          <Alert level="info" title="Aucun établissement disponible">
+            Aucun établissement de santé n&apos;est disponible pour le moment,
+            vous ne pouvez donc pas prendre de nouveau rendez-vous.
+          </Alert>
+        ) : null}
+
+        <ListeRendezVous rendezVous={rendezVous} />
+      </section>
     </div>
   );
 }

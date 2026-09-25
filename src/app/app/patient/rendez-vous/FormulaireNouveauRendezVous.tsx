@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Plus } from "lucide-react";
 import {
   creerRendezVousAction,
   type EtablissementOption,
@@ -10,7 +11,7 @@ import {
 } from "@/modules/facility/actions";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
+import { Modal, type ModalHandle } from "@/components/ui/Modal";
 import { SelectField } from "@/components/ui/SelectField";
 import { TextField } from "@/components/ui/TextField";
 
@@ -29,42 +30,43 @@ export interface FormulaireNouveauRendezVousProps {
 }
 
 /**
- * Formulaire de prise de rendez-vous (Phase 4) : établissement (SelectField),
- * professionnel optionnel filtré dynamiquement selon l'établissement choisi
- * (côté client, à partir de la liste complète reçue en prop), date/heure
- * (minimum : maintenant) et motif. Soumis via creerRendezVousAction, même
- * schéma useActionState que le formulaire de consentement en Phase 3.
+ * Contenu du formulaire, isolé à part (remonté via la prop "key" du parent à
+ * chaque fermeture de la modale) pour repartir d'un useActionState neuf à
+ * chaque ouverture, même pattern que
+ * src/app/app/medecin/laboratoire/FormulaireResultat.tsx.
  */
-export function FormulaireNouveauRendezVous({
+function ContenuFormulaire({
   etablissements,
   professionnels,
   dateMinimum,
-}: FormulaireNouveauRendezVousProps) {
+  onFermer,
+}: FormulaireNouveauRendezVousProps & { onFermer: () => void }) {
   const [state, formAction, pending] = useActionState(
     creerRendezVousAction,
     etatInitial
   );
   const [etablissementId, setEtablissementId] = useState("");
-  const formRef = useRef<HTMLFormElement>(null);
   const router = useRouter();
-
-  // Réinitialise la sélection d'établissement après un envoi réussi, en
-  // comparant l'état courant au précédent pendant le rendu (ajustement d'état
-  // pendant le rendu, plutôt qu'un appel setState dans un effet).
-  const [etatPrecedent, setEtatPrecedent] = useState(state);
-  if (state !== etatPrecedent) {
-    setEtatPrecedent(state);
-    if (state.success) {
-      setEtablissementId("");
-    }
-  }
 
   useEffect(() => {
     if (state.success) {
-      formRef.current?.reset();
       router.refresh();
     }
   }, [state.success, router]);
+
+  if (state.success) {
+    return (
+      <div className="flex flex-col gap-4">
+        <Alert level="success" title="Demande envoyée">
+          Votre demande de rendez-vous a été envoyée. Elle apparaît dans la
+          liste de vos rendez-vous à venir.
+        </Alert>
+        <Button type="button" variant="secondary" className="w-fit" onClick={onFermer}>
+          Fermer
+        </Button>
+      </div>
+    );
+  }
 
   const optionsEtablissements = etablissements.map((etablissement) => ({
     value: etablissement.id,
@@ -80,67 +82,87 @@ export function FormulaireNouveauRendezVous({
   }));
 
   return (
-    <Card description="Choisissez un établissement de santé et, si vous le souhaitez, un professionnel en particulier.">
-      <form
-        ref={formRef}
-        action={formAction}
-        aria-busy={pending}
-        className="flex flex-col gap-4"
+    <form action={formAction} aria-busy={pending} className="flex flex-col gap-4">
+      {state.error ? (
+        <Alert level="critical" title="Demande impossible">
+          {state.error}
+        </Alert>
+      ) : null}
+
+      <SelectField
+        label="Établissement de santé"
+        name="etablissementId"
+        required
+        options={optionsEtablissements}
+        placeholder="Choisir un établissement"
+        onChange={(evenement) => setEtablissementId(evenement.target.value)}
+      />
+
+      <SelectField
+        key={etablissementId}
+        label="Professionnel de santé"
+        name="professionnelId"
+        options={optionsProfessionnels}
+        placeholder={
+          etablissementId === ""
+            ? "Choisissez d'abord un établissement"
+            : professionnelsFiltres.length > 0
+              ? "Peu importe (facultatif)"
+              : "Aucun professionnel disponible dans cet établissement"
+        }
+      />
+
+      <TextField
+        label="Date et heure souhaitées"
+        name="date"
+        type="datetime-local"
+        required
+        min={dateMinimum}
+      />
+
+      <TextField
+        label="Motif de la consultation"
+        name="motif"
+        required
+        placeholder="Ex. : douleur abdominale, suivi de grossesse, vaccination..."
+      />
+
+      <Button type="submit" variant="primary" className="w-fit" disabled={pending}>
+        {pending ? "Envoi en cours..." : "Prendre rendez-vous"}
+      </Button>
+    </form>
+  );
+}
+
+/**
+ * Bouton "Prendre un rendez-vous" + modale de prise de rendez-vous
+ * (creerRendezVousAction, module facility). À la fermeture de la modale
+ * (bouton "Fermer", Échap ou clic sur le fond), la clé du contenu change pour
+ * repartir d'un formulaire vierge à la prochaine ouverture.
+ */
+export function BoutonNouveauRendezVous(props: FormulaireNouveauRendezVousProps) {
+  const modalRef = useRef<ModalHandle>(null);
+  const [cle, setCle] = useState(0);
+
+  return (
+    <>
+      <Button
+        type="button"
+        variant="primary"
+        iconBefore={Plus}
+        onClick={() => modalRef.current?.showModal()}
       >
-        {state.error ? (
-          <Alert level="critical" title="Demande impossible">
-            {state.error}
-          </Alert>
-        ) : null}
-        {state.success ? (
-          <Alert level="success" title="Demande envoyée">
-            Votre demande de rendez-vous a été envoyée. Elle apparaît dans la
-            liste de vos rendez-vous à venir.
-          </Alert>
-        ) : null}
-
-        <SelectField
-          label="Établissement de santé"
-          name="etablissementId"
-          required
-          options={optionsEtablissements}
-          placeholder="Choisir un établissement"
-          onChange={(evenement) => setEtablissementId(evenement.target.value)}
-        />
-
-        <SelectField
-          key={etablissementId}
-          label="Professionnel de santé"
-          name="professionnelId"
-          options={optionsProfessionnels}
-          placeholder={
-            etablissementId === ""
-              ? "Choisissez d'abord un établissement"
-              : professionnelsFiltres.length > 0
-                ? "Peu importe (facultatif)"
-                : "Aucun professionnel disponible dans cet établissement"
-          }
-        />
-
-        <TextField
-          label="Date et heure souhaitées"
-          name="date"
-          type="datetime-local"
-          required
-          min={dateMinimum}
-        />
-
-        <TextField
-          label="Motif de la consultation"
-          name="motif"
-          required
-          placeholder="Ex. : douleur abdominale, suivi de grossesse, vaccination..."
-        />
-
-        <Button type="submit" variant="primary" className="w-fit" disabled={pending}>
-          {pending ? "Envoi en cours..." : "Prendre rendez-vous"}
-        </Button>
-      </form>
-    </Card>
+        Prendre un rendez-vous
+      </Button>
+      <Modal
+        ref={modalRef}
+        width="wide"
+        title="Prendre un nouveau rendez-vous"
+        description="Choisissez un établissement de santé et, si vous le souhaitez, un professionnel en particulier."
+        onClose={() => setCle((valeur) => valeur + 1)}
+      >
+        <ContenuFormulaire key={cle} {...props} onFermer={() => modalRef.current?.close()} />
+      </Modal>
+    </>
   );
 }
