@@ -300,16 +300,13 @@ export default async function PatientPage() {
     <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 px-4 py-8 sm:px-6 lg:px-8">
       <header className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-col gap-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-accent">
-              Espace patient
-            </p>
-            {dossier ? (
+          {dossier ? (
+            <div className="flex flex-wrap items-center gap-2">
               <span className="chiffres rounded-full border border-bordure-forte bg-surface-appui px-2.5 py-0.5 text-[12px] font-semibold text-encre-secondaire">
                 {dossier.identifiantSante}
               </span>
-            ) : null}
-          </div>
+            </div>
+          ) : null}
           <h1 className="text-[28px] font-black text-encre">
             {salutation()}
             {profil ? `, ${profil.prenom}` : ""}
