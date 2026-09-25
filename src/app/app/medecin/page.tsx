@@ -240,9 +240,13 @@ export default async function EspaceProfessionnelPage() {
       <header className="flex flex-col gap-4 rounded-carte border border-bordure bg-surface px-6 py-6 shadow-[var(--ombre-carte)] sm:flex-row sm:items-start sm:justify-between sm:px-8">
         <div className="flex flex-col gap-2">
           <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-accent">
-            Espace professionnel
+            {rolePrincipal ? `Espace ${libellesRole[rolePrincipal]}` : "Espace professionnel"}
           </p>
-          <h1 className="text-[28px] font-black text-encre">Mon tableau de bord</h1>
+          <h1 className="text-[28px] font-black text-encre">
+            {rolePrincipal
+              ? `Tableau de bord ${libellesRole[rolePrincipal].toLowerCase()}`
+              : "Mon tableau de bord"}
+          </h1>
           <p className="max-w-2xl text-[15px] text-encre-secondaire">{message}</p>
         </div>
         {roles.length > 0 ? (

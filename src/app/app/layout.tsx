@@ -1,7 +1,9 @@
 import type { ReactNode } from "react";
 import {
+  Building2,
   CalendarClock,
   ClipboardList,
+  FlaskConical,
   FolderOpen,
   LayoutDashboard,
   Pill,
@@ -25,27 +27,15 @@ const libellesRole: Record<NomRole, string> = {
   admin_national: "Administrateur national",
 };
 
-/**
- * Roles rattaches au tableau de bord "/app/medecin" (voir le meme decoupage
- * dans src/app/app/medecin/page.tsx) : tout professionnel de sante, pas
- * seulement les medecins au sens strict.
- */
-const rolesProfessionnels: NomRole[] = [
-  "medecin",
-  "infirmier",
-  "agent_communautaire",
-  "pharmacien",
-  "laboratoire",
-  "admin_etablissement",
-];
-
 const tailleIconeNav = 18;
+
+const iconeTableauDeBord = <LayoutDashboard size={tailleIconeNav} aria-hidden="true" />;
 
 const navigationPatient: ElementNavigation[] = [
   {
     label: "Tableau de bord",
     href: "/app/patient",
-    icon: <LayoutDashboard size={tailleIconeNav} aria-hidden="true" />,
+    icon: iconeTableauDeBord,
   },
   {
     label: "Mes rendez-vous",
@@ -58,18 +48,58 @@ const navigationPatient: ElementNavigation[] = [
     icon: <FolderOpen size={tailleIconeNav} aria-hidden="true" />,
   },
   {
+    label: "Mes prescriptions",
+    href: "/app/patient/prescriptions",
+    icon: <Pill size={tailleIconeNav} aria-hidden="true" />,
+  },
+  {
+    label: "Mes examens",
+    href: "/app/patient/examens",
+    icon: <FlaskConical size={tailleIconeNav} aria-hidden="true" />,
+  },
+  {
     label: "Mes consentements",
     href: "/app/patient/consentements",
     icon: <ShieldCheck size={tailleIconeNav} aria-hidden="true" />,
   },
 ];
 
-const navigationProfessionnel: ElementNavigation[] = [
+/**
+ * Navigation par role professionnel (Phase 7-durcissement) : chaque role ne
+ * voit que les fonctionnalites que la matrice RBAC (src/security/permissions.ts)
+ * lui accorde reellement, jamais un menu generique partage. Le tableau de
+ * bord "/app/medecin" reste un ecran partage au niveau technique (contenu
+ * deja filtre par role, voir src/app/app/medecin/page.tsx), mais chaque role
+ * a son propre sous-ensemble de liens : jamais de lien vers une action que
+ * ce role n'a pas le droit d'effectuer.
+ */
+const navigationMedecin: ElementNavigation[] = [
+  { label: "Tableau de bord", href: "/app/medecin", icon: iconeTableauDeBord },
   {
-    label: "Tableau de bord",
-    href: "/app/medecin",
-    icon: <LayoutDashboard size={tailleIconeNav} aria-hidden="true" />,
+    label: "Rendez-vous",
+    href: "/app/medecin/rendez-vous",
+    icon: <CalendarClock size={tailleIconeNav} aria-hidden="true" />,
   },
+  {
+    label: "Consultations",
+    href: "/app/medecin/consultations",
+    icon: <ClipboardList size={tailleIconeNav} aria-hidden="true" />,
+  },
+  {
+    label: "Prescriptions",
+    href: "/app/medecin/prescriptions",
+    icon: <Pill size={tailleIconeNav} aria-hidden="true" />,
+  },
+  {
+    label: "Examens",
+    href: "/app/medecin/examens",
+    icon: <FlaskConical size={tailleIconeNav} aria-hidden="true" />,
+  },
+];
+
+/** Infirmier : lecture des consultations et rendez-vous, jamais de creation (voir permissions.ts). */
+const navigationInfirmier: ElementNavigation[] = [
+  { label: "Tableau de bord", href: "/app/medecin", icon: iconeTableauDeBord },
   {
     label: "Rendez-vous",
     href: "/app/medecin/rendez-vous",
@@ -82,22 +112,70 @@ const navigationProfessionnel: ElementNavigation[] = [
   },
 ];
 
+/** Agent communautaire : module suivi communautaire non encore construit, tableau de bord seul pour l'instant. */
+const navigationAgentCommunautaire: ElementNavigation[] = [
+  { label: "Tableau de bord", href: "/app/medecin", icon: iconeTableauDeBord },
+];
+
+/** Pharmacien : delivrance des prescriptions uniquement, jamais l'espace clinique (consultations/examens). */
+const navigationPharmacien: ElementNavigation[] = [
+  { label: "Tableau de bord", href: "/app/medecin", icon: iconeTableauDeBord },
+  {
+    label: "Prescriptions à délivrer",
+    href: "/app/medecin/pharmacie",
+    icon: <Pill size={tailleIconeNav} aria-hidden="true" />,
+  },
+];
+
+/** Laboratoire : file d'examens a traiter uniquement, jamais l'espace clinique medecin. */
+const navigationLaboratoire: ElementNavigation[] = [
+  { label: "Tableau de bord", href: "/app/medecin", icon: iconeTableauDeBord },
+  {
+    label: "Laboratoire",
+    href: "/app/medecin/laboratoire",
+    icon: <FlaskConical size={tailleIconeNav} aria-hidden="true" />,
+  },
+];
+
 /**
- * Phase 9 : lien pharmacie ajoute uniquement pour ce role, en plus de la
- * navigation professionnelle commune (pas en remplacement) : un pharmacien
- * reste un professionnel de sante comme un autre pour le reste de l'espace.
+ * Administrateur d'etablissement : SON PROPRE tableau de bord ("/app/etablissement",
+ * personnel + indicateurs locaux, voir Phase 6), jamais l'espace clinique
+ * "/app/medecin" partage par les professionnels de sante.
  */
-const elementPharmacie: ElementNavigation = {
-  label: "Prescriptions à délivrer",
-  href: "/app/medecin/pharmacie",
-  icon: <Pill size={tailleIconeNav} aria-hidden="true" />,
-};
+const navigationAdminEtablissement: ElementNavigation[] = [
+  { label: "Tableau de bord", href: "/app/etablissement", icon: iconeTableauDeBord },
+];
+
+/** Ministere : SON PROPRE tableau de bord ("/app/ministere", indicateurs nationaux agreges, voir Phase 6). */
+const navigationAdminNational: ElementNavigation[] = [
+  {
+    label: "Tableau de bord",
+    href: "/app/ministere",
+    icon: <Building2 size={tailleIconeNav} aria-hidden="true" />,
+  },
+];
 
 function getNavigationPourRole(role: NomRole | undefined): ElementNavigation[] {
-  if (role === "patient") return navigationPatient;
-  if (role === "pharmacien") return [...navigationProfessionnel, elementPharmacie];
-  if (role && rolesProfessionnels.includes(role)) return navigationProfessionnel;
-  return [];
+  switch (role) {
+    case "patient":
+      return navigationPatient;
+    case "medecin":
+      return navigationMedecin;
+    case "infirmier":
+      return navigationInfirmier;
+    case "agent_communautaire":
+      return navigationAgentCommunautaire;
+    case "pharmacien":
+      return navigationPharmacien;
+    case "laboratoire":
+      return navigationLaboratoire;
+    case "admin_etablissement":
+      return navigationAdminEtablissement;
+    case "admin_national":
+      return navigationAdminNational;
+    default:
+      return [];
+  }
 }
 
 /**
