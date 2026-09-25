@@ -48,9 +48,14 @@ export function Sidebar({ items }: SidebarProps) {
   const pathname = usePathname();
   const [ouvert, setOuvert] = useState(false);
 
-  useEffect(() => {
+  // Fermeture du tiroir a chaque changement de page : ajustement d'etat
+  // pendant le rendu (comparaison avec le pathname precedent), plutot qu'un
+  // appel setState dans un effet, meme pattern que FormulaireNouveauRendezVous.tsx.
+  const [pathnamePrecedent, setPathnamePrecedent] = useState(pathname);
+  if (pathname !== pathnamePrecedent) {
+    setPathnamePrecedent(pathname);
     setOuvert(false);
-  }, [pathname]);
+  }
 
   useEffect(() => {
     if (!ouvert) return;

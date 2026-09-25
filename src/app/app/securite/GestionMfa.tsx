@@ -35,16 +35,34 @@ export function GestionMfa({ actif }: { actif: boolean }) {
     { error: null, success: false }
   );
 
-  useEffect(() => {
+  // Reinitialisation apres succes : ajustement d'etat pendant le rendu
+  // (comparaison avec l'etat precedent), plutot qu'un appel setState dans un
+  // effet, meme pattern que FormulaireNouveauRendezVous.tsx. router.refresh()
+  // reste dans un effet, seul veritable effet de bord externe ici.
+  const [etatActivationPrecedent, setEtatActivationPrecedent] = useState(activationState);
+  if (activationState !== etatActivationPrecedent) {
+    setEtatActivationPrecedent(activationState);
     if (activationState.success) {
       setEnrolement(null);
+    }
+  }
+
+  const [etatDesactivationPrecedent, setEtatDesactivationPrecedent] = useState(desactivationState);
+  if (desactivationState !== etatDesactivationPrecedent) {
+    setEtatDesactivationPrecedent(desactivationState);
+    if (desactivationState.success) {
+      setAfficherDesactivation(false);
+    }
+  }
+
+  useEffect(() => {
+    if (activationState.success) {
       router.refresh();
     }
   }, [activationState.success, router]);
 
   useEffect(() => {
     if (desactivationState.success) {
-      setAfficherDesactivation(false);
       router.refresh();
     }
   }, [desactivationState.success, router]);
