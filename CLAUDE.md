@@ -31,7 +31,7 @@ Reprend la Partie 9 §5 et la Partie 11 §7 du cahier des charges. Version déta
 - Phase 3 (fait) : dossier patient (profil, antécédents, consentement).
 - Phase 4 (fait) : espace professionnel, prise de rendez-vous et consultation médicale.
 - Phase 5 (fait) : prescription électronique.
-- Phase 6 (à venir) : tableau de bord (établissement puis ministère, données agrégées uniquement, jamais de données nominatives).
+- Phase 6 (fait) : hiérarchie de provisionnement (ministère crée un établissement et son admin, qui crée son personnel) et tableaux de bord établissement/ministère (données agrégées uniquement, jamais de données nominatives).
 - Phase 7 (à venir) : sécurité, tests, durcissement, jeu de données de démonstration à contexte béninois, répétition du scénario de démo (citoyen crée son espace, prend rendez-vous, médecin consulte et prescrit, ministère voit les données agrégées).
 
 Détail cochable phase par phase : voir `docs/roadmap.md`.

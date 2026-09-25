@@ -46,12 +46,13 @@ Version détaillée et cochable de la roadmap par phases du Bénin Health Intell
 - [x] Historique des prescriptions côté patient (traitements actifs, historique complet) et côté professionnel
 - [x] Préparation de l'interopérabilité HL7 FHIR (documentation de projection vers `MedicationRequest`, pas d'exposition FHIR réelle)
 
-## Phase 6 : tableau de bord
+## Phase 6 : hiérarchie de provisionnement et tableau de bord
 
-- [ ] Tableau de bord établissement (indicateurs locaux)
-- [ ] Tableau de bord ministère (données agrégées uniquement, jamais de données nominatives)
-- [ ] Cartographie sanitaire (PostGIS)
-- [ ] Export et visualisation des indicateurs
+- [x] Hiérarchie de provisionnement : le ministère crée un établissement et son compte administrateur, qui crée ensuite son personnel (mot de passe temporaire, aucune auto-inscription hors patient)
+- [x] Tableau de bord établissement (indicateurs locaux)
+- [x] Tableau de bord ministère (données agrégées uniquement, jamais de données nominatives)
+- [ ] Cartographie sanitaire (PostGIS) : reporté à la migration PostgreSQL
+- [x] Export et visualisation des indicateurs (CSV, graphique en barres accessible)
 
 ## Phase 7 : sécurité, tests et démonstration
 
