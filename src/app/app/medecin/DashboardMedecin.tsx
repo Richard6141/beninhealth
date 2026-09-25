@@ -1,9 +1,15 @@
 import Link from "next/link";
 import { FlaskConical, Pill, Stethoscope } from "lucide-react";
-import { getSession } from "@/lib/session";
+import { getMonProfil } from "@/modules/identity/actions";
 import { getRendezVousDuProfessionnel, type RendezVousResume } from "@/modules/facility/actions";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
+
+/** Salutation dependante de l'heure du serveur, meme logique que src/app/app/patient/page.tsx. */
+function salutation(): string {
+  const heure = new Date().getHours();
+  return heure >= 5 && heure < 18 ? "Bonjour" : "Bonsoir";
+}
 
 function estAujourdHui(dateIso: string): boolean {
   const date = new Date(dateIso);
@@ -143,8 +149,10 @@ function ActionRapide({
  * de création).
  */
 export async function DashboardMedecin() {
-  const session = await getSession();
-  const rendezVous = await getRendezVousDuProfessionnel();
+  const [profil, rendezVous] = await Promise.all([
+    getMonProfil(),
+    getRendezVousDuProfessionnel(),
+  ]);
 
   const patientsDuJour = rendezVous.filter(
     (rdv) => rdv.statut === "confirme" && estAujourdHui(rdv.date)
@@ -165,13 +173,16 @@ export async function DashboardMedecin() {
           <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-accent">
             Espace Médecin
           </p>
-          <h1 className="text-[28px] font-black text-encre">Tableau de bord médecin</h1>
+          <h1 className="text-[28px] font-black text-encre">
+            {salutation()}
+            {profil ? `, ${profil.prenom}` : ""}
+          </h1>
           <p className="max-w-2xl text-[15px] text-encre-secondaire">
             Retrouvez ici vos patients du jour, vos rendez-vous de consultation
             et vos raccourcis cliniques.
           </p>
         </div>
-        {session ? (
+        {profil ? (
           <div className="flex flex-wrap gap-2">
             <Badge tone="accent">Médecin</Badge>
           </div>
