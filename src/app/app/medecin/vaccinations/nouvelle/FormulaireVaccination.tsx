@@ -53,6 +53,14 @@ function dateDuJourISO(): string {
  * de confirmation n'est pas cochee : une seule soumission reelle au serveur
  * est necessaire. Le controle serveur (enregistrerVaccinationAction) reste
  * la seule autorite reelle et revalide tout independamment.
+ *
+ * Meme mecanisme d'avertissement pour l'age/intervalle minimum du calendrier
+ * PEV (controlerAgeVaccination, referentiel.ts), a une difference pres : la
+ * date de naissance du patient n'est connue que du serveur, donc pas de
+ * pre-detection cote client possible ici (contrairement au doublon).
+ * L'avertissement n'apparait qu'apres un premier envoi refuse par le serveur
+ * (state.avertissementAge), avec la meme case de confirmation a cocher avant
+ * de pouvoir renvoyer.
  */
 export function FormulaireVaccination({ patients, patientIdPreselectionne }: FormulaireVaccinationProps) {
   const [state, formAction, pending] = useActionState(enregistrerVaccinationAction, etatInitial);
@@ -70,6 +78,13 @@ export function FormulaireVaccination({ patients, patientIdPreselectionne }: For
   // chaque changement (setState synchrone dans un effet, deconseille par
   // React - voir react-hooks/set-state-in-effect).
   const [confirmationDoublon, setConfirmationDoublon] = useState({ cle: "", confirme: false });
+  // Meme principe que confirmationDoublon, mais pour l'avertissement d'age
+  // (F-CLI-11) : contrairement au doublon, ce controle a besoin de la date de
+  // naissance du patient, connue seulement du serveur, donc pas de
+  // pre-detection cote client possible ici. L'avertissement n'apparait qu'apres
+  // un premier essai d'envoi refuse par enregistrerVaccinationAction
+  // (state.avertissementAge), avec la meme case de confirmation a cocher.
+  const [confirmationAge, setConfirmationAge] = useState({ cle: "", confirme: false });
   const [vaccinationsExistantes, setVaccinationsExistantes] = useState<VaccinationResume[]>([]);
   const [historique, setHistorique] = useState<VaccinationResume[] | null>(null);
 
@@ -82,6 +97,10 @@ export function FormulaireVaccination({ patients, patientIdPreselectionne }: For
   const numeroDoseNombre = Number(numeroDose);
   const cleDoublon = `${patientId}|${vaccinFinal}|${numeroDose}`;
   const confirmerDoublon = confirmationDoublon.cle === cleDoublon && confirmationDoublon.confirme;
+
+  const cleAge = `${patientId}|${vaccinFinal}|${numeroDose}|${dateAdministration}`;
+  const confirmerAge = confirmationAge.cle === cleAge && confirmationAge.confirme;
+  const avertissementAgeDetecte = state.avertissementAge === true;
 
   useEffect(() => {
     if (!patientId) {
@@ -147,7 +166,7 @@ export function FormulaireVaccination({ patients, patientIdPreselectionne }: For
         <input type="hidden" name="patientId" value={patientId} />
         <input type="hidden" name="vaccin" value={vaccinFinal} />
 
-        {state.error ? (
+        {state.error && !avertissementAgeDetecte ? (
           <Alert level="critical" title="Vaccination non enregistree">
             {state.error}
           </Alert>
@@ -258,11 +277,36 @@ export function FormulaireVaccination({ patients, patientIdPreselectionne }: For
           </div>
         ) : null}
 
+        {avertissementAgeDetecte ? (
+          <div className="flex flex-col gap-3">
+            <Alert level="warning" title="Ecart au calendrier vaccinal habituel">
+              {state.error}
+            </Alert>
+            <label className="flex items-center gap-2 text-[13px] font-semibold text-encre">
+              <input
+                type="checkbox"
+                name="confirmerAge"
+                checked={confirmerAge}
+                onChange={(event) =>
+                  setConfirmationAge({ cle: cleAge, confirme: event.target.checked })
+                }
+              />
+              Confirmer l&apos;enregistrement malgre cet ecart au calendrier
+            </label>
+          </div>
+        ) : null}
+
         <Button
           type="submit"
           variant="primary"
           className="w-fit"
-          disabled={pending || !patientId || !vaccinFinal || (doublonDetecte && !confirmerDoublon)}
+          disabled={
+            pending ||
+            !patientId ||
+            !vaccinFinal ||
+            (doublonDetecte && !confirmerDoublon) ||
+            (avertissementAgeDetecte && !confirmerAge)
+          }
         >
           {pending ? "Enregistrement en cours..." : "Enregistrer la vaccination"}
         </Button>

@@ -22,7 +22,12 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
-import { libelleVoie, LONGUEUR_MIN_MOTIF_RETRAIT, VOIES_ADMINISTRATION_VALEURS } from "./referentiel";
+import {
+  controlerAgeVaccination,
+  libelleVoie,
+  LONGUEUR_MIN_MOTIF_RETRAIT,
+  VOIES_ADMINISTRATION_VALEURS,
+} from "./referentiel";
 
 /** Etat renvoye par chaque Server Action de ce module, consomme via useActionState. */
 export interface VaccinationActionState {
@@ -33,6 +38,10 @@ export interface VaccinationActionState {
   // un blocage dur), le formulaire doit alors proposer la case de
   // confirmation avant de resoumettre.
   avertissementDoublon?: boolean;
+  // Meme principe qu'avertissementDoublon, pour un age ou un intervalle en
+  // dessous du minimum habituel du calendrier PEV (F-CLI-11, voir
+  // controlerAgeVaccination dans referentiel.ts).
+  avertissementAge?: boolean;
 }
 
 /** Resume d'une vaccination, pret a afficher dans l'historique du patient. */
@@ -69,6 +78,7 @@ const schemaEnregistrementVaccination = z.object({
   siteInjection: z.string().trim().min(1, "Le site d'injection est obligatoire."),
   voie: z.enum(VOIES_ADMINISTRATION_VALEURS, { message: "La voie d'administration est invalide." }),
   confirmerDoublon: z.coerce.boolean().optional().default(false),
+  confirmerAge: z.coerce.boolean().optional().default(false),
 });
 
 const schemaRetraitVaccination = z.object({
@@ -175,6 +185,7 @@ export async function enregistrerVaccinationAction(
     siteInjection: texte(formData, "siteInjection"),
     voie: texte(formData, "voie"),
     confirmerDoublon: texte(formData, "confirmerDoublon"),
+    confirmerAge: texte(formData, "confirmerAge"),
   });
 
   if (!validation.success) {
@@ -193,6 +204,7 @@ export async function enregistrerVaccinationAction(
     siteInjection,
     voie,
     confirmerDoublon,
+    confirmerAge,
   } = validation.data;
 
   const aujourdHuiISO = new Date().toISOString().slice(0, 10);
@@ -234,6 +246,30 @@ export async function enregistrerVaccinationAction(
         error: `La dose ${numeroDose} du vaccin ${vaccin} est deja enregistree pour ce patient. Cochez la confirmation ci-dessous pour l'enregistrer quand meme.`,
         success: false,
         avertissementDoublon: true,
+      };
+    }
+
+    const doseAnterieure =
+      numeroDose > 1
+        ? await prisma.vaccination.findFirst({
+            where: { patientId, vaccin, numeroDose: numeroDose - 1, saisieParErreur: false },
+            orderBy: { dateAdministration: "desc" },
+          })
+        : null;
+
+    const controleAge = controlerAgeVaccination({
+      vaccin,
+      numeroDose,
+      dateNaissance: patient.dateNaissance,
+      dateAdministration: new Date(dateAdministration),
+      dateDerniereDoseMemeVaccin: doseAnterieure?.dateAdministration ?? null,
+    });
+
+    if (!controleAge.conforme && !confirmerAge) {
+      return {
+        error: `${controleAge.message} Cochez la confirmation ci-dessous pour l'enregistrer quand meme.`,
+        success: false,
+        avertissementAge: true,
       };
     }
 
