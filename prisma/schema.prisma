@@ -26,6 +26,17 @@ model User {
   statut            String    @default("actif")
   dateCreation      DateTime  @default(now())
   derniereConnexion DateTime?
+  // Chemin public (/uploads/avatars/...) de la photo de profil televersee.
+  // Null tant que l'utilisateur n'a jamais televerse de photo : l'ecran
+  // affiche alors une image neutre par defaut, jamais des initiales.
+  avatarUrl         String?
+  // Secret TOTP (base32), present uniquement si la double authentification a
+  // ete activee. Jamais expose tel quel a l'ecran apres l'activation initiale.
+  mfaSecret         String?
+  // Vrai une fois la double authentification confirmee (code valide saisi a
+  // l'activation). mfaSecret peut exister sans mfaActif=true pendant la
+  // fenetre d'activation (avant confirmation du premier code).
+  mfaActif          Boolean   @default(false)
 
   roles         UserRole[]
   patient       Patient?

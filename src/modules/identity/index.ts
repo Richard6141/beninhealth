@@ -8,6 +8,7 @@ export {
   registerPatientAction,
   loginAction,
   logoutAction,
+  verifierMfaEtConnecterAction,
   type AuthActionState,
 } from "./actions";
 
@@ -26,3 +27,14 @@ export {
   type EtablissementDetail,
   type MembrePersonnel,
 } from "./gestion-comptes";
+
+// Phase 7 : double authentification (TOTP). Voir
+// src/modules/identity/mfa.ts pour l'implementation.
+export {
+  demarrerEnrolementMfa,
+  activerMfaAction,
+  desactiverMfaAction,
+  getStatutMfa,
+  type MfaActionState,
+  type EnrolementMfa,
+} from "./mfa";

@@ -67,3 +67,28 @@ Comme dans `actions.ts` : vérification du rôle de l'appelant dans la fonction
 elle-même (Zero Trust, jamais seulement côté écran), hash bcryptjs (12 rounds),
 et traçabilité systématique (JournalAudit) de toute création ou modification
 de compte.
+
+## Double authentification (Phase 7)
+
+Implémentation dans `src/modules/identity/mfa.ts` (TOTP, compatible Google
+Authenticator/Authy), activable volontairement par tout compte quel que soit
+son rôle.
+
+Flux d'activation : `demarrerEnrolementMfa` génère un secret et un QR code
+sans jamais les écrire en base ; `activerMfaAction` exige la saisie d'un code
+valide avant de sauvegarder le secret et de passer `mfaActif` à `true`. Sans
+cette confirmation, aucun secret n'est jamais persisté.
+
+Flux de connexion (`loginAction` dans `actions.ts`) : si le compte a la MFA
+active, le mot de passe correct ne crée pas de session directement. Un jeton
+de pré-authentification signé (JWT, 5 minutes, jamais posé en cookie) est
+renvoyé à l'écran, qui affiche une deuxième étape (code à 6 chiffres). Cette
+étape est validée par `verifierMfaEtConnecterAction`, qui vérifie le jeton
+puis le code avant de créer la session réelle.
+
+`desactiverMfaAction` exige le mot de passe actuel (pas un code TOTP) : une
+personne ayant perdu l'accès à son application d'authentification doit
+pouvoir se désactiver la MFA plutôt que rester bloquée hors de son compte.
+
+Écran : `src/app/app/securite/page.tsx` (distinct de `/app/profil`, tenu par
+un autre chantier).

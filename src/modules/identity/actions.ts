@@ -17,14 +17,46 @@ import bcrypt from "bcryptjs";
 import { Prisma } from "@prisma/client";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
+import { SignJWT, jwtVerify } from "jose";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { createSession, getSession, destroySession } from "@/lib/session";
+import { getEnv } from "@/lib/env";
+import { verifierCodeMfaPourConnexion } from "@/modules/identity/mfa";
 import type { NomRole } from "@/types";
 
-/** Etat renvoye par chaque Server Action de ce module, consomme via useActionState. */
+/**
+ * Etat renvoye par chaque Server Action de ce module, consomme via useActionState.
+ * mfaRequis/preAuthToken (Phase 7) : uniquement renvoyes par loginAction quand le
+ * compte a la double authentification active ; l'ecran doit alors afficher une
+ * deuxieme etape (code a 6 chiffres) et soumettre preAuthToken tel quel a
+ * verifierMfaEtConnecterAction, sans jamais le modifier ni le decoder cote client.
+ */
 export interface AuthActionState {
   error: string | null;
+  mfaRequis?: boolean;
+  preAuthToken?: string;
+}
+
+const DUREE_PRE_AUTH_MFA = "5m";
+const TYPE_JETON_PRE_AUTH_MFA = "mfa_pending";
+
+function cleSecretePreAuth(): Uint8Array {
+  return new TextEncoder().encode(getEnv().NEXTAUTH_SECRET);
+}
+
+/** Redirige vers l'espace correspondant aux roles fournis (meme logique pour loginAction et la validation MFA). */
+function redirigerSelonRoles(roles: NomRole[]): never {
+  if (roles.includes("patient")) {
+    redirect("/app/patient");
+  }
+  if (roles.includes("admin_national")) {
+    redirect("/app/ministere");
+  }
+  if (roles.includes("admin_etablissement")) {
+    redirect("/app/etablissement");
+  }
+  redirect("/app/medecin");
 }
 
 const ROUNDS_BCRYPT = 12;
@@ -211,6 +243,22 @@ export async function loginAction(
     roles = utilisateur.roles.map((role) => role.nom as NomRole);
     userId = utilisateur.id;
 
+    // Double authentification (Phase 7) : mot de passe correct mais MFA active
+    // sur ce compte, on ne cree pas encore de session. On emet un jeton de
+    // pre-authentification de courte duree (5 minutes, jamais pose en cookie,
+    // uniquement transmis dans un champ cache du formulaire de code) que
+    // verifierMfaEtConnecterAction devra presenter avec un code TOTP valide
+    // pour obtenir la session reelle.
+    if (utilisateur.mfaActif) {
+      const preAuthToken = await new SignJWT({ userId, type: TYPE_JETON_PRE_AUTH_MFA })
+        .setProtectedHeader({ alg: "HS256" })
+        .setIssuedAt()
+        .setExpirationTime(DUREE_PRE_AUTH_MFA)
+        .sign(cleSecretePreAuth());
+
+      return { error: null, mfaRequis: true, preAuthToken };
+    }
+
     const adresseTechnique = await adresseTechniqueCourante();
 
     await prisma.$transaction([
@@ -235,16 +283,86 @@ export async function loginAction(
     return { error: MESSAGE_ERREUR_GENERIQUE };
   }
 
-  if (roles.includes("patient")) {
-    redirect("/app/patient");
+  redirigerSelonRoles(roles);
+}
+
+/**
+ * Deuxieme etape de connexion pour un compte avec la double authentification
+ * active : verifie le jeton de pre-authentification emis par loginAction
+ * (signature, expiration, type) puis le code TOTP saisi, avant de creer la
+ * session reelle. Message d'erreur volontairement generique, comme loginAction.
+ */
+export async function verifierMfaEtConnecterAction(
+  prevState: AuthActionState,
+  formData: FormData
+): Promise<AuthActionState> {
+  const MESSAGE_ERREUR_GENERIQUE = "Code incorrect ou session expiree. Veuillez vous reconnecter.";
+
+  const preAuthToken = formData.get("preAuthToken");
+  const code = formData.get("code");
+
+  if (typeof preAuthToken !== "string" || typeof code !== "string") {
+    return { error: MESSAGE_ERREUR_GENERIQUE };
   }
-  if (roles.includes("admin_national")) {
-    redirect("/app/ministere");
+
+  let userId: string;
+
+  try {
+    const { payload } = await jwtVerify(preAuthToken, cleSecretePreAuth());
+
+    if (payload.type !== TYPE_JETON_PRE_AUTH_MFA || typeof payload.userId !== "string") {
+      return { error: MESSAGE_ERREUR_GENERIQUE };
+    }
+
+    userId = payload.userId;
+  } catch {
+    return { error: MESSAGE_ERREUR_GENERIQUE };
   }
-  if (roles.includes("admin_etablissement")) {
-    redirect("/app/etablissement");
+
+  const codeValide = await verifierCodeMfaPourConnexion(userId, code);
+
+  if (!codeValide) {
+    return { error: MESSAGE_ERREUR_GENERIQUE };
   }
-  redirect("/app/medecin");
+
+  let roles: NomRole[];
+
+  try {
+    const utilisateur = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { roles: true },
+    });
+
+    if (!utilisateur || utilisateur.statut !== "actif") {
+      return { error: MESSAGE_ERREUR_GENERIQUE };
+    }
+
+    roles = utilisateur.roles.map((role) => role.nom as NomRole);
+    const adresseTechnique = await adresseTechniqueCourante();
+
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: userId },
+        data: { derniereConnexion: new Date() },
+      }),
+      prisma.journalAudit.create({
+        data: {
+          utilisateurId: userId,
+          action: "connexion",
+          donneeConcernee: `utilisateur:${userId}`,
+          adresseTechnique,
+          justification: "Connexion reussie (double authentification validee)",
+        },
+      }),
+    ]);
+
+    await createSession({ userId, roles });
+  } catch (erreur) {
+    console.error("Erreur lors de la validation MFA :", erreur);
+    return { error: MESSAGE_ERREUR_GENERIQUE };
+  }
+
+  redirigerSelonRoles(roles);
 }
 
 /**

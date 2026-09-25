@@ -1,0 +1,126 @@
+import { describe, expect, it } from "vitest";
+import { can, type Role } from "@/security/permissions";
+
+/**
+ * Tests unitaires de la fonction pure `can` (RBAC). Aucun mock necessaire :
+ * la matrice de permissions est figee dans permissions.ts et `can` ne fait
+ * que la consulter.
+ *
+ * Pour chacun des 8 roles de la plateforme : au moins un cas ou `can` doit
+ * retourner true (permission reellement accordee dans la matrice) et au
+ * moins un cas ou elle doit retourner false (permission plausible mais non
+ * accordee a ce role). Le comportement fail-safe (role ou ressource inconnus)
+ * est teste separement.
+ */
+
+describe("can (permissions RBAC)", () => {
+  describe("role patient", () => {
+    it("autorise la lecture de son propre dossier", () => {
+      expect(can("patient", "read", "propre_dossier")).toBe(true);
+    });
+
+    it("refuse la suppression de son propre dossier (non accordee)", () => {
+      expect(can("patient", "delete", "propre_dossier")).toBe(false);
+    });
+  });
+
+  describe("role medecin", () => {
+    it("autorise la creation d'une prescription", () => {
+      expect(can("medecin", "create", "prescription")).toBe(true);
+    });
+
+    it("refuse la suppression d'une prescription (non accordee)", () => {
+      expect(can("medecin", "delete", "prescription")).toBe(false);
+    });
+  });
+
+  describe("role infirmier", () => {
+    it("autorise la mise a jour d'une consultation", () => {
+      expect(can("infirmier", "update", "consultation")).toBe(true);
+    });
+
+    it("refuse la creation d'une consultation (droit reserve au medecin)", () => {
+      expect(can("infirmier", "create", "consultation")).toBe(false);
+    });
+  });
+
+  describe("role agent_communautaire", () => {
+    it("autorise la creation d'un suivi communautaire", () => {
+      expect(can("agent_communautaire", "create", "suivi_communautaire")).toBe(true);
+    });
+
+    it("refuse la lecture du dossier d'un patient (pas d'acces au dossier clinique complet)", () => {
+      expect(can("agent_communautaire", "read", "patient")).toBe(false);
+    });
+  });
+
+  describe("role pharmacien", () => {
+    it("autorise la mise a jour du catalogue de medicaments", () => {
+      expect(can("pharmacien", "update", "medicament")).toBe(true);
+    });
+
+    it("refuse la suppression d'un medicament (non accordee)", () => {
+      expect(can("pharmacien", "delete", "medicament")).toBe(false);
+    });
+  });
+
+  describe("role laboratoire", () => {
+    it("autorise la mise a jour d'un examen medical (saisie de resultat)", () => {
+      expect(can("laboratoire", "update", "examen_medical")).toBe(true);
+    });
+
+    it("refuse la creation d'un examen medical (non accordee)", () => {
+      expect(can("laboratoire", "create", "examen_medical")).toBe(false);
+    });
+  });
+
+  describe("role admin_etablissement", () => {
+    it("autorise la suppression d'un etablissement sanitaire", () => {
+      expect(can("admin_etablissement", "delete", "etablissement_sanitaire")).toBe(true);
+    });
+
+    it("refuse la lecture des analytics (reservee a admin_national)", () => {
+      expect(can("admin_etablissement", "read", "analytics")).toBe(false);
+    });
+  });
+
+  describe("role admin_national", () => {
+    it("autorise la lecture des analytics (donnees agregees)", () => {
+      expect(can("admin_national", "read", "analytics")).toBe(true);
+    });
+
+    it("refuse la creation d'analytics (lecture seule pour ce role)", () => {
+      expect(can("admin_national", "create", "analytics")).toBe(false);
+    });
+  });
+
+  describe("comportement fail-safe", () => {
+    it("retourne false sans lever d'exception pour un role qui n'existe pas dans la matrice", () => {
+      const roleInvalide = "role_inexistant" as Role;
+
+      expect(() => can(roleInvalide, "read", "propre_dossier")).not.toThrow();
+      expect(can(roleInvalide, "read", "propre_dossier")).toBe(false);
+    });
+
+    it("retourne false pour une ressource inventee, meme pour un role par ailleurs valide", () => {
+      expect(can("patient", "read", "ressource_qui_n_existe_pas")).toBe(false);
+    });
+
+    it("retourne false pour une action valide sur une ressource inventee, pour chaque role", () => {
+      const roles: Role[] = [
+        "patient",
+        "medecin",
+        "infirmier",
+        "agent_communautaire",
+        "pharmacien",
+        "laboratoire",
+        "admin_etablissement",
+        "admin_national",
+      ];
+
+      for (const role of roles) {
+        expect(can(role, "read", "ressource_qui_n_existe_pas")).toBe(false);
+      }
+    });
+  });
+});
