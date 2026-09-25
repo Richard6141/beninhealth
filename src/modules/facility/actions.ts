@@ -52,6 +52,7 @@ export interface RendezVousResume {
   professionnelSpecialite: string | null;
   professionnelAvatarUrl: string | null;
   patientNomComplet: string | null; // rempli seulement pour les fonctions cote professionnel, null cote patient
+  patientAvatarUrl: string | null; // idem
   patientId: string;
 }
 
@@ -193,6 +194,7 @@ export async function getMesRendezVous(): Promise<RendezVousResume[]> {
     professionnelSpecialite: rdv.professionnel?.specialite ?? null,
     professionnelAvatarUrl: rdv.professionnel?.user.avatarUrl ?? null,
     patientNomComplet: null,
+    patientAvatarUrl: null,
     patientId: rdv.patientId,
   }));
 }
@@ -393,6 +395,53 @@ export async function getRendezVousDuProfessionnel(): Promise<RendezVousResume[]
     professionnelSpecialite: professionnel.specialite,
     professionnelAvatarUrl: professionnel.user.avatarUrl,
     patientNomComplet: nomComplet(rdv.patient.user),
+    patientAvatarUrl: rdv.patient.user.avatarUrl,
+    patientId: rdv.patientId,
+  }));
+}
+
+/**
+ * Recupere les rendez-vous confirmes ou en attente de tout l'etablissement du
+ * professionnel connecte (derive de getSession() -> ProfessionnelSante lie),
+ * tries par date croissante. A la difference de getRendezVousDuProfessionnel
+ * (filtre sur professionnelId = moi), cette fonction repose sur
+ * l'etablissement : necessaire pour un role qui n'est jamais lui-meme titulaire
+ * d'un rendez-vous (RendezVous.professionnelId designe toujours le medecin
+ * choisi par le patient), comme l'infirmier (F-CLI-12 du pack : prise en
+ * charge infirmiere avant la consultation, peu importe quel medecin de
+ * l'etablissement recevra ensuite le patient).
+ */
+export async function getRendezVousDeLEtablissementDuProfessionnel(): Promise<RendezVousResume[]> {
+  const professionnel = await professionnelDeLaSessionCourante();
+
+  if (!professionnel) {
+    return [];
+  }
+
+  const rendezVous = await prisma.rendezVous.findMany({
+    where: {
+      etablissementId: professionnel.etablissementId,
+      statut: { in: ["demande", "confirme"] },
+    },
+    include: {
+      etablissement: true,
+      patient: { include: { user: true } },
+      professionnel: { include: { user: true } },
+    },
+    orderBy: { date: "asc" },
+  });
+
+  return rendezVous.map((rdv) => ({
+    id: rdv.id,
+    date: rdv.date.toISOString(),
+    motif: rdv.motif,
+    statut: rdv.statut,
+    etablissementNom: rdv.etablissement.nom,
+    professionnelNomComplet: rdv.professionnel ? nomCompletProfessionnel(rdv.professionnel.user) : null,
+    professionnelSpecialite: rdv.professionnel?.specialite ?? null,
+    professionnelAvatarUrl: rdv.professionnel?.user.avatarUrl ?? null,
+    patientNomComplet: nomComplet(rdv.patient.user),
+    patientAvatarUrl: rdv.patient.user.avatarUrl,
     patientId: rdv.patientId,
   }));
 }

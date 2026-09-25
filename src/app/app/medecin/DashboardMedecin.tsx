@@ -2,6 +2,7 @@ import Link from "next/link";
 import { FlaskConical, Pill, Stethoscope } from "lucide-react";
 import { getMonProfil } from "@/modules/identity/actions";
 import { getRendezVousDuProfessionnel, type RendezVousResume } from "@/modules/facility/actions";
+import { getMonQrCode } from "@/modules/verification/actions";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 
@@ -149,9 +150,10 @@ function ActionRapide({
  * de création).
  */
 export async function DashboardMedecin() {
-  const [profil, rendezVous] = await Promise.all([
+  const [profil, rendezVous, qrCode] = await Promise.all([
     getMonProfil(),
     getRendezVousDuProfessionnel(),
+    getMonQrCode(),
   ]);
 
   const patientsDuJour = rendezVous.filter(
@@ -170,9 +172,6 @@ export async function DashboardMedecin() {
     <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-8 px-4 py-8 sm:px-6 lg:px-8">
       <header className="flex flex-col gap-4 rounded-carte border border-bordure bg-surface px-6 py-6 shadow-[var(--ombre-carte)] sm:flex-row sm:items-start sm:justify-between sm:px-8">
         <div className="flex flex-col gap-2">
-          <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-accent">
-            Espace Médecin
-          </p>
           <h1 className="text-[28px] font-black text-encre">
             {salutation()}
             {profil ? `, ${profil.prenom}` : ""}
@@ -193,7 +192,7 @@ export async function DashboardMedecin() {
         <h2 id="titre-activite" className="text-[20px] font-bold text-encre">
           Mon activité
         </h2>
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <Card
             title="Patients du jour"
             description="Rendez-vous confirmés pour aujourd'hui."
@@ -235,6 +234,23 @@ export async function DashboardMedecin() {
               />
             </div>
           </Card>
+          {qrCode ? (
+            <Card
+              title="Mon QR code"
+              description="À présenter pour vérification (badge professionnel)."
+            >
+              <div className="flex flex-col items-center gap-3">
+                {/* eslint-disable-next-line @next/next/no-img-element -- data URL genere localement, pas une image distante */}
+                <img
+                  src={qrCode.dataUrl}
+                  alt="QR code de vérification de mon compte"
+                  width={140}
+                  height={140}
+                  className="rounded-champ border border-bordure"
+                />
+              </div>
+            </Card>
+          ) : null}
         </div>
       </section>
     </div>
