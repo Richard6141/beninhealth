@@ -35,7 +35,7 @@ Reprend la Partie 9 §5 et la Partie 11 §7 du cahier des charges. Version déta
 - Phase 7 (fait) : MFA (TOTP), tests automatisés (Vitest), script de démonstration bout en bout (`npm run demo:e2e`).
 - Phase 8 (à venir) : module laboratoire (examens médicaux).
 - Phase 9 (fait) : module pharmacie (délivrance des prescriptions).
-- Phase 10 (à venir) : PWA hors ligne, centre de notifications in-app.
+- Phase 10 (fait) : PWA hors ligne (manifeste, service worker) et centre de notifications in-app (`/app/notifications`).
 
 Détail cochable phase par phase : voir `docs/roadmap.md`.
 
