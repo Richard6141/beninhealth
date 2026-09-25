@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useActionState } from "react";
+import { useState, useActionState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   demarrerEnrolementMfa,
@@ -26,28 +26,28 @@ export function GestionMfa({ actif }: { actif: boolean }) {
   const [afficherDesactivation, setAfficherDesactivation] = useState(false);
 
   const [activationState, activationFormAction, activationPending] = useActionState(
-    async (prevState: { error: string | null; success: boolean }, formData: FormData) => {
-      const resultat = await activerMfaAction(prevState, formData);
-      if (resultat.success) {
-        setEnrolement(null);
-        router.refresh();
-      }
-      return resultat;
-    },
+    activerMfaAction,
     { error: null, success: false }
   );
 
   const [desactivationState, desactivationFormAction, desactivationPending] = useActionState(
-    async (prevState: { error: string | null; success: boolean }, formData: FormData) => {
-      const resultat = await desactiverMfaAction(prevState, formData);
-      if (resultat.success) {
-        setAfficherDesactivation(false);
-        router.refresh();
-      }
-      return resultat;
-    },
+    desactiverMfaAction,
     { error: null, success: false }
   );
+
+  useEffect(() => {
+    if (activationState.success) {
+      setEnrolement(null);
+      router.refresh();
+    }
+  }, [activationState.success, router]);
+
+  useEffect(() => {
+    if (desactivationState.success) {
+      setAfficherDesactivation(false);
+      router.refresh();
+    }
+  }, [desactivationState.success, router]);
 
   async function commencerActivation() {
     setChargementEnrolement(true);

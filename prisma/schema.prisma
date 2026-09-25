@@ -46,6 +46,7 @@ model User {
   // (typiquement un professionnel de sante), pas ses propres consentements.
   consentementsRecus Consentement[]
   evenementsPrescription EvenementPrescription[]
+  notifications Notification[]
 }
 
 // Attribution d'un role a un utilisateur (un utilisateur peut cumuler
@@ -292,4 +293,19 @@ model JournalAudit {
   date             DateTime @default(now())
   adresseTechnique String
   justification    String
+}
+
+// Notification interne (Phase 10). Correspond au perimetre "notifications
+// internes" documente dans src/modules/notification/README.md : uniquement
+// le canal in-app pour cette phase, pas de SMS ni d'email reel (aucune
+// passerelle disponible pour ce MVP).
+model Notification {
+  id            String   @id @default(cuid())
+  utilisateurId String
+  utilisateur   User     @relation(fields: [utilisateurId], references: [id], onDelete: Cascade)
+  type          String
+  message       String
+  lien          String?
+  lu            Boolean  @default(false)
+  date          DateTime @default(now())
 }

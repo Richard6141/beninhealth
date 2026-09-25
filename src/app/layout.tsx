@@ -1,6 +1,7 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Montserrat, Roboto } from "next/font/google";
 import "./globals.css";
+import { RegistreServiceWorker } from "./RegistreServiceWorker";
 
 const montserrat = Montserrat({
   weight: ["600", "700", "800"],
@@ -35,6 +36,11 @@ export const metadata: Metadata = {
   title: "Bénin Health Intelligence Platform - Ministère de la Santé",
   description:
     "Plateforme d'intelligence sanitaire du Bénin : suivi, analyse et pilotage des données de santé publique.",
+  manifest: "/manifest.webmanifest",
+};
+
+export const viewport: Viewport = {
+  themeColor: "#00aa55",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -44,6 +50,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${montserrat.variable} ${roboto.variable} h-full antialiased`}
     >
       <body className={`${roboto.className} min-h-full flex flex-col`}>
+        <RegistreServiceWorker />
         {children}
       </body>
     </html>

@@ -443,7 +443,10 @@ export async function saisirResultatExamenAction(
       return { error: "Aucun profil professionnel associe a ce compte.", success: false };
     }
 
-    const examen = await prisma.examenMedical.findUnique({ where: { id: examenId } });
+    const examen = await prisma.examenMedical.findUnique({
+      where: { id: examenId },
+      include: { patient: true, demandeur: true },
+    });
 
     if (!examen || examen.laboratoireId !== professionnel.etablissementId) {
       return { error: "Cet examen est introuvable.", success: false };
@@ -467,6 +470,26 @@ export async function saisirResultatExamenAction(
         },
       });
     });
+
+    // Notification interne (Phase 10) : hors transaction, une notification
+    // manquee ne doit jamais faire echouer la saisie du resultat elle-meme
+    // (deja actee en base a ce stade). Le patient ET le medecin demandeur
+    // sont prevenus.
+    const { creerNotification } = await import("@/modules/notification/actions");
+    await Promise.all([
+      creerNotification(
+        examen.patient.userId,
+        "resultat_examen_disponible",
+        `Le resultat de votre examen "${examen.typeExamen}" est disponible.`,
+        "/app/patient/examens"
+      ),
+      creerNotification(
+        examen.demandeur.userId,
+        "resultat_examen_disponible",
+        `Le resultat de l'examen "${examen.typeExamen}" que vous avez demande est disponible.`,
+        "/app/medecin/examens"
+      ),
+    ]);
 
     return { error: null, success: true };
   } catch (erreur) {

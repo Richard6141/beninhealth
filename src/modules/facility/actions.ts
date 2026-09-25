@@ -429,7 +429,10 @@ export async function confirmerRendezVousAction(
       return { error: "Aucun profil professionnel associe a ce compte.", success: false };
     }
 
-    const rendezVous = await prisma.rendezVous.findUnique({ where: { id: rendezVousId } });
+    const rendezVous = await prisma.rendezVous.findUnique({
+      where: { id: rendezVousId },
+      include: { patient: true },
+    });
 
     if (!rendezVous || rendezVous.professionnelId !== professionnel.id) {
       return { error: "Ce rendez-vous est introuvable.", success: false };
@@ -449,6 +452,23 @@ export async function confirmerRendezVousAction(
         },
       }),
     ]);
+
+    // Notification interne (Phase 10) : hors de la transaction ci-dessus,
+    // une notification manquee ne doit jamais faire echouer la confirmation
+    // du rendez-vous elle-meme (deja actee en base a ce stade).
+    const { creerNotification } = await import("@/modules/notification/actions");
+    const dateLisible = rendezVous.date.toLocaleDateString("fr-FR", {
+      day: "numeric",
+      month: "long",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    await creerNotification(
+      rendezVous.patient.userId,
+      "rendez_vous_confirme",
+      `Votre rendez-vous du ${dateLisible} a ete confirme.`,
+      "/app/patient/rendez-vous"
+    );
 
     return { error: null, success: true };
   } catch (erreur) {
