@@ -12,11 +12,13 @@ import {
   FlaskConical,
   Heart,
   Pill,
+  QrCode,
   ShieldCheck,
   TriangleAlert,
   UserRound,
 } from "lucide-react";
 import { getMonProfil } from "@/modules/identity/actions";
+import { getMonQrCode } from "@/modules/verification/actions";
 import {
   getMesConsentements,
   getMonDossierPatient,
@@ -271,13 +273,14 @@ function TitreSection({
 }
 
 export default async function PatientPage() {
-  const [profil, dossier, consentements, rendezVous, prescriptions, examens] = await Promise.all([
+  const [profil, dossier, consentements, rendezVous, prescriptions, examens, qrCode] = await Promise.all([
     getMonProfil(),
     getMonDossierPatient(),
     getMesConsentements(),
     getMesRendezVous(),
     getMesPrescriptions(),
     getMesExamens(),
+    getMonQrCode(),
   ]);
 
   const consentementsActifs = consentements.filter((c) => c.statut === "actif");
@@ -557,6 +560,32 @@ export default async function PatientPage() {
               <ChevronRight size={14} aria-hidden="true" />
             </Link>
           </Card>
+
+          {qrCode ? (
+            <Card
+              title={
+                <div className="flex items-center gap-3">
+                  <IconCercle icon={QrCode} ton="accent" plein taille={36} tailleIcone={17} />
+                  <span>Mon QR code</span>
+                </div>
+              }
+              description="À présenter à un professionnel de santé pour vérification."
+            >
+              <div className="flex flex-col items-center gap-3">
+                {/* eslint-disable-next-line @next/next/no-img-element -- data URL genere localement, pas une image distante */}
+                <img
+                  src={qrCode.dataUrl}
+                  alt="QR code de vérification de mon compte"
+                  width={160}
+                  height={160}
+                  className="rounded-champ border border-bordure"
+                />
+                <p className="text-center text-[12.5px] text-encre-attenuee">
+                  Le contenu affiché après scan dépend d&apos;un consentement actif de votre part.
+                </p>
+              </div>
+            </Card>
+          ) : null}
         </div>
       </div>
 
