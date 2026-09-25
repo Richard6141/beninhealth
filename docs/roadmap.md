@@ -78,4 +78,4 @@ Version détaillée et cochable de la roadmap par phases du Bénin Health Intell
 - [x] Manifeste PWA, icône, service worker (réseau prioritaire, secours cache puis page hors ligne dédiée ; pas de synchronisation hors ligne complète, hors périmètre de ce MVP)
 - [x] Centre de notifications in-app (`/app/notifications`) : confirmation de rendez-vous et résultat d'examen disponible, marquage individuel ou global comme lues
 - [ ] SMS et email réels : hors périmètre, aucune passerelle disponible pour ce MVP
-- [ ] Lien de navigation vers `/app/notifications` et `/app/securite` dans l'en-tête : à ajouter une fois le chantier sidebar stabilisé
+- [x] Lien de navigation vers `/app/notifications` et `/app/securite` dans l'en-tête

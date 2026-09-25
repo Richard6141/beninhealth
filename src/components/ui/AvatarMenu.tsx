@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ChevronDown, LogOut, UserRound } from "lucide-react";
+import { ChevronDown, LogOut, ShieldCheck, UserRound } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { cn } from "@/lib/cn";
 
@@ -96,6 +96,16 @@ export function AvatarMenu({ nom, avatarUrl, identifiant, logoutAction }: Avatar
           >
             <UserRound size={16} aria-hidden="true" />
             Mon profil
+          </Link>
+
+          <Link
+            href="/app/securite"
+            role="menuitem"
+            onClick={() => setOuvert(false)}
+            className="flex items-center gap-2.5 px-3.5 py-2.5 text-[14px] font-medium text-encre-secondaire transition-colors hover:bg-surface-appui hover:text-encre motion-reduce:transition-none"
+          >
+            <ShieldCheck size={16} aria-hidden="true" />
+            Ma sécurité
           </Link>
 
           <form action={logoutAction}>

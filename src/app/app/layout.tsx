@@ -17,8 +17,10 @@ import {
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { getMonProfil, logoutAction } from "@/modules/identity/actions";
+import { getNombreNotificationsNonLues } from "@/modules/notification/actions";
 import type { NomRole } from "@/types";
 import { AvatarMenu } from "@/components/ui/AvatarMenu";
+import { ClocheNotifications } from "@/components/ui/ClocheNotifications";
 import { Sidebar, type ElementNavigation } from "@/components/ui/Sidebar";
 
 const libellesRole: Record<NomRole, string> = {
@@ -231,7 +233,10 @@ export default async function EspaceAuthentifieLayout({
     redirect("/connexion");
   }
 
-  const profil = await getMonProfil();
+  const [profil, nombreNotificationsNonLues] = await Promise.all([
+    getMonProfil(),
+    getNombreNotificationsNonLues(),
+  ]);
   const libelleCompte = profil
     ? `${profil.prenom} ${profil.nom}`
     : session.roles[0]
@@ -246,7 +251,8 @@ export default async function EspaceAuthentifieLayout({
 
       <div className="flex h-screen flex-1 flex-col overflow-hidden">
         <header className="sans-impression shrink-0 border-b border-bordure bg-marine">
-          <div className="flex items-center justify-end gap-3 px-4 py-3 sm:px-6">
+          <div className="flex items-center justify-end gap-2 px-4 py-3 sm:px-6">
+            <ClocheNotifications nombreNonLues={nombreNotificationsNonLues} />
             <AvatarMenu
               nom={libelleCompte}
               avatarUrl={profil?.avatarUrl}
