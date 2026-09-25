@@ -23,6 +23,7 @@
  */
 
 import { headers } from "next/headers";
+import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
@@ -455,4 +456,162 @@ export async function getPrescriptionsDuProfessionnel(): Promise<PrescriptionRes
       patientIdentifiantSante: prescription.patient.identifiantSante,
     })
   );
+}
+
+/**
+ * Module pharmacie (Phase 9) : delivrance des prescriptions en officine.
+ * Reprend le meme cycle de vie que la creation (statut Prescription,
+ * EvenementPrescription, JournalAudit), sans nouveau modele Prisma : la
+ * delivrance est une transition de statut sur une Prescription existante,
+ * pas une ressource a part. Reserve au role "pharmacien", verifie
+ * explicitement dans chaque fonction (Zero Trust : le role RBAC
+ * "update:prescription" est aussi accorde au medecin, il ne suffit donc pas
+ * a lui seul a distinguer "delivrer en pharmacie" de "modifier sa propre
+ * prescription").
+ */
+
+const STATUTS_EN_ATTENTE_DE_DELIVRANCE = ["validee", "delivree_partiellement"] as const;
+
+const schemaDelivrance = z.object({
+  prescriptionId: z.string().trim().min(1, "La prescription est obligatoire."),
+  statutLivraison: z.enum(["delivree", "delivree_partiellement"], {
+    message: "Statut de delivrance invalide.",
+  }),
+  commentaire: z.string().trim().optional().default(""),
+});
+
+/**
+ * Prescriptions en attente de delivrance (statut "validee" ou
+ * "delivree_partiellement"), tous patients confondus : un pharmacien sert
+ * n'importe quel patient qui se presente au comptoir avec une prescription,
+ * pas seulement "ses" patients. `recherche` filtre par nom/prenom du patient
+ * ou identifiant sante (comparaison insensible a la casse faite cote
+ * application : SQLite ne supporte pas `mode: "insensitive"` cote Prisma).
+ * Retourne un tableau vide si l'utilisateur connecte n'est pas pharmacien.
+ */
+export async function getPrescriptionsADelivrer(recherche?: string): Promise<PrescriptionResume[]> {
+  const session = await getSession();
+
+  if (!session || !session.roles.includes("pharmacien")) {
+    return [];
+  }
+
+  const prescriptions = await prisma.prescription.findMany({
+    where: { statut: { in: [...STATUTS_EN_ATTENTE_DE_DELIVRANCE] } },
+    include: {
+      consultation: true,
+      patient: { include: { user: true } },
+      lignes: { include: { medicament: true } },
+    },
+    orderBy: { date: "asc" },
+  });
+
+  const termeRecherche = recherche?.trim().toLowerCase();
+
+  const prescriptionsFiltrees = termeRecherche
+    ? prescriptions.filter((prescription) => {
+        const patient = prescription.patient;
+        const nomComplet = `${patient.user.prenom} ${patient.user.nom}`.toLowerCase();
+        return (
+          nomComplet.includes(termeRecherche) ||
+          patient.identifiantSante.toLowerCase().includes(termeRecherche)
+        );
+      })
+    : prescriptions;
+
+  return prescriptionsFiltrees.map((prescription) =>
+    versPrescriptionResume(prescription, {
+      medecinNomComplet: null,
+      patientNomComplet: nomComplet(prescription.patient.user),
+      patientIdentifiantSante: prescription.patient.identifiantSante,
+    })
+  );
+}
+
+/**
+ * Marque une prescription comme delivree (totalement ou partiellement) par
+ * le pharmacien connecte. Refuse toute prescription qui n'est pas
+ * actuellement "validee" ou "delivree_partiellement" (deja entierement
+ * delivree, ou annulee), sans rien ecrire en base dans ce cas.
+ */
+export async function delivrerPrescriptionAction(
+  prevState: PrescriptionActionState,
+  formData: FormData
+): Promise<PrescriptionActionState> {
+  const session = await getSession();
+
+  if (!session || !session.roles.includes("pharmacien")) {
+    return { error: "Action reservee au role pharmacien.", success: false };
+  }
+
+  const validation = schemaDelivrance.safeParse({
+    prescriptionId: texte(formData, "prescriptionId"),
+    statutLivraison: texte(formData, "statutLivraison"),
+    commentaire: texte(formData, "commentaire"),
+  });
+
+  if (!validation.success) {
+    return {
+      error: premierMessageErreur(validation.error, "Donnees de delivrance invalides."),
+      success: false,
+    };
+  }
+
+  const { prescriptionId, statutLivraison, commentaire } = validation.data;
+
+  try {
+    const prescription = await prisma.prescription.findUnique({ where: { id: prescriptionId } });
+
+    if (!prescription) {
+      return { error: "Cette prescription est introuvable.", success: false };
+    }
+
+    if (!STATUTS_EN_ATTENTE_DE_DELIVRANCE.includes(prescription.statut as "validee" | "delivree_partiellement")) {
+      return {
+        error:
+          prescription.statut === "delivree"
+            ? "Cette prescription a deja ete entierement delivree."
+            : "Cette prescription est annulee et ne peut pas etre delivree.",
+        success: false,
+      };
+    }
+
+    const adresseTechnique = await adresseTechniqueCourante();
+
+    await prisma.$transaction([
+      prisma.prescription.update({
+        where: { id: prescriptionId },
+        data: { statut: statutLivraison },
+      }),
+      prisma.evenementPrescription.create({
+        data: {
+          prescriptionId,
+          type: statutLivraison === "delivree" ? "delivrance" : "delivrance_partielle",
+          utilisateurId: session.userId,
+          commentaire: commentaire.length > 0 ? commentaire : null,
+        },
+      }),
+      prisma.journalAudit.create({
+        data: {
+          utilisateurId: session.userId,
+          action: "delivrance",
+          donneeConcernee: `prescription:${prescriptionId}`,
+          adresseTechnique,
+          justification:
+            statutLivraison === "delivree"
+              ? "Prescription entierement delivree en pharmacie"
+              : "Prescription partiellement delivree en pharmacie",
+        },
+      }),
+    ]);
+  } catch (erreur) {
+    console.error("Erreur lors de la delivrance de la prescription :", erreur);
+    return {
+      error: "Une erreur est survenue lors de la delivrance. Veuillez reessayer.",
+      success: false,
+    };
+  }
+
+  revalidatePath("/app/medecin/pharmacie");
+  return { error: null, success: true };
 }
