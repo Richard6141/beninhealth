@@ -11,3 +11,4 @@ export * from './domain-patient';
 export * from './domain-clinical';
 export * from './domain-facility';
 export * from './domain-audit';
+export * from './domain-communautaire';

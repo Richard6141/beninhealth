@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ArrowLeft, FlaskConical, Pill, Stethoscope } from "lucide-react";
+import { getSession } from "@/lib/session";
 import {
   getConsultationsDuProfessionnel,
   type ConsultationResume,
@@ -76,7 +77,13 @@ function LienDemanderExamen({ consultationId }: { consultationId: string }) {
   );
 }
 
-function CarteConsultation({ consultation }: { consultation: ConsultationResume }) {
+function CarteConsultation({
+  consultation,
+  peutAgir,
+}: {
+  consultation: ConsultationResume;
+  peutAgir: boolean;
+}) {
   const statut = libelleStatut(consultation.statut);
 
   return (
@@ -128,10 +135,12 @@ function CarteConsultation({ consultation }: { consultation: ConsultationResume 
           </p>
         </div>
 
-        <div className="flex flex-wrap justify-end gap-2">
-          <LienDemanderExamen consultationId={consultation.id} />
-          <LienPrescrire consultationId={consultation.id} />
-        </div>
+        {peutAgir ? (
+          <div className="flex flex-wrap justify-end gap-2">
+            <LienDemanderExamen consultationId={consultation.id} />
+            <LienPrescrire consultationId={consultation.id} />
+          </div>
+        ) : null}
       </div>
     </Card>
   );
@@ -145,6 +154,12 @@ function CarteConsultation({ consultation }: { consultation: ConsultationResume 
  * alors le selecteur de patient (aucun patientId en query param).
  */
 export default async function ConsultationsProfessionnelPage() {
+  const session = await getSession();
+  // RBAC (voir src/security/permissions.ts) : seul le medecin detient
+  // create:consultation, create:prescription et create:examen_medical. Cette
+  // page reste accessible en lecture a infirmier (read:consultation), mais
+  // les actions de creation ne doivent jamais leur etre proposees.
+  const peutAgir = session?.roles[0] === "medecin";
   const consultations = await getConsultationsDuProfessionnel();
 
   return (
@@ -167,7 +182,7 @@ export default async function ConsultationsProfessionnelPage() {
             recentes en premier.
           </p>
         </div>
-        <LienNouvelleConsultation />
+        {peutAgir ? <LienNouvelleConsultation /> : null}
       </header>
 
       {consultations.length === 0 ? (
@@ -180,16 +195,20 @@ export default async function ConsultationsProfessionnelPage() {
               Aucune consultation enregistree
             </p>
             <p className="max-w-[36ch] text-[13px] text-encre-attenuee">
-              Vous n&apos;avez pour le moment realise aucune consultation.
-              Demarrez-en une depuis un rendez-vous confirme ou directement
-              ci-dessus.
+              {peutAgir
+                ? "Vous n'avez pour le moment realise aucune consultation. Demarrez-en une depuis un rendez-vous confirme ou directement ci-dessus."
+                : "Aucune consultation ne vous a ete associee pour le moment."}
             </p>
           </div>
         </Card>
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
           {consultations.map((consultation) => (
-            <CarteConsultation key={consultation.id} consultation={consultation} />
+            <CarteConsultation
+              key={consultation.id}
+              consultation={consultation}
+              peutAgir={peutAgir}
+            />
           ))}
         </div>
       )}

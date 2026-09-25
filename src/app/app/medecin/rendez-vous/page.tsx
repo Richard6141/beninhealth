@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+import { getSession } from "@/lib/session";
 import {
   getRendezVousDuProfessionnel,
   type RendezVousResume,
@@ -69,7 +70,13 @@ function CarteRendezVousAttente({ rendezVous }: { rendezVous: RendezVousResume }
   );
 }
 
-function CarteRendezVousConfirme({ rendezVous }: { rendezVous: RendezVousResume }) {
+function CarteRendezVousConfirme({
+  rendezVous,
+  peutDemarrerConsultation,
+}: {
+  rendezVous: RendezVousResume;
+  peutDemarrerConsultation: boolean;
+}) {
   const statut = libelleStatut(rendezVous.statut);
 
   return (
@@ -83,11 +90,13 @@ function CarteRendezVousConfirme({ rendezVous }: { rendezVous: RendezVousResume 
           {formaterDateHeure(rendezVous.date)}
         </p>
         <p className="text-[13px] text-encre-secondaire">{rendezVous.etablissementNom}</p>
-        <LienDemarrerConsultation
-          href={`/app/medecin/consultations/nouvelle?patientId=${encodeURIComponent(
-            rendezVous.patientId
-          )}&rendezVousId=${encodeURIComponent(rendezVous.id)}`}
-        />
+        {peutDemarrerConsultation ? (
+          <LienDemarrerConsultation
+            href={`/app/medecin/consultations/nouvelle?patientId=${encodeURIComponent(
+              rendezVous.patientId
+            )}&rendezVousId=${encodeURIComponent(rendezVous.id)}`}
+          />
+        ) : null}
       </div>
     </Card>
   );
@@ -117,6 +126,13 @@ function CarteRendezVousHistorique({ rendezVous }: { rendezVous: RendezVousResum
  * rendez-vous termines ou annules.
  */
 export default async function RendezVousProfessionnelPage() {
+  const session = await getSession();
+  // RBAC (voir src/security/permissions.ts) : seul le medecin detient
+  // create:consultation. Cette page est aussi accedee par infirmier,
+  // pharmacien, laboratoire et admin_etablissement (lecture de leurs propres
+  // rendez-vous), qui ne doivent jamais voir un lien menant a une action
+  // qu'ils n'ont pas le droit d'effectuer.
+  const peutDemarrerConsultation = session?.roles[0] === "medecin";
   const rendezVous = await getRendezVousDuProfessionnel();
 
   const enAttente = rendezVous.filter((rdv) => rdv.statut === "demande");
@@ -177,7 +193,11 @@ export default async function RendezVousProfessionnelPage() {
         ) : (
           <div className="grid gap-4 sm:grid-cols-2">
             {confirmes.map((rdv) => (
-              <CarteRendezVousConfirme key={rdv.id} rendezVous={rdv} />
+              <CarteRendezVousConfirme
+                key={rdv.id}
+                rendezVous={rdv}
+                peutDemarrerConsultation={peutDemarrerConsultation}
+              />
             ))}
           </div>
         )}

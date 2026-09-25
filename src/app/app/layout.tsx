@@ -6,6 +6,7 @@ import {
   FlaskConical,
   FolderOpen,
   LayoutDashboard,
+  MapPin,
   Pill,
   ShieldCheck,
 } from "lucide-react";
@@ -67,11 +68,12 @@ const navigationPatient: ElementNavigation[] = [
 /**
  * Navigation par role professionnel (Phase 7-durcissement) : chaque role ne
  * voit que les fonctionnalites que la matrice RBAC (src/security/permissions.ts)
- * lui accorde reellement, jamais un menu generique partage. Le tableau de
- * bord "/app/medecin" reste un ecran partage au niveau technique (contenu
- * deja filtre par role, voir src/app/app/medecin/page.tsx), mais chaque role
- * a son propre sous-ensemble de liens : jamais de lien vers une action que
- * ce role n'a pas le droit d'effectuer.
+ * lui accorde reellement, jamais un menu generique partage. L'URL
+ * "/app/medecin" reste commune au niveau technique, mais chaque role y
+ * affiche desormais son propre tableau de bord entierement distinct (voir
+ * src/app/app/medecin/page.tsx et ses composants Dashboard*.tsx) : jamais un
+ * ecran generique filtre, jamais un lien vers une action que ce role n'a pas
+ * le droit d'effectuer.
  */
 const navigationMedecin: ElementNavigation[] = [
   { label: "Tableau de bord", href: "/app/medecin", icon: iconeTableauDeBord },
@@ -112,9 +114,14 @@ const navigationInfirmier: ElementNavigation[] = [
   },
 ];
 
-/** Agent communautaire : module suivi communautaire non encore construit, tableau de bord seul pour l'instant. */
+/** Agent communautaire : visites de terrain (module suivi communautaire), jamais l'espace clinique medecin. */
 const navigationAgentCommunautaire: ElementNavigation[] = [
   { label: "Tableau de bord", href: "/app/medecin", icon: iconeTableauDeBord },
+  {
+    label: "Mes visites",
+    href: "/app/medecin/communautaire",
+    icon: <MapPin size={tailleIconeNav} aria-hidden="true" />,
+  },
 ];
 
 /** Pharmacien : delivrance des prescriptions uniquement, jamais l'espace clinique (consultations/examens). */

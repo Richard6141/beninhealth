@@ -103,6 +103,26 @@ async function main() {
 
   await prisma.user.create({
     data: {
+      nom: "Tchibozo",
+      prenom: "Noel",
+      email: "communautaire.demo@benin-health.test",
+      telephone: "+229 90 00 00 09",
+      motDePasseHash,
+      statut: "actif",
+      roles: { create: [{ nom: "agent_communautaire" }] },
+      professionnel: {
+        create: {
+          specialite: "Sante communautaire",
+          numeroProfessionnel: "BJ-AGC-0001",
+          etablissementId: centreCotonou.id,
+          statutValidation: "valide",
+        },
+      },
+    },
+  });
+
+  await prisma.user.create({
+    data: {
       nom: "Sossou",
       prenom: "Elvire",
       email: "laboratoire.demo@benin-health.test",
@@ -333,6 +353,8 @@ async function main() {
   console.log(`Mot de passe pour tous les comptes de demo : ${MOT_DE_PASSE_DEMO}`);
   console.log("- medecin.demo@benin-health.test (medecin)");
   console.log("- infirmier.demo@benin-health.test (infirmier)");
+  console.log("- communautaire.demo@benin-health.test (agent_communautaire)");
+  console.log("- laboratoire.demo@benin-health.test (laboratoire)");
   console.log("- admin.etablissement.demo@benin-health.test (admin_etablissement)");
   console.log("- ministere.demo@benin-health.test (admin_national)");
   console.log("- patient.demo@benin-health.test (patient)");

@@ -77,6 +77,7 @@ model EtablissementSanitaire {
   // Examens medicaux dont cet etablissement est le laboratoire assigne
   // (uniquement pertinent pour un etablissement de type "laboratoire").
   examensMedicaux ExamenMedical[]
+  suivisCommunautaires SuiviCommunautaire[]
 }
 
 // Correspond a ProfessionnelSante dans src/types/domain-identity.ts.
@@ -96,6 +97,8 @@ model ProfessionnelSante {
   prescriptions Prescription[]
   // Examens medicaux demandes par ce professionnel (typiquement un medecin).
   examensDemandes ExamenMedical[]
+  // Visites de suivi communautaire menees par ce professionnel (role agent_communautaire).
+  suivisCommunautaires SuiviCommunautaire[]
 }
 
 // Correspond a Patient dans src/types/domain-patient.ts.
@@ -121,6 +124,9 @@ model Patient {
   consultations Consultation[]
   prescriptions Prescription[]
   examensMedicaux ExamenMedical[]
+  // Optionnel : un beneficiaire de visite communautaire n'a pas forcement de
+  // dossier Patient enregistre (voir SuiviCommunautaire.beneficiaireNom).
+  suivisCommunautaires SuiviCommunautaire[]
 }
 
 // Correspond a Consentement dans src/types/domain-patient.ts.
@@ -214,6 +220,28 @@ model ExamenMedical {
   statut          String    @default("demande")
   resultat        String?
   dateResultat    DateTime?
+}
+
+// Correspond a SuiviCommunautaire dans src/types/domain-communautaire.ts.
+// Visite de terrain menee par un agent communautaire (role agent_communautaire) :
+// vaccination, depistage, suivi de grossesse ou sensibilisation aupres d'un
+// beneficiaire, qui n'a pas toujours de dossier Patient enregistre sur la
+// plateforme (patientId reste alors nul, beneficiaireNom porte l'identite).
+model SuiviCommunautaire {
+  id              String    @id @default(cuid())
+  agentId         String
+  agent           ProfessionnelSante @relation(fields: [agentId], references: [id])
+  etablissementId String
+  etablissement   EtablissementSanitaire @relation(fields: [etablissementId], references: [id])
+  patientId       String?
+  patient         Patient?  @relation(fields: [patientId], references: [id])
+  beneficiaireNom String
+  // vaccination | depistage | suivi_grossesse | sensibilisation | autre
+  typeVisite      String
+  dateVisite      DateTime  @default(now())
+  localisation    String    @default("")
+  notes           String    @default("")
+  dateCreation    DateTime  @default(now())
 }
 
 // Correspond a Medicament dans src/types/domain-clinical.ts.
