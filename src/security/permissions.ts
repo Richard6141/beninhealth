@@ -71,6 +71,10 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     'update:prescription',
     'read:examen_medical',
     'create:examen_medical',
+    // F-LAB-06 : le medecin demandeur peut annuler sa propre demande
+    // d'examen tant qu'aucun resultat n'existe (annulerExamenAction verifie
+    // en base qu'il est bien le demandeur, jamais suppose de ce seul droit).
+    'update:examen_medical',
     'read:document_medical',
     'create:document_medical',
     'read:rendez_vous',

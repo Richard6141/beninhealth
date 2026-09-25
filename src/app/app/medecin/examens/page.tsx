@@ -9,6 +9,7 @@ import type { BadgeTone } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { cn } from "@/lib/cn";
 import { BoutonAnnonceResultat } from "./BoutonAnnonceResultat";
+import { BoutonAnnulerExamen } from "./BoutonAnnulerExamen";
 
 function libelleStatut(statut: string): { texte: string; tone: BadgeTone } {
   const cle = statut.trim().toLowerCase();
@@ -53,7 +54,9 @@ function LienNouvelExamen() {
 
 function CarteExamen({ examen }: { examen: ExamenResume }) {
   const statut = libelleStatut(examen.statut);
-  const estTermine = examen.statut.trim().toLowerCase() === "termine";
+  const statutNormalise = examen.statut.trim().toLowerCase();
+  const estTermine = statutNormalise === "termine";
+  const peutAnnuler = statutNormalise === "demande" || statutNormalise === "en_cours";
 
   return (
     <Card
@@ -108,6 +111,8 @@ function CarteExamen({ examen }: { examen: ExamenResume }) {
             <BoutonAnnonceResultat examenId={examen.id} />
           )
         ) : null}
+
+        {peutAnnuler ? <BoutonAnnulerExamen examenId={examen.id} /> : null}
       </div>
     </Card>
   );

@@ -32,6 +32,10 @@ describe("can (permissions RBAC)", () => {
     it("refuse la suppression d'une prescription (non accordee)", () => {
       expect(can("medecin", "delete", "prescription")).toBe(false);
     });
+
+    it("F-LAB-06 : autorise la mise a jour d'un examen medical (annulation de sa propre demande)", () => {
+      expect(can("medecin", "update", "examen_medical")).toBe(true);
+    });
   });
 
   describe("role infirmier", () => {

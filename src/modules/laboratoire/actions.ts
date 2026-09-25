@@ -101,6 +101,15 @@ const STATUTS_EN_ATTENTE_LABORATOIRE = [
 /** Statuts a partir desquels un resultat peut etre saisi ou resaisi (RG-ROL-31 : une resaisie apres correction reste une saisie, pas une modification silencieuse d'un resultat deja soumis). */
 const STATUTS_SAISIE_AUTORISEE = ["demande", "en_cours", "correction_demandee"] as const;
 
+/**
+ * Statuts a partir desquels une demande d'examen peut encore etre annulee
+ * (F-LAB-06) : uniquement avant qu'un resultat, meme provisoire, n'existe.
+ * "correction_demandee" est exclu expres : `examen.resultat` y conserve
+ * encore l'ancienne valeur saisie (voir renvoyerPourCorrectionAction), donc
+ * annuler a ce stade ferait disparaitre une donnee de resultat deja produite.
+ */
+const STATUTS_ANNULATION_AUTORISEE = ["demande", "en_cours"] as const;
+
 const schemaDemandeExamen = z.object({
   patientId: z.string().trim().min(1, "Le patient est obligatoire."),
   consultationId: z.string().trim().optional().default(""),
@@ -114,6 +123,10 @@ const schemaSaisieResultat = z.object({
 });
 
 const schemaAnnonceResultat = z.object({
+  examenId: z.string().trim().min(1, "L'examen est obligatoire."),
+});
+
+const schemaAnnulationExamen = z.object({
   examenId: z.string().trim().min(1, "L'examen est obligatoire."),
 });
 
@@ -433,6 +446,93 @@ export async function demanderExamenAction(
     console.error("Erreur lors de la demande d'examen medical :", erreur);
     return {
       error: "Une erreur est survenue lors de la demande d'examen. Veuillez reessayer.",
+      success: false,
+    };
+  }
+}
+
+/**
+ * F-LAB-06 du pack : annule une demande d'examen, reservee au medecin
+ * demandeur (verifie en base, jamais suppose du seul role). Autorisee tant
+ * qu'aucun resultat n'existe encore (statut "demande" ou "en_cours") ; refuse
+ * des qu'un resultat a ete saisi, valide ou renvoye pour correction, pour ne
+ * jamais faire disparaitre une donnee de resultat deja produite. Meme
+ * pattern qu'annulerRendezVousProfessionnelAction (src/modules/facility/actions.ts) :
+ * pas de re-authentification, ce n'est pas un acte clinique deja signe.
+ */
+export async function annulerExamenAction(
+  prevState: LaboratoireActionState,
+  formData: FormData
+): Promise<LaboratoireActionState> {
+  const session = await getSession();
+
+  if (!session) {
+    return { error: "Session expiree. Veuillez vous reconnecter.", success: false };
+  }
+
+  if (!session.roles.some((role) => can(role, "update", "examen_medical"))) {
+    return { error: "Action reservee aux medecins.", success: false };
+  }
+
+  const validation = schemaAnnulationExamen.safeParse({
+    examenId: texte(formData, "examenId"),
+  });
+
+  if (!validation.success) {
+    return {
+      error: premierMessageErreur(validation.error, "Examen invalide."),
+      success: false,
+    };
+  }
+
+  const { examenId } = validation.data;
+
+  try {
+    const professionnel = await prisma.professionnelSante.findUnique({
+      where: { userId: session.userId },
+    });
+
+    if (!professionnel) {
+      return { error: "Aucun profil professionnel associe a ce compte.", success: false };
+    }
+
+    const examen = await prisma.examenMedical.findUnique({ where: { id: examenId } });
+
+    if (!examen || examen.demandeurId !== professionnel.id) {
+      return { error: "Cet examen est introuvable.", success: false };
+    }
+
+    if (
+      !STATUTS_ANNULATION_AUTORISEE.includes(
+        examen.statut as (typeof STATUTS_ANNULATION_AUTORISEE)[number]
+      )
+    ) {
+      return {
+        error: "Cet examen a deja un resultat en cours de traitement, il ne peut plus etre annule.",
+        success: false,
+      };
+    }
+
+    const adresseTechnique = await adresseTechniqueCourante();
+
+    await prisma.$transaction([
+      prisma.examenMedical.update({ where: { id: examen.id }, data: { statut: "annule" } }),
+      prisma.journalAudit.create({
+        data: {
+          utilisateurId: session.userId,
+          action: "modification",
+          donneeConcernee: `examen_medical:${examen.id}`,
+          adresseTechnique,
+          justification: "Demande d'examen annulee par le medecin demandeur",
+        },
+      }),
+    ]);
+
+    return { error: null, success: true };
+  } catch (erreur) {
+    console.error("Erreur lors de l'annulation de l'examen :", erreur);
+    return {
+      error: "Une erreur est survenue lors de l'annulation de l'examen. Veuillez reessayer.",
       success: false,
     };
   }
