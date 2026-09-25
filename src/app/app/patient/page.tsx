@@ -201,8 +201,8 @@ export default async function PatientPage() {
   const traitementsEnCours = prescriptionsEnCours(prescriptions).slice(0, 3);
 
   return (
-    <div className="conteneur-page mx-auto flex flex-col gap-8 px-4 py-8 sm:px-6">
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-8 px-4 py-8 sm:px-6 lg:px-8">
+      <header className="flex flex-col gap-6 rounded-carte border border-bordure bg-surface px-6 py-6 shadow-[var(--ombre-carte)] sm:flex-row sm:items-center sm:justify-between sm:px-8">
         <div className="flex flex-col gap-2">
           <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-accent">
             Espace patient
@@ -215,7 +215,7 @@ export default async function PatientPage() {
         </div>
 
         {dossier && completude !== null ? (
-          <div className="flex flex-col gap-1.5 rounded-carte border border-bordure bg-surface px-4 py-3 shadow-[var(--ombre-carte)] sm:min-w-[240px]">
+          <div className="flex flex-col gap-1.5 border-t border-bordure pt-4 sm:min-w-[240px] sm:border-l sm:border-t-0 sm:pl-6 sm:pt-0">
             <div className="flex items-center justify-between gap-3">
               <span className="text-[13px] font-semibold text-encre-secondaire">
                 Dossier complet à

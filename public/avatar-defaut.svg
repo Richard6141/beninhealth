@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-hidden="true">
+  <defs>
+    <clipPath id="cercle-avatar-defaut">
+      <circle cx="48" cy="48" r="48" />
+    </clipPath>
+  </defs>
+  <circle cx="48" cy="48" r="48" fill="#eceef5" />
+  <g clip-path="url(#cercle-avatar-defaut)">
+    <circle cx="48" cy="40" r="17" fill="#bdc3d5" />
+    <ellipse cx="48" cy="90" rx="34" ry="27" fill="#bdc3d5" />
+  </g>
+</svg>

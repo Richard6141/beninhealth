@@ -236,8 +236,8 @@ export default async function EspaceProfessionnelPage() {
     .slice(0, NOMBRE_MAX_PROCHAINS_RENDEZ_VOUS);
 
   return (
-    <div className="conteneur-page mx-auto flex flex-col gap-8 px-4 py-8 sm:px-6">
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+    <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-8 px-4 py-8 sm:px-6 lg:px-8">
+      <header className="flex flex-col gap-4 rounded-carte border border-bordure bg-surface px-6 py-6 shadow-[var(--ombre-carte)] sm:flex-row sm:items-start sm:justify-between sm:px-8">
         <div className="flex flex-col gap-2">
           <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-accent">
             Espace professionnel

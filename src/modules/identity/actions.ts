@@ -12,10 +12,13 @@
  * d'authentification.
  */
 
+import { mkdir, readdir, unlink, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { Prisma } from "@prisma/client";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { SignJWT, jwtVerify } from "jose";
 import { z } from "zod";
@@ -391,4 +394,199 @@ export async function logoutAction(): Promise<void> {
 
   await destroySession();
   redirect("/connexion");
+}
+
+/**
+ * Systeme de profil (page "Mon profil") : consultation et modification des
+ * informations personnelles, changement de mot de passe, televersement de
+ * la photo de profil. Meme principe Zero Trust que le reste du module :
+ * l'utilisateur cible est toujours derive de getSession().userId, jamais
+ * d'un id transmis par le client.
+ */
+
+export interface ProfilActionState {
+  error: string | null;
+  success: boolean;
+}
+
+export interface MonProfil {
+  nom: string;
+  prenom: string;
+  email: string;
+  telephone: string;
+  avatarUrl: string | null;
+  roles: NomRole[];
+}
+
+/** Profil complet de l'utilisateur connecte, pour l'ecran "Mon profil". */
+export async function getMonProfil(): Promise<MonProfil | null> {
+  const session = await getSession();
+
+  if (!session) {
+    return null;
+  }
+
+  const utilisateur = await prisma.user.findUnique({
+    where: { id: session.userId },
+    include: { roles: true },
+  });
+
+  if (!utilisateur) {
+    return null;
+  }
+
+  return {
+    nom: utilisateur.nom,
+    prenom: utilisateur.prenom,
+    email: utilisateur.email,
+    telephone: utilisateur.telephone,
+    avatarUrl: utilisateur.avatarUrl,
+    roles: utilisateur.roles.map((role) => role.nom as NomRole),
+  };
+}
+
+const schemaProfil = z.object({
+  nom: z.string().trim().min(1, "Le nom est obligatoire."),
+  prenom: z.string().trim().min(1, "Le prenom est obligatoire."),
+  telephone: z.string().trim().min(1, "Le numero de telephone est obligatoire."),
+});
+
+/** Met a jour nom, prenom et telephone. L'email n'est volontairement pas modifiable ici. */
+export async function mettreAJourProfilAction(
+  prevState: ProfilActionState,
+  formData: FormData
+): Promise<ProfilActionState> {
+  const session = await getSession();
+
+  if (!session) {
+    return { error: "Session expiree, veuillez vous reconnecter.", success: false };
+  }
+
+  const validation = schemaProfil.safeParse({
+    nom: formData.get("nom"),
+    prenom: formData.get("prenom"),
+    telephone: formData.get("telephone"),
+  });
+
+  if (!validation.success) {
+    return {
+      error: premierMessageErreur(validation.error, "Donnees de profil invalides."),
+      success: false,
+    };
+  }
+
+  try {
+    const adresseTechnique = await adresseTechniqueCourante();
+
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: session.userId },
+        data: validation.data,
+      }),
+      prisma.journalAudit.create({
+        data: {
+          utilisateurId: session.userId,
+          action: "modification_profil",
+          donneeConcernee: `utilisateur:${session.userId}`,
+          adresseTechnique,
+          justification: "Mise a jour des informations personnelles",
+        },
+      }),
+    ]);
+  } catch (erreur) {
+    console.error("Erreur lors de la mise a jour du profil :", erreur);
+    return { error: "Une erreur est survenue. Veuillez reessayer.", success: false };
+  }
+
+  revalidatePath("/app/profil");
+  return { error: null, success: true };
+}
+
+const DOSSIER_AVATARS = path.join(process.cwd(), "public", "uploads", "avatars");
+const TAILLE_MAX_AVATAR_OCTETS = 3 * 1024 * 1024;
+const EXTENSIONS_AVATAR_AUTORISEES: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/webp": "webp",
+};
+
+/**
+ * Televersement de la photo de profil : fichier stocke localement sous
+ * public/uploads/avatars (jamais envoye vers un service tiers), nomme
+ * d'apres l'id utilisateur pour remplacer automatiquement l'avatar
+ * precedent. Extension deduite du type MIME reel du fichier, jamais du nom
+ * fourni par le navigateur.
+ */
+export async function televerserAvatarAction(
+  prevState: ProfilActionState,
+  formData: FormData
+): Promise<ProfilActionState> {
+  const session = await getSession();
+
+  if (!session) {
+    return { error: "Session expiree, veuillez vous reconnecter.", success: false };
+  }
+
+  const fichier = formData.get("avatar");
+
+  if (!(fichier instanceof File) || fichier.size === 0) {
+    return { error: "Veuillez choisir une image.", success: false };
+  }
+
+  const extension = EXTENSIONS_AVATAR_AUTORISEES[fichier.type];
+
+  if (!extension) {
+    return {
+      error: "Format d'image non pris en charge (PNG, JPEG ou WebP attendu).",
+      success: false,
+    };
+  }
+
+  if (fichier.size > TAILLE_MAX_AVATAR_OCTETS) {
+    return { error: "L'image depasse la taille maximale de 3 Mo.", success: false };
+  }
+
+  try {
+    await mkdir(DOSSIER_AVATARS, { recursive: true });
+
+    const fichiersExistants = await readdir(DOSSIER_AVATARS);
+    await Promise.all(
+      fichiersExistants
+        .filter((nom) => nom.startsWith(`${session.userId}.`))
+        .map((nom) => unlink(path.join(DOSSIER_AVATARS, nom)))
+    );
+
+    const nomFichier = `${session.userId}.${extension}`;
+    const octets = Buffer.from(await fichier.arrayBuffer());
+    await writeFile(path.join(DOSSIER_AVATARS, nomFichier), octets);
+
+    const avatarUrl = `/uploads/avatars/${nomFichier}`;
+    const adresseTechnique = await adresseTechniqueCourante();
+
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: session.userId },
+        data: { avatarUrl },
+      }),
+      prisma.journalAudit.create({
+        data: {
+          utilisateurId: session.userId,
+          action: "televersement_avatar",
+          donneeConcernee: `utilisateur:${session.userId}`,
+          adresseTechnique,
+          justification: "Televersement d'une nouvelle photo de profil",
+        },
+      }),
+    ]);
+  } catch (erreur) {
+    console.error("Erreur lors du televersement de l'avatar :", erreur);
+    return {
+      error: "Une erreur est survenue lors du televersement. Veuillez reessayer.",
+      success: false,
+    };
+  }
+
+  revalidatePath("/app/profil");
+  revalidatePath("/app", "layout");
+  return { error: null, success: true };
 }

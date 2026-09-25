@@ -17,11 +17,11 @@ export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
 
 const toneClasses: Record<BadgeTone, string> = {
   neutral: "bg-surface-appui text-encre-secondaire",
-  accent: "bg-accent-clair text-accent",
-  good: "bg-bon-clair text-bon",
-  warning: "bg-vigilance-clair text-vigilance",
-  critical: "bg-critique-clair text-critique",
-  info: "bg-info-clair text-info",
+  accent: "bg-accent text-white",
+  good: "bg-bon text-white",
+  warning: "bg-vigilance text-white",
+  critical: "bg-critique text-white",
+  info: "bg-info text-white",
 };
 
 export function Badge({

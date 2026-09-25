@@ -84,11 +84,11 @@ h6,
   font-family: var(--font-montserrat), sans-serif;
 }
 
-/* Conteneur de page a largeur maximale, centre horizontalement : a utiliser
-   sur les en-tetes et sections principales pour une mise en page coherente
-   sur grand ecran. */
+/* Conteneur de page pleine largeur : l'espace applicatif dispose deja d'un
+   sidebar qui borne la mise en page, le contenu doit donc occuper tout le
+   reste de la largeur disponible plutot que d'etre recentre et rogne. */
 .conteneur-page {
-  max-width: 1400px;
+  max-width: 100%;
   margin-inline: auto;
 }
 

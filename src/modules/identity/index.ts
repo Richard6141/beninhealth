@@ -12,6 +12,18 @@ export {
   type AuthActionState,
 } from "./actions";
 
+// Systeme de profil ("Mon profil") : consultation/modification des
+// informations personnelles et televersement de la photo de profil. Le
+// changement de mot de passe reutilise volontairement celui deja expose par
+// gestion-comptes.ts (meme regle metier, un seul point d'implementation).
+export {
+  getMonProfil,
+  mettreAJourProfilAction,
+  televerserAvatarAction,
+  type MonProfil,
+  type ProfilActionState,
+} from "./actions";
+
 // Phase 6 : Server Actions de provisionnement de la hierarchie
 // organisationnelle (ministere -> etablissement -> personnel) et de
 // changement de mot de passe. Voir src/modules/identity/gestion-comptes.ts
