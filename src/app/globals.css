@@ -19,6 +19,12 @@
   --accent-fonce: #00863f;
   --accent-clair: #00aa5530;
 
+  /* Marine institutionnelle : couleur des boutons primaires (Button,
+     variant="primary") et de l'en-tete de l'espace authentifie, a cote du
+     vert institutionnel utilise pour les liens/icones/badges. */
+  --marine: #0a3764;
+  --marine-fonce: #082d52;
+
   --statut-bon: #0ea572;
   --statut-bon-clair: #0ea57214;
   --statut-vigilance: #d97706;
@@ -52,6 +58,8 @@
   --color-accent: var(--accent);
   --color-accent-fonce: var(--accent-fonce);
   --color-accent-clair: var(--accent-clair);
+  --color-marine: var(--marine);
+  --color-marine-fonce: var(--marine-fonce);
   --color-bon: var(--statut-bon);
   --color-bon-clair: var(--statut-bon-clair);
   --color-vigilance: var(--statut-vigilance);

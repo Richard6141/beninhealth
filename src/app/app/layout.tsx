@@ -216,7 +216,7 @@ export default async function EspaceAuthentifieLayout({
       <Sidebar items={navigation} />
 
       <div className="flex h-screen flex-1 flex-col overflow-hidden">
-        <header className="sans-impression shrink-0 border-b border-bordure bg-[#162233]">
+        <header className="sans-impression shrink-0 border-b border-bordure bg-marine">
           <div className="flex items-center justify-end gap-3 px-4 py-3 sm:px-6">
             <AvatarMenu
               nom={libelleCompte}

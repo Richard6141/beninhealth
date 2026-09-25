@@ -48,7 +48,7 @@ function EtapeCodeMfa({ preAuthToken }: { preAuthToken: string }) {
         <Button
           type="submit"
           variant="primary"
-          className="mt-2 w-full bg-[#162233] hover:bg-[#0e1826]"
+          className="mt-2 w-full"
           disabled={pending}
         >
           {pending ? "Verification en cours..." : "Valider"}
@@ -106,7 +106,7 @@ export default function ConnexionPage() {
               <Button
                 type="submit"
                 variant="primary"
-                className="mt-2 w-full bg-[#162233] hover:bg-[#0e1826]"
+                className="mt-2 w-full"
                 disabled={pending}
               >
                 {pending ? "Connexion en cours..." : "Se connecter"}
