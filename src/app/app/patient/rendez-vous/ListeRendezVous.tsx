@@ -1,14 +1,16 @@
 "use client";
 
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { Building2, CalendarX2, Search, UserRound, X } from "lucide-react";
+import { Building2, CalendarClock, CalendarX2, Search, TriangleAlert, X } from "lucide-react";
 import {
   annulerRendezVousAction,
   type FacilityActionState,
   type RendezVousResume,
 } from "@/modules/facility/actions";
 import { Alert } from "@/components/ui/Alert";
+import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import type { BadgeTone } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -69,7 +71,7 @@ const styleCellule = "px-4 py-3.5 align-middle border-t border-bordure";
 /** Pastille d'icône compacte, réutilisée pour les colonnes établissement et professionnel. */
 function PastilleIcone({ icon: Icon }: { icon: typeof Building2 }) {
   return (
-    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-clair text-accent">
+    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-marine-clair text-marine">
       <Icon size={14} aria-hidden="true" />
     </span>
   );
@@ -251,25 +253,61 @@ export function ListeRendezVous({ rendezVous }: ListeRendezVousProps) {
   );
 }
 
+/**
+ * Tuile "libellé / valeur" réutilisée dans la modale de détails : même
+ * gabarit (bordure, fond, libellé en majuscules) pour chaque bloc
+ * d'information, sans icône décorative sur certains blocs seulement (Date,
+ * Motif) et pas sur d'autres (Statut) — un style unique et prévisible plutôt
+ * qu'un mélange.
+ */
+function TuileDetail({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1.5 rounded-champ border border-bordure bg-plan px-4 py-3">
+      <span className="text-[12px] font-semibold uppercase tracking-[0.06em] text-encre-attenuee">
+        {label}
+      </span>
+      {children}
+    </div>
+  );
+}
+
 function LigneRendezVous({ rendezVous }: { rendezVous: RendezVousResume }) {
   const [state, formAction, pending] = useActionState(
     annulerRendezVousAction,
     etatInitial
   );
-  const modalRef = useRef<ModalHandle>(null);
+  const detailsModalRef = useRef<ModalHandle>(null);
+  const annulationModalRef = useRef<ModalHandle>(null);
   const router = useRouter();
   const statut = libelleStatut(rendezVous.statut);
   const peutAnnuler = STATUTS_A_VENIR.has(rendezVous.statut);
 
   useEffect(() => {
     if (state.success) {
-      modalRef.current?.close();
+      annulationModalRef.current?.close();
       router.refresh();
     }
   }, [state.success, router]);
 
+  function ouvrirAnnulation() {
+    detailsModalRef.current?.close();
+    annulationModalRef.current?.showModal();
+  }
+
   return (
-    <tr className="transition-colors motion-reduce:transition-none hover:bg-plan">
+    <tr
+      tabIndex={0}
+      role="button"
+      aria-label={`Voir les détails du rendez-vous du ${formaterDateHeure(rendezVous.date)}`}
+      onClick={() => detailsModalRef.current?.showModal()}
+      onKeyDown={(evenement) => {
+        if (evenement.key === "Enter" || evenement.key === " ") {
+          evenement.preventDefault();
+          detailsModalRef.current?.showModal();
+        }
+      }}
+      className="cursor-pointer transition-colors motion-reduce:transition-none hover:bg-plan focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
+    >
       <td className={styleCellule}>
         <div className="flex flex-col">
           <span className="font-semibold capitalize text-encre">{formaterJour(rendezVous.date)}</span>
@@ -284,7 +322,11 @@ function LigneRendezVous({ rendezVous }: { rendezVous: RendezVousResume }) {
       </td>
       <td className={styleCellule}>
         <div className="flex items-center gap-2.5">
-          <PastilleIcone icon={UserRound} />
+          <Avatar
+            name={rendezVous.professionnelNomComplet ?? "Professionnel non précisé"}
+            avatarUrl={rendezVous.professionnelAvatarUrl}
+            size={28}
+          />
           <span className={rendezVous.professionnelNomComplet ? "text-encre" : "italic text-encre-attenuee"}>
             {rendezVous.professionnelNomComplet ?? "Non précisé"}
           </span>
@@ -298,48 +340,107 @@ function LigneRendezVous({ rendezVous }: { rendezVous: RendezVousResume }) {
       <td className={styleCellule}>
         <Badge tone={statut.tone}>{statut.texte}</Badge>
       </td>
-      <td className={`${styleCellule} text-right`}>
+      <td className={`${styleCellule} text-right`} onClick={(evenement) => evenement.stopPropagation()}>
         {peutAnnuler ? (
-          <>
-            <IconButton
-              icon={X}
-              label="Annuler ce rendez-vous"
-              danger
-              className="ml-auto"
-              onClick={() => modalRef.current?.showModal()}
-            />
-            <Modal
-              ref={modalRef}
-              title="Annuler ce rendez-vous ?"
-              description={`Votre rendez-vous du ${formaterDateHeure(rendezVous.date)} sera annulé.`}
-            >
-              <form action={formAction} className="flex flex-col gap-4">
-                <input type="hidden" name="rendezVousId" value={rendezVous.id} />
-                {state.error ? (
-                  <Alert level="critical" title="Annulation impossible">
-                    {state.error}
-                  </Alert>
-                ) : null}
-                <p className="text-[14px] text-encre-secondaire">
-                  Cette action est immédiate. Vous pourrez prendre un nouveau
-                  rendez-vous à tout moment depuis cette page.
-                </p>
-                <div className="flex justify-end gap-2">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => modalRef.current?.close()}
-                  >
-                    Revenir
-                  </Button>
-                  <Button type="submit" variant="danger" disabled={pending}>
-                    {pending ? "Annulation en cours..." : "Confirmer l'annulation"}
-                  </Button>
-                </div>
-              </form>
-            </Modal>
-          </>
+          <IconButton
+            icon={X}
+            label="Annuler ce rendez-vous"
+            danger
+            className="ml-auto"
+            onClick={() => annulationModalRef.current?.showModal()}
+          />
         ) : null}
+
+        <Modal ref={detailsModalRef} icon={CalendarClock} title="Détails du rendez-vous">
+          <div className="flex flex-col gap-5">
+            <div className="flex items-center gap-4 rounded-champ border border-bordure bg-plan px-4 py-4">
+              <Avatar
+                name={rendezVous.professionnelNomComplet ?? "Professionnel non précisé"}
+                avatarUrl={rendezVous.professionnelAvatarUrl}
+                size={56}
+              />
+              <div className="flex min-w-0 flex-col">
+                <span
+                  className={cn(
+                    "text-[16px] font-bold",
+                    rendezVous.professionnelNomComplet ? "text-encre" : "italic text-encre-attenuee"
+                  )}
+                >
+                  {rendezVous.professionnelNomComplet ?? "Non précisé"}
+                </span>
+                {rendezVous.professionnelSpecialite ? (
+                  <span className="text-[13px] text-encre-secondaire">
+                    {rendezVous.professionnelSpecialite}
+                  </span>
+                ) : null}
+                <span className="mt-1 flex items-center gap-1.5 text-[13px] text-encre-attenuee">
+                  <Building2 size={13} aria-hidden="true" />
+                  {rendezVous.etablissementNom}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <TuileDetail label="Date et heure">
+                <span className="text-[14px] font-semibold text-encre">
+                  {formaterDateHeure(rendezVous.date)}
+                </span>
+              </TuileDetail>
+              <TuileDetail label="Statut">
+                <Badge tone={statut.tone} className="w-fit">
+                  {statut.texte}
+                </Badge>
+              </TuileDetail>
+            </div>
+
+            <TuileDetail label="Motif">
+              <span className="text-[14px] text-encre">{rendezVous.motif}</span>
+            </TuileDetail>
+
+            <div className="flex justify-end gap-2 border-t border-bordure pt-4">
+              <Button type="button" variant="secondary" onClick={() => detailsModalRef.current?.close()}>
+                Fermer
+              </Button>
+              {peutAnnuler ? (
+                <Button type="button" variant="danger" onClick={ouvrirAnnulation}>
+                  Annuler ce rendez-vous
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        </Modal>
+
+        <Modal
+          ref={annulationModalRef}
+          icon={TriangleAlert}
+          title="Annuler ce rendez-vous ?"
+          description={`Votre rendez-vous du ${formaterDateHeure(rendezVous.date)} sera annulé.`}
+        >
+          <form action={formAction} className="flex flex-col gap-4">
+            <input type="hidden" name="rendezVousId" value={rendezVous.id} />
+            {state.error ? (
+              <Alert level="critical" title="Annulation impossible">
+                {state.error}
+              </Alert>
+            ) : null}
+            <p className="text-[14px] text-encre-secondaire">
+              Cette action est immédiate. Vous pourrez prendre un nouveau
+              rendez-vous à tout moment depuis cette page.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => annulationModalRef.current?.close()}
+              >
+                Revenir
+              </Button>
+              <Button type="submit" variant="danger" disabled={pending}>
+                {pending ? "Annulation en cours..." : "Confirmer l'annulation"}
+              </Button>
+            </div>
+          </form>
+        </Modal>
       </td>
     </tr>
   );

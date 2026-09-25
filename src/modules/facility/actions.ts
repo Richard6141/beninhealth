@@ -49,6 +49,8 @@ export interface RendezVousResume {
   statut: string;
   etablissementNom: string;
   professionnelNomComplet: string | null;
+  professionnelSpecialite: string | null;
+  professionnelAvatarUrl: string | null;
   patientNomComplet: string | null; // rempli seulement pour les fonctions cote professionnel, null cote patient
   patientId: string;
 }
@@ -188,6 +190,8 @@ export async function getMesRendezVous(): Promise<RendezVousResume[]> {
     statut: rdv.statut,
     etablissementNom: rdv.etablissement.nom,
     professionnelNomComplet: rdv.professionnel ? nomCompletProfessionnel(rdv.professionnel.user) : null,
+    professionnelSpecialite: rdv.professionnel?.specialite ?? null,
+    professionnelAvatarUrl: rdv.professionnel?.user.avatarUrl ?? null,
     patientNomComplet: null,
     patientId: rdv.patientId,
   }));
@@ -386,6 +390,8 @@ export async function getRendezVousDuProfessionnel(): Promise<RendezVousResume[]
     statut: rdv.statut,
     etablissementNom: rdv.etablissement.nom,
     professionnelNomComplet: nomProfessionnelConnecte,
+    professionnelSpecialite: professionnel.specialite,
+    professionnelAvatarUrl: professionnel.user.avatarUrl,
     patientNomComplet: nomComplet(rdv.patient.user),
     patientId: rdv.patientId,
   }));

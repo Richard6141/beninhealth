@@ -8,6 +8,7 @@ import {
   useRef,
 } from "react";
 import type { MouseEvent, ReactNode } from "react";
+import type { LucideIcon } from "lucide-react";
 import { X } from "lucide-react";
 import { cn } from "@/lib/cn";
 
@@ -23,6 +24,8 @@ export interface ModalProps {
   variant?: ModalVariant;
   /** Ignoré pour les variantes tiroir. */
   width?: ModalWidth;
+  /** Icône optionnelle affichée à côté du titre, dans l'en-tête. */
+  icon?: LucideIcon;
   title: string;
   description?: string;
   children?: ReactNode;
@@ -35,7 +38,7 @@ export interface ModalProps {
  * réimplémentés à la main. Le clic sur le fond ferme aussi la modale.
  */
 export const Modal = forwardRef<ModalHandle, ModalProps>(function Modal(
-  { variant = "dialog", width = "narrow", title, description, children, onClose },
+  { variant = "dialog", width = "narrow", icon: Icon, title, description, children, onClose },
   ref
 ) {
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -65,7 +68,7 @@ export const Modal = forwardRef<ModalHandle, ModalProps>(function Modal(
       aria-labelledby={titleId}
       onClick={handleBackdropClick}
       className={cn(
-        "m-auto rounded-carte border border-bordure bg-surface p-0 text-encre shadow-[var(--ombre-carte)] backdrop:bg-encre/40",
+        "m-auto overflow-hidden rounded-carte border border-bordure bg-surface p-0 text-encre shadow-[var(--ombre-carte)] backdrop:bg-encre/40",
         width === "narrow" ? "w-full max-w-sm" : "w-full max-w-2xl",
         variant === "drawer-right" &&
           "anim-tiroir-droite m-0 ml-auto h-dvh max-h-dvh w-full max-w-sm rounded-none rounded-l-carte",
@@ -73,13 +76,14 @@ export const Modal = forwardRef<ModalHandle, ModalProps>(function Modal(
           "anim-tiroir-bas m-0 mt-auto h-auto max-h-[80dvh] w-full max-w-none rounded-none rounded-t-carte"
       )}
     >
-      <div className="flex items-start justify-between gap-4 border-b border-bordure p-4 sm:p-6">
+      <div className="flex items-center justify-between gap-4 bg-marine p-4 sm:p-6">
         <div className="flex flex-col gap-1">
-          <h2 id={titleId} className="text-[20px] font-bold text-encre">
+          <h2 id={titleId} className="flex items-center gap-2.5 text-[18px] font-bold text-white">
+            {Icon ? <Icon size={20} className="shrink-0" aria-hidden="true" /> : null}
             {title}
           </h2>
           {description ? (
-            <p className="text-[13px] text-encre-secondaire">{description}</p>
+            <p className="text-[13px] text-white/70">{description}</p>
           ) : null}
         </div>
         <button
@@ -88,11 +92,11 @@ export const Modal = forwardRef<ModalHandle, ModalProps>(function Modal(
           aria-label="Fermer"
           onClick={() => dialogRef.current?.close()}
           className={cn(
-            "flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-bordure-forte text-encre-secondaire transition-colors motion-reduce:transition-none hover:bg-surface-appui",
-            "focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+            "flex h-9 w-9 shrink-0 items-center justify-center rounded-champ bg-white/10 text-white transition-colors motion-reduce:transition-none hover:bg-white/20",
+            "focus-visible:outline-2 focus-visible:outline-white focus-visible:outline-offset-2"
           )}
         >
-          <X size={16} aria-hidden="true" />
+          <X size={18} aria-hidden="true" />
         </button>
       </div>
       <div className="p-4 sm:p-6">{children}</div>

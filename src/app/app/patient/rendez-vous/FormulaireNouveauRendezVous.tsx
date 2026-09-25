@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus } from "lucide-react";
+import { CalendarPlus, Plus } from "lucide-react";
 import {
   creerRendezVousAction,
   type EtablissementOption,
@@ -157,6 +157,7 @@ export function BoutonNouveauRendezVous(props: FormulaireNouveauRendezVousProps)
       <Modal
         ref={modalRef}
         width="wide"
+        icon={CalendarPlus}
         title="Prendre un nouveau rendez-vous"
         description="Choisissez un établissement de santé et, si vous le souhaitez, un professionnel en particulier."
         onClose={() => setCle((valeur) => valeur + 1)}

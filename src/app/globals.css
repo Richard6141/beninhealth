@@ -24,6 +24,7 @@
      vert institutionnel utilise pour les liens/icones/badges. */
   --marine: #0a3764;
   --marine-fonce: #082d52;
+  --marine-clair: #0a376420;
 
   --statut-bon: #0ea572;
   --statut-bon-clair: #0ea57214;
@@ -60,6 +61,7 @@
   --color-accent-clair: var(--accent-clair);
   --color-marine: var(--marine);
   --color-marine-fonce: var(--marine-fonce);
+  --color-marine-clair: var(--marine-clair);
   --color-bon: var(--statut-bon);
   --color-bon-clair: var(--statut-bon-clair);
   --color-vigilance: var(--statut-vigilance);
