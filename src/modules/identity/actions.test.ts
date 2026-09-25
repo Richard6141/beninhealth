@@ -132,6 +132,9 @@ describe("registerPatientAction", () => {
     prismaMock.$transaction.mockImplementation(
       async (callback: (tx: unknown) => Promise<unknown>) => {
         const tx = {
+          patient: {
+            count: vi.fn().mockResolvedValue(0),
+          },
           user: {
             create: vi.fn().mockResolvedValue({ id: "nouvel-utilisateur" }),
           },

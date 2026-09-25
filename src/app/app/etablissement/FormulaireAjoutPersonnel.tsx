@@ -90,14 +90,11 @@ function ContenuFormulaireAjout({ onFermer }: { onFermer: () => void }) {
         options={optionsRole}
       />
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <TextField
-          label="Spécialité"
-          name="specialite"
-          hint="Le cas échéant, précisez la spécialité (ex. pédiatrie, soins infirmiers)."
-        />
-        <TextField label="Numéro professionnel" name="numeroProfessionnel" required />
-      </div>
+      <TextField
+        label="Spécialité"
+        name="specialite"
+        hint="Le cas échéant, précisez la spécialité (ex. pédiatrie, soins infirmiers)."
+      />
 
       <Button type="submit" variant="primary" className="w-fit" disabled={pending}>
         {pending ? "Création en cours..." : "Créer le compte"}

@@ -193,6 +193,12 @@ function SectionPersonnel({ personnel }: { personnel: MembrePersonnel[] }) {
                     scope="col"
                     className="border-b border-bordure px-3 py-2 text-left font-semibold text-encre-secondaire"
                   >
+                    Identifiant
+                  </th>
+                  <th
+                    scope="col"
+                    className="border-b border-bordure px-3 py-2 text-left font-semibold text-encre-secondaire"
+                  >
                     Rôle
                   </th>
                   <th
@@ -222,6 +228,9 @@ function SectionPersonnel({ personnel }: { personnel: MembrePersonnel[] }) {
                     <tr key={membre.userId}>
                       <td className="border-b border-bordure px-3 py-2 font-semibold text-encre">
                         {membre.nomComplet}
+                      </td>
+                      <td className="chiffres border-b border-bordure px-3 py-2 text-encre-secondaire">
+                        {membre.numeroProfessionnel}
                       </td>
                       <td className="border-b border-bordure px-3 py-2 text-encre">
                         {libelleRole(membre.role)}

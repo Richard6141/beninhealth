@@ -14,7 +14,6 @@
 
 import { mkdir, readdir, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { Prisma } from "@prisma/client";
 import { redirect } from "next/navigation";
@@ -26,6 +25,11 @@ import { prisma } from "@/lib/prisma";
 import { createSession, getSession, destroySession } from "@/lib/session";
 import { getEnv } from "@/lib/env";
 import { verifierCodeMfaPourConnexion } from "@/modules/identity/mfa";
+import {
+  CODES_IDENTIFIANT_PAR_ROLE,
+  prefixeIdentifiant,
+  prochainIdentifiant,
+} from "@/modules/identity/identifiants";
 import type { NomRole } from "@/types";
 
 /**
@@ -93,12 +97,6 @@ async function adresseTechniqueCourante(): Promise<string> {
   }
 }
 
-/** Genere un identifiant sante court et lisible, ex : "BJ-SANTE-3F9A21C4". */
-function genererIdentifiantSante(): string {
-  const suffixe = randomUUID().replace(/-/g, "").toUpperCase().slice(0, 8);
-  return `BJ-SANTE-${suffixe}`;
-}
-
 function premierMessageErreur(erreur: z.ZodError, messageParDefaut: string): string {
   return erreur.issues[0]?.message ?? messageParDefaut;
 }
@@ -152,6 +150,11 @@ export async function registerPatientAction(
     const adresseTechnique = await adresseTechniqueCourante();
 
     const utilisateurCree = await prisma.$transaction(async (tx) => {
+      const nombreExistant = await tx.patient.count({
+        where: { identifiantSante: { startsWith: prefixeIdentifiant(CODES_IDENTIFIANT_PAR_ROLE.patient) } },
+      });
+      const identifiantSante = prochainIdentifiant(CODES_IDENTIFIANT_PAR_ROLE.patient, nombreExistant);
+
       const utilisateur = await tx.user.create({
         data: {
           nom: donnees.nom,
@@ -165,7 +168,7 @@ export async function registerPatientAction(
           },
           patient: {
             create: {
-              identifiantSante: genererIdentifiantSante(),
+              identifiantSante,
               dateNaissance,
               sexe: donnees.sexe,
               groupeSanguin: "inconnu",
@@ -416,9 +419,17 @@ export interface MonProfil {
   telephone: string;
   avatarUrl: string | null;
   roles: NomRole[];
+  /**
+   * Identifiant public de la personne connectee (identifiantSante pour un
+   * patient, numeroProfessionnel pour un professionnel/admin_etablissement),
+   * format BJ-SANTE-<CODE>-0001 (voir src/modules/identity/identifiants.ts).
+   * Null pour un role sans identifiant propre (ex. admin_national, voir
+   * limite documentee dans identifiants.ts).
+   */
+  identifiant: string | null;
 }
 
-/** Profil complet de l'utilisateur connecte, pour l'ecran "Mon profil". */
+/** Profil complet de l'utilisateur connecte, pour l'ecran "Mon profil" et l'en-tete de l'espace authentifie. */
 export async function getMonProfil(): Promise<MonProfil | null> {
   const session = await getSession();
 
@@ -428,7 +439,7 @@ export async function getMonProfil(): Promise<MonProfil | null> {
 
   const utilisateur = await prisma.user.findUnique({
     where: { id: session.userId },
-    include: { roles: true },
+    include: { roles: true, patient: true, professionnel: true },
   });
 
   if (!utilisateur) {
@@ -442,6 +453,7 @@ export async function getMonProfil(): Promise<MonProfil | null> {
     telephone: utilisateur.telephone,
     avatarUrl: utilisateur.avatarUrl,
     roles: utilisateur.roles.map((role) => role.nom as NomRole),
+    identifiant: utilisateur.patient?.identifiantSante ?? utilisateur.professionnel?.numeroProfessionnel ?? null,
   };
 }
 

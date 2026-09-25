@@ -212,21 +212,26 @@ export default async function EspaceAuthentifieLayout({
   const navigation = getNavigationPourRole(session.roles[0]);
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex h-screen overflow-hidden">
       <Sidebar items={navigation} />
 
-      <div className="flex min-h-screen flex-1 flex-col">
-        <header className="sans-impression border-b border-bordure bg-[#162233]">
+      <div className="flex h-screen flex-1 flex-col overflow-hidden">
+        <header className="sans-impression shrink-0 border-b border-bordure bg-[#162233]">
           <div className="flex items-center justify-end gap-3 px-4 py-3 sm:px-6">
             <AvatarMenu
               nom={libelleCompte}
               avatarUrl={profil?.avatarUrl}
+              identifiant={profil?.identifiant}
               logoutAction={logoutAction}
             />
           </div>
         </header>
 
-        <main className="flex-1 bg-plan">{children}</main>
+        <main className="flex-1 overflow-y-auto bg-plan">{children}</main>
+
+        <footer className="sans-impression shrink-0 border-t border-bordure bg-surface px-4 py-3 text-center text-[12px] text-encre-attenuee sm:px-6">
+          © {new Date().getFullYear()} Ministère de la Santé, République du Bénin.
+        </footer>
       </div>
     </div>
   );

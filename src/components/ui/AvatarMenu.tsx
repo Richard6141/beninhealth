@@ -9,6 +9,8 @@ import { cn } from "@/lib/cn";
 export interface AvatarMenuProps {
   nom: string;
   avatarUrl?: string | null;
+  /** Identifiant public (BJ-SANTE-<CODE>-0001), absent pour un role qui n'en a pas encore (voir identifiants.ts). */
+  identifiant?: string | null;
   /** Server Action de deconnexion (src/modules/identity/actions.ts). */
   logoutAction: () => void;
 }
@@ -18,7 +20,7 @@ export interface AvatarMenuProps {
  * deconnecter) plutot que d'exposer la deconnexion comme seule action
  * disponible. Fermeture au clic exterieur, a Echap, ou apres selection.
  */
-export function AvatarMenu({ nom, avatarUrl, logoutAction }: AvatarMenuProps) {
+export function AvatarMenu({ nom, avatarUrl, identifiant, logoutAction }: AvatarMenuProps) {
   const [ouvert, setOuvert] = useState(false);
   const conteneurRef = useRef<HTMLDivElement>(null);
 
@@ -57,6 +59,12 @@ export function AvatarMenu({ nom, avatarUrl, logoutAction }: AvatarMenuProps) {
         )}
       >
         <Avatar name={nom} avatarUrl={avatarUrl} />
+        <span className="hidden flex-col items-start leading-tight sm:flex">
+          <span className="text-[13px] font-semibold text-white">{nom}</span>
+          {identifiant ? (
+            <span className="chiffres text-[11px] text-white/60">{identifiant}</span>
+          ) : null}
+        </span>
         <ChevronDown
           size={14}
           aria-hidden="true"
@@ -75,6 +83,9 @@ export function AvatarMenu({ nom, avatarUrl, logoutAction }: AvatarMenuProps) {
         >
           <div className="border-b border-bordure px-3.5 py-2.5">
             <p className="truncate text-[14px] font-semibold text-encre">{nom}</p>
+            {identifiant ? (
+              <p className="chiffres text-[12px] text-encre-attenuee">{identifiant}</p>
+            ) : null}
           </div>
 
           <Link

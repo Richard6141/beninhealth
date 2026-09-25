@@ -98,7 +98,7 @@ export function Sidebar({ items }: SidebarProps) {
                 "flex items-center gap-3 rounded-champ px-3 py-2.5 text-[14px] font-semibold transition-colors motion-reduce:transition-none",
                 "focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2",
                 actif
-                  ? "bg-[#162233] text-white"
+                  ? "bg-accent text-white"
                   : "text-encre-secondaire hover:bg-surface-appui hover:text-encre"
               )}
             >

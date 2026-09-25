@@ -39,6 +39,7 @@ export function EtablissementsSection({ etablissements }: EtablissementsSectionP
             <Card
               key={etablissement.id}
               title={etablissement.nom}
+              description={etablissement.identifiant}
               actions={<Badge tone="accent">{libelleTypeEtablissement(etablissement.type)}</Badge>}
             >
               <div className="flex flex-col gap-2 text-[13px] text-encre-secondaire">

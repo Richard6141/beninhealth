@@ -20,7 +20,7 @@
  * de toute creation ou modification de compte.
  */
 
-import { randomInt, randomUUID } from "node:crypto";
+import { randomInt } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { Prisma } from "@prisma/client";
 import { headers } from "next/headers";
@@ -28,6 +28,12 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import type { NomRole, TypeEtablissement } from "@/types";
+import {
+  CODES_IDENTIFIANT_PAR_ROLE,
+  CODE_IDENTIFIANT_ETABLISSEMENT,
+  prochainIdentifiant,
+  prefixeIdentifiant,
+} from "./identifiants";
 
 /**
  * Etat renvoye par chaque Server Action de ce module, consomme via
@@ -45,6 +51,7 @@ export interface GestionCompteActionState {
 /** Etablissement avec les indicateurs de gestion utiles au ministere. */
 export interface EtablissementDetail {
   id: string;
+  identifiant: string;
   nom: string;
   type: string;
   localisation: string;
@@ -58,6 +65,7 @@ export interface MembrePersonnel {
   nomComplet: string;
   role: string;
   specialite: string;
+  numeroProfessionnel: string;
   statutValidation: string;
   email: string;
 }
@@ -149,7 +157,6 @@ const schemaCreationProfessionnel = z.object({
   telephone: z.string().trim().min(1, "Le telephone est obligatoire."),
   role: z.enum(ROLES_CREABLES_PAR_ETABLISSEMENT, { message: "Role invalide." }),
   specialite: z.string().trim().min(1, "La specialite est obligatoire."),
-  numeroProfessionnel: z.string().trim().min(1, "Le numero professionnel est obligatoire."),
 });
 
 const schemaChangementMotDePasse = z
@@ -233,12 +240,6 @@ function genererMotDePasseTemporaire(): string {
   return motDePasse.join("");
 }
 
-/** Genere un numero professionnel court et lisible pour un compte administrateur d'etablissement. */
-function genererNumeroProfessionnelAdmin(): string {
-  const suffixe = randomUUID().replace(/-/g, "").toUpperCase().slice(0, 8);
-  return `BJ-ADM-${suffixe}`;
-}
-
 /** Convertit le contenu d'une zone de texte (une entree par ligne) en tableau JSON. */
 function servicesDisponiblesEnJSON(valeurBrute: string): string {
   const services = valeurBrute
@@ -277,6 +278,7 @@ export async function listEtablissementsDetail(): Promise<EtablissementDetail[]>
 
     return {
       id: etablissement.id,
+      identifiant: etablissement.identifiant,
       nom: etablissement.nom,
       type: etablissement.type,
       localisation: etablissement.localisation,
@@ -341,8 +343,14 @@ export async function creerEtablissementAction(
     const servicesJSON = servicesDisponiblesEnJSON(donnees.servicesDisponibles);
 
     await prisma.$transaction(async (tx) => {
+      const nombreEtablissements = await tx.etablissementSanitaire.count({
+        where: { identifiant: { startsWith: prefixeIdentifiant(CODE_IDENTIFIANT_ETABLISSEMENT) } },
+      });
+      const identifiant = prochainIdentifiant(CODE_IDENTIFIANT_ETABLISSEMENT, nombreEtablissements);
+
       const etablissement = await tx.etablissementSanitaire.create({
         data: {
+          identifiant,
           nom: donnees.nom,
           type: donnees.type,
           localisation: donnees.localisation,
@@ -352,6 +360,18 @@ export async function creerEtablissementAction(
           capacite: donnees.capacite,
         },
       });
+
+      const nombreAdmins = await tx.professionnelSante.count({
+        where: {
+          numeroProfessionnel: {
+            startsWith: prefixeIdentifiant(CODES_IDENTIFIANT_PAR_ROLE.admin_etablissement),
+          },
+        },
+      });
+      const numeroProfessionnel = prochainIdentifiant(
+        CODES_IDENTIFIANT_PAR_ROLE.admin_etablissement,
+        nombreAdmins
+      );
 
       await tx.user.create({
         data: {
@@ -365,7 +385,7 @@ export async function creerEtablissementAction(
           professionnel: {
             create: {
               specialite: SPECIALITE_ADMINISTRATION,
-              numeroProfessionnel: genererNumeroProfessionnelAdmin(),
+              numeroProfessionnel,
               etablissementId: etablissement.id,
               statutValidation: "valide",
             },
@@ -434,6 +454,7 @@ export async function listPersonnelEtablissement(): Promise<MembrePersonnel[]> {
     nomComplet: `${professionnel.user.prenom} ${professionnel.user.nom}`,
     role: professionnel.user.roles.map((role) => role.nom).join(", "),
     specialite: professionnel.specialite,
+    numeroProfessionnel: professionnel.numeroProfessionnel,
     statutValidation: professionnel.statutValidation,
     email: professionnel.user.email,
   }));
@@ -471,7 +492,6 @@ export async function creerProfessionnelAction(
     telephone: formData.get("telephone"),
     role: formData.get("role"),
     specialite: formData.get("specialite"),
-    numeroProfessionnel: formData.get("numeroProfessionnel"),
   });
 
   if (!validation.success) {
@@ -483,19 +503,10 @@ export async function creerProfessionnelAction(
 
   const donnees = validation.data;
 
-  const [compteExistant, numeroExistant] = await Promise.all([
-    prisma.user.findUnique({ where: { email: donnees.email } }),
-    prisma.professionnelSante.findUnique({
-      where: { numeroProfessionnel: donnees.numeroProfessionnel },
-    }),
-  ]);
+  const compteExistant = await prisma.user.findUnique({ where: { email: donnees.email } });
 
   if (compteExistant) {
     return { error: "Un compte existe deja avec cet email.", success: false };
-  }
-
-  if (numeroExistant) {
-    return { error: "Ce numero professionnel est deja utilise.", success: false };
   }
 
   const motDePasseTemporaire = genererMotDePasseTemporaire();
@@ -517,11 +528,17 @@ export async function creerProfessionnelAction(
         },
       });
 
+      const codeIdentifiant = CODES_IDENTIFIANT_PAR_ROLE[donnees.role];
+      const nombreExistant = await tx.professionnelSante.count({
+        where: { numeroProfessionnel: { startsWith: prefixeIdentifiant(codeIdentifiant) } },
+      });
+      const numeroProfessionnel = prochainIdentifiant(codeIdentifiant, nombreExistant);
+
       const professionnel = await tx.professionnelSante.create({
         data: {
           userId: nouvelUtilisateur.id,
           specialite: donnees.specialite,
-          numeroProfessionnel: donnees.numeroProfessionnel,
+          numeroProfessionnel,
           etablissementId: adminProfil.etablissementId,
           statutValidation: "valide",
         },
@@ -540,7 +557,7 @@ export async function creerProfessionnelAction(
   } catch (erreur) {
     if (estErreurContrainteUnique(erreur)) {
       return {
-        error: "Un compte existe deja avec cet email ou ce numero professionnel.",
+        error: "Un compte existe deja avec cet email.",
         success: false,
       };
     }

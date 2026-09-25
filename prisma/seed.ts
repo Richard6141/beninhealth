@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { formaterIdentifiant, CODES_IDENTIFIANT_PAR_ROLE, CODE_IDENTIFIANT_ETABLISSEMENT } from "../src/modules/identity/identifiants";
 
 // Jeu de donnees de demonstration, contexte beninois, pour le scenario du
 // cahier des charges (Partie 9) : citoyen cree son espace, prend rendez-vous,
@@ -15,6 +16,7 @@ async function main() {
 
   const centreCotonou = await prisma.etablissementSanitaire.create({
     data: {
+      identifiant: formaterIdentifiant(CODE_IDENTIFIANT_ETABLISSEMENT, 1),
       nom: "Centre de Sante Akpakpa",
       type: "centre_sante",
       localisation: "Cotonou, Akpakpa",
@@ -31,6 +33,7 @@ async function main() {
 
   const centreParakou = await prisma.etablissementSanitaire.create({
     data: {
+      identifiant: formaterIdentifiant(CODE_IDENTIFIANT_ETABLISSEMENT, 2),
       nom: "Hopital de Zone de Parakou",
       type: "hopital",
       localisation: "Parakou",
@@ -47,6 +50,7 @@ async function main() {
 
   const laboCotonou = await prisma.etablissementSanitaire.create({
     data: {
+      identifiant: formaterIdentifiant(CODE_IDENTIFIANT_ETABLISSEMENT, 3),
       nom: "Laboratoire National de Reference de Cotonou",
       type: "laboratoire",
       localisation: "Cotonou, Cadjehoun",
@@ -73,7 +77,7 @@ async function main() {
       professionnel: {
         create: {
           specialite: "Medecine generale",
-          numeroProfessionnel: "BJ-MED-0001",
+          numeroProfessionnel: formaterIdentifiant(CODES_IDENTIFIANT_PAR_ROLE.medecin, 1),
           etablissementId: centreCotonou.id,
           statutValidation: "valide",
         },
@@ -93,7 +97,7 @@ async function main() {
       professionnel: {
         create: {
           specialite: "Soins generaux",
-          numeroProfessionnel: "BJ-INF-0001",
+          numeroProfessionnel: formaterIdentifiant(CODES_IDENTIFIANT_PAR_ROLE.infirmier, 1),
           etablissementId: centreCotonou.id,
           statutValidation: "valide",
         },
@@ -113,7 +117,7 @@ async function main() {
       professionnel: {
         create: {
           specialite: "Sante communautaire",
-          numeroProfessionnel: "BJ-AGC-0001",
+          numeroProfessionnel: formaterIdentifiant(CODES_IDENTIFIANT_PAR_ROLE.agent_communautaire, 1),
           etablissementId: centreCotonou.id,
           statutValidation: "valide",
         },
@@ -133,7 +137,7 @@ async function main() {
       professionnel: {
         create: {
           specialite: "Biologie medicale",
-          numeroProfessionnel: "BJ-LAB-0001",
+          numeroProfessionnel: formaterIdentifiant(CODES_IDENTIFIANT_PAR_ROLE.laboratoire, 1),
           etablissementId: laboCotonou.id,
           statutValidation: "valide",
         },
@@ -157,7 +161,7 @@ async function main() {
       professionnel: {
         create: {
           specialite: "Administration",
-          numeroProfessionnel: "BJ-ADM-0001",
+          numeroProfessionnel: formaterIdentifiant(CODES_IDENTIFIANT_PAR_ROLE.admin_etablissement, 1),
           etablissementId: centreCotonou.id,
           statutValidation: "valide",
         },
@@ -188,7 +192,7 @@ async function main() {
       roles: { create: [{ nom: "patient" }] },
       patient: {
         create: {
-          identifiantSante: "BJ-SANTE-0001",
+          identifiantSante: formaterIdentifiant(CODES_IDENTIFIANT_PAR_ROLE.patient, 1),
           dateNaissance: new Date("1994-03-12"),
           sexe: "F",
           groupeSanguin: "O+",

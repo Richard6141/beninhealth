@@ -63,6 +63,10 @@ model UserRole {
 // Correspond a EtablissementSanitaire dans src/types/domain-facility.ts.
 model EtablissementSanitaire {
   id                  String @id @default(cuid())
+  // Identifiant public court, prefixe "BJ-ETB-" (meme convention que
+  // Patient.identifiantSante et ProfessionnelSante.numeroProfessionnel) :
+  // permet d'identifier un etablissement sans exposer son cuid interne.
+  identifiant         String @unique
   nom                 String
   type                String
   localisation        String
