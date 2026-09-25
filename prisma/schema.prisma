@@ -73,6 +73,9 @@ model EtablissementSanitaire {
   professionnels ProfessionnelSante[]
   rendezVous     RendezVous[]
   consultations  Consultation[]
+  // Examens medicaux dont cet etablissement est le laboratoire assigne
+  // (uniquement pertinent pour un etablissement de type "laboratoire").
+  examensMedicaux ExamenMedical[]
 }
 
 // Correspond a ProfessionnelSante dans src/types/domain-identity.ts.
@@ -90,6 +93,8 @@ model ProfessionnelSante {
   rendezVous    RendezVous[]
   consultations Consultation[]
   prescriptions Prescription[]
+  // Examens medicaux demandes par ce professionnel (typiquement un medecin).
+  examensDemandes ExamenMedical[]
 }
 
 // Correspond a Patient dans src/types/domain-patient.ts.
@@ -114,6 +119,7 @@ model Patient {
   rendezVous    RendezVous[]
   consultations Consultation[]
   prescriptions Prescription[]
+  examensMedicaux ExamenMedical[]
 }
 
 // Correspond a Consentement dans src/types/domain-patient.ts.
@@ -181,6 +187,32 @@ model Consultation {
   statut          String    @default("terminee")
 
   prescriptions Prescription[]
+  examensMedicaux ExamenMedical[]
+}
+
+// Correspond a ExamenMedical dans src/types/domain-clinical.ts.
+// Demande par un professionnel de sante (typiquement un medecin), realise par
+// un etablissement de type "laboratoire". Comme pour Consultation, la
+// demande exige un Consentement actif pour le patient concerne : verifie
+// cote module, pas au niveau du schema. Le rattachement a une consultation
+// d'origine est optionnel (un examen peut aussi etre demande hors
+// consultation formelle, ex. suivi programme).
+model ExamenMedical {
+  id              String    @id @default(cuid())
+  patientId       String
+  patient         Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  demandeurId     String
+  demandeur       ProfessionnelSante @relation(fields: [demandeurId], references: [id])
+  laboratoireId   String
+  laboratoire     EtablissementSanitaire @relation(fields: [laboratoireId], references: [id])
+  consultationId  String?
+  consultation    Consultation? @relation(fields: [consultationId], references: [id])
+  typeExamen      String
+  date            DateTime  @default(now())
+  // demande | en_cours | termine | annule
+  statut          String    @default("demande")
+  resultat        String?
+  dateResultat    DateTime?
 }
 
 // Correspond a Medicament dans src/types/domain-clinical.ts.

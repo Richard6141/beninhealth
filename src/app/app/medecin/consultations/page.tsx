@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft, Pill, Stethoscope } from "lucide-react";
+import { ArrowLeft, FlaskConical, Pill, Stethoscope } from "lucide-react";
 import {
   getConsultationsDuProfessionnel,
   type ConsultationResume,
@@ -60,6 +60,22 @@ function LienPrescrire({ consultationId }: { consultationId: string }) {
   );
 }
 
+/** Lien vers la demande d'examen pour cette consultation, meme style que LienPrescrire. */
+function LienDemanderExamen({ consultationId }: { consultationId: string }) {
+  return (
+    <Link
+      href={`/app/medecin/examens/nouvelle?consultationId=${encodeURIComponent(consultationId)}`}
+      className={cn(
+        "inline-flex h-9 w-fit items-center justify-center gap-1.5 rounded-champ border border-bordure-forte bg-surface px-3 text-[13px] font-semibold text-encre transition-colors motion-reduce:transition-none hover:bg-surface-appui",
+        "focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+      )}
+    >
+      <FlaskConical size={14} aria-hidden="true" />
+      Demander un examen
+    </Link>
+  );
+}
+
 function CarteConsultation({ consultation }: { consultation: ConsultationResume }) {
   const statut = libelleStatut(consultation.statut);
 
@@ -112,7 +128,8 @@ function CarteConsultation({ consultation }: { consultation: ConsultationResume 
           </p>
         </div>
 
-        <div className="flex justify-end">
+        <div className="flex flex-wrap justify-end gap-2">
+          <LienDemanderExamen consultationId={consultation.id} />
           <LienPrescrire consultationId={consultation.id} />
         </div>
       </div>

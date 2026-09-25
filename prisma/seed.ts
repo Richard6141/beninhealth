@@ -45,6 +45,22 @@ async function main() {
     },
   });
 
+  const laboCotonou = await prisma.etablissementSanitaire.create({
+    data: {
+      nom: "Laboratoire National de Reference de Cotonou",
+      type: "laboratoire",
+      localisation: "Cotonou, Cadjehoun",
+      latitude: 6.3576,
+      longitude: 2.3912,
+      servicesDisponibles: JSON.stringify([
+        "analyse_sang",
+        "test_paludisme",
+        "imagerie",
+      ]),
+      capacite: 25,
+    },
+  });
+
   const medecin = await prisma.user.create({
     data: {
       nom: "Ahouansou",
@@ -79,6 +95,26 @@ async function main() {
           specialite: "Soins generaux",
           numeroProfessionnel: "BJ-INF-0001",
           etablissementId: centreCotonou.id,
+          statutValidation: "valide",
+        },
+      },
+    },
+  });
+
+  await prisma.user.create({
+    data: {
+      nom: "Sossou",
+      prenom: "Elvire",
+      email: "laboratoire.demo@benin-health.test",
+      telephone: "+229 90 00 00 07",
+      motDePasseHash,
+      statut: "actif",
+      roles: { create: [{ nom: "laboratoire" }] },
+      professionnel: {
+        create: {
+          specialite: "Biologie medicale",
+          numeroProfessionnel: "BJ-LAB-0001",
+          etablissementId: laboCotonou.id,
           statutValidation: "valide",
         },
       },
