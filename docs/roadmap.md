@@ -56,7 +56,24 @@ Version détaillée et cochable de la roadmap par phases du Bénin Health Intell
 
 ## Phase 7 : sécurité, tests et démonstration
 
-- [ ] Durcissement sécurité (MFA, revue Zero Trust, RBAC, audit)
-- [ ] Tests automatisés et parcours bout en bout (`src/tests/`)
-- [ ] Jeu de données de démonstration à contexte béninois
-- [ ] Répétition du scénario de démo : le citoyen crée son espace, prend rendez-vous ; le médecin consulte et prescrit ; le ministère voit les données agrégées
+- [x] Durcissement sécurité : MFA (TOTP) activable sur tout compte, connexion en deux étapes
+- [x] Tests automatisés (Vitest : RBAC complet, validations et Zero Trust des modules identity/patient)
+- [x] Jeu de données de démonstration à contexte béninois (déjà en place depuis les phases précédentes)
+- [x] Répétition du scénario de démo : script automatisé `npm run demo:e2e`, vérifie le parcours complet contre le serveur réel
+
+## Phase 8 : module laboratoire (examens médicaux)
+
+- [ ] Modèle de données ExamenMedical (demande, réalisation, résultat)
+- [ ] Demande d'examen par un médecin depuis une consultation
+- [ ] Réception et saisie du résultat par le laboratoire
+- [ ] Consultation du résultat par le patient et le médecin prescripteur
+
+## Phase 9 : module pharmacie (délivrance des prescriptions)
+
+- [x] Liste des prescriptions à délivrer côté pharmacien
+- [x] Confirmation de délivrance (totale ou partielle), traçabilité complète
+
+## Phase 10 : PWA hors ligne et notifications
+
+- [ ] Manifeste PWA et fonctionnement hors ligne pour les agents de terrain
+- [ ] Centre de notifications in-app (confirmation de rendez-vous, résultat disponible, etc.)

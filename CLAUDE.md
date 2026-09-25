@@ -32,7 +32,10 @@ Reprend la Partie 9 §5 et la Partie 11 §7 du cahier des charges. Version déta
 - Phase 4 (fait) : espace professionnel, prise de rendez-vous et consultation médicale.
 - Phase 5 (fait) : prescription électronique.
 - Phase 6 (fait) : hiérarchie de provisionnement (ministère crée un établissement et son admin, qui crée son personnel) et tableaux de bord établissement/ministère (données agrégées uniquement, jamais de données nominatives).
-- Phase 7 (à venir) : sécurité, tests, durcissement, jeu de données de démonstration à contexte béninois, répétition du scénario de démo (citoyen crée son espace, prend rendez-vous, médecin consulte et prescrit, ministère voit les données agrégées).
+- Phase 7 (fait) : MFA (TOTP), tests automatisés (Vitest), script de démonstration bout en bout (`npm run demo:e2e`).
+- Phase 8 (à venir) : module laboratoire (examens médicaux).
+- Phase 9 (fait) : module pharmacie (délivrance des prescriptions).
+- Phase 10 (à venir) : PWA hors ligne, centre de notifications in-app.
 
 Détail cochable phase par phase : voir `docs/roadmap.md`.
 
