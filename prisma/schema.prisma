@@ -47,6 +47,8 @@ model User {
   consentementsRecus Consentement[]
   evenementsPrescription EvenementPrescription[]
   notifications Notification[]
+  addendaConsultation AddendumConsultation[]
+  documentsMedicaux DocumentMedical[]
 }
 
 // Attribution d'un role a un utilisateur (un utilisateur peut cumuler
@@ -82,6 +84,9 @@ model EtablissementSanitaire {
   // (uniquement pertinent pour un etablissement de type "laboratoire").
   examensMedicaux ExamenMedical[]
   suivisCommunautaires SuiviCommunautaire[]
+  vaccinations Vaccination[]
+  prisesEnChargeInfirmieres PriseEnChargeInfirmiere[]
+  delivrances Delivrance[]
 }
 
 // Correspond a ProfessionnelSante dans src/types/domain-identity.ts.
@@ -101,8 +106,14 @@ model ProfessionnelSante {
   prescriptions Prescription[]
   // Examens medicaux demandes par ce professionnel (typiquement un medecin).
   examensDemandes ExamenMedical[]
+  // F-LAB-04 : examens dont ce professionnel a saisi le resultat / qu'il a valides (role laboratoire).
+  examensSaisis  ExamenMedical[] @relation("ExamenSaisiPar")
+  examensValides ExamenMedical[] @relation("ExamenValidePar")
   // Visites de suivi communautaire menees par ce professionnel (role agent_communautaire).
   suivisCommunautaires SuiviCommunautaire[]
+  vaccinations Vaccination[]
+  prisesEnChargeInfirmieres PriseEnChargeInfirmiere[]
+  delivrances Delivrance[]
 }
 
 // Correspond a Patient dans src/types/domain-patient.ts.
@@ -131,6 +142,9 @@ model Patient {
   // Optionnel : un beneficiaire de visite communautaire n'a pas forcement de
   // dossier Patient enregistre (voir SuiviCommunautaire.beneficiaireNom).
   suivisCommunautaires SuiviCommunautaire[]
+  vaccinations Vaccination[]
+  documentsMedicaux DocumentMedical[]
+  prisesEnChargeInfirmieres PriseEnChargeInfirmiere[]
 }
 
 // Correspond a Consentement dans src/types/domain-patient.ts.
@@ -190,15 +204,62 @@ model Consultation {
   rendezVousId    String?   @unique
   rendezVous      RendezVous? @relation(fields: [rendezVousId], references: [id])
   date            DateTime  @default(now())
-  motif           String
+  motif           String    @default("")
   symptomes       String    @default("[]")
-  constantes      String    @default("")
+  // Constantes vitales structurees (F-CLI-06 du pack) : chaque champ est
+  // facultatif (toutes les constantes ne sont pas toujours prises), verifie
+  // par src/modules/clinical/controles-constantes.ts avant enregistrement
+  // (plage acceptee = refus, plage d'alerte = confirmation demandee).
+  temperatureCelsius    Float?
+  pouls                 Int?
+  tensionSystolique     Int?
+  tensionDiastolique    Int?
+  frequenceRespiratoire Int?
+  saturationOxygene     Int?
+  poidsKg               Float?
+  tailleCm              Float?
+  glycemieGL            Float?
   observations    String    @default("")
   conclusion      String    @default("")
-  statut          String    @default("terminee")
+  // F-CLI-05/07 du pack : cycle de vie brouillon -> valide (RG-CLI-40 : un
+  // seul brouillon ouvert par patient et par medecin). "terminee" designe la
+  // consultation validee (verrouillee, immuable hors addendum), jamais un
+  // statut de rendez-vous.
+  statut          String    @default("brouillon")
+  dateValidation  DateTime?
+  // Empreinte SHA-256 du contenu clinique canonique au moment de la
+  // validation (F-CLI-07), calculee par calculerEmpreinteConsultation dans
+  // src/modules/clinical/actions.ts.
+  empreinteContenu String?
+  // F-CLI-08 / RG-CLI-70 du pack : retrait ("saisie par erreur"), reserve au
+  // cas d'une consultation enregistree sur le mauvais patient. La
+  // consultation reste visible (barree a l'ecran) mais exclue des
+  // statistiques ; jamais une suppression.
+  saisieParErreur Boolean   @default(false)
+  motifRetrait    String?
+  dateRetrait     DateTime?
 
   prescriptions Prescription[]
   examensMedicaux ExamenMedical[]
+  addenda         AddendumConsultation[]
+  documentsMedicaux DocumentMedical[]
+  priseEnChargeInfirmiere PriseEnChargeInfirmiere?
+}
+
+// F-CLI-08 du pack : complement ou correction d'une consultation deja
+// validee, jamais une modification du contenu original (immuabilite,
+// RG-CLI-00). Toujours affiche sous la consultation, date et signe par son
+// auteur.
+model AddendumConsultation {
+  id             String   @id @default(cuid())
+  consultationId String
+  consultation   Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+  auteurId       String
+  auteur         User     @relation(fields: [auteurId], references: [id])
+  // complement_information | correction | resultat_recu | autre
+  motif          String
+  contenu        String
+  date           DateTime @default(now())
 }
 
 // Correspond a ExamenMedical dans src/types/domain-clinical.ts.
@@ -220,10 +281,31 @@ model ExamenMedical {
   consultation    Consultation? @relation(fields: [consultationId], references: [id])
   typeExamen      String
   date            DateTime  @default(now())
-  // demande | en_cours | termine | annule
+  // demande | en_cours | resultat_saisi | correction_demandee | termine | annule
+  // F-LAB-04 / RG-ROL-30 (principe des quatre yeux) : "resultat_saisi" est un
+  // etat intermediaire, pas encore visible en dehors du laboratoire
+  // (RG-LAB-30) ; seule la validation par un AUTRE professionnel de
+  // laboratoire fait passer a "termine". Ce depot n'a pas de role
+  // LAB_SUPERVISOR distinct : la validation est ouverte a tout professionnel
+  // du role laboratoire autre que celui ayant saisi le resultat.
   statut          String    @default("demande")
   resultat        String?
   dateResultat    DateTime?
+  saisiParId      String?
+  saisiPar        ProfessionnelSante? @relation("ExamenSaisiPar", fields: [saisiParId], references: [id])
+  valideParId     String?
+  validePar       ProfessionnelSante? @relation("ExamenValidePar", fields: [valideParId], references: [id])
+  dateValidation  DateTime?
+  // Empreinte SHA-256 du resultat au moment de la validation (meme principe
+  // que Consultation.empreinteContenu et Prescription.empreinteContenu).
+  empreinteResultat     String?
+  // Motif de renvoi pour correction (RG-ROL-31), efface a la validation.
+  commentaireValidation String?
+  // F-LAB-02 / RG-LAB-02 du pack : un examen "sensible" (ex. serologie VIH) a
+  // son resultat masque au patient tant qu'un medecin ne l'a pas annonce, voir
+  // src/modules/laboratoire/referentiel-examens-sensibles.ts.
+  sensible                  Boolean @default(false)
+  resultatAnnonceAuPatient  Boolean @default(false)
 }
 
 // Correspond a SuiviCommunautaire dans src/types/domain-communautaire.ts.
@@ -256,9 +338,16 @@ model Medicament {
   principeActif                String
   dosage                        String
   forme                          String
+  // Classe therapeutique (ex. "penicillines"), utilisee par le controle de
+  // securite allergie <-> medicament (F-PRE-02 / RG-PRE-10 du pack), voir
+  // src/modules/prescription/referentiel-allergies.ts. Chaine libre pour ce
+  // MVP plutot qu'une table de classes ATC dediee.
+  classeTherapeutique           String @default("")
   informationsComplementaires   String @default("")
 
   lignesPrescription LignePrescription[]
+  // Generique par lequel ce medicament a ete substitue lors d'une delivrance (F-PHA-03).
+  substitutionsDelivrees LigneDelivrance[] @relation("MedicamentDelivre")
 }
 
 // Correspond a Prescription dans src/types/domain-clinical.ts.
@@ -282,9 +371,17 @@ model Prescription {
   // du module pharmacie, hors perimetre de cette phase (voir README).
   statut                String   @default("validee")
   instructions          String   @default("")
+  // Numero d'ordonnance lisible (F-PRE-04 du pack), format RX-XXXX-XXXX,
+  // genere a la creation. Empreinte SHA-256 du contenu canonique (lignes,
+  // instructions), calculee au meme moment : la prescription est deja creee
+  // "validee" dans ce MVP (voir commentaire ci-dessus), donc numero et
+  // empreinte sont fixes des la creation plutot qu'a une signature separee.
+  numero                String   @unique
+  empreinteContenu      String
 
   lignes     LignePrescription[]
   historique EvenementPrescription[]
+  delivrances Delivrance[]
 }
 
 // Correspond a LignePrescription dans src/types/domain-clinical.ts : un
@@ -298,6 +395,50 @@ model LignePrescription {
   posologie            String
   quantite             Int
   dureeTraitementJours Int
+  // RG-PHA-12 du pack : une ligne marquee non substituable ne peut jamais
+  // recevoir un generique a la delivrance, meme de meme DCI/dosage/forme.
+  nonSubstituable      Boolean @default(false)
+
+  lignesDelivrees LigneDelivrance[]
+}
+
+// Correspond a F-PHA-03 du pack : un acte de delivrance en pharmacie, une ou
+// plusieurs lignes a la fois. Immuable (RG-PHA-13) : une erreur se corrige
+// par une annulation motivee dans les 24h qui restitue les quantites,
+// jamais une modification des lignes deja creees.
+model Delivrance {
+  id              String   @id @default(cuid())
+  prescriptionId  String
+  prescription    Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  pharmacienId    String
+  pharmacien      ProfessionnelSante @relation(fields: [pharmacienId], references: [id])
+  etablissementId String
+  etablissement   EtablissementSanitaire @relation(fields: [etablissementId], references: [id])
+  date            DateTime @default(now())
+  annulee         Boolean  @default(false)
+  motifAnnulation String?
+  dateAnnulation  DateTime?
+
+  lignes LigneDelivrance[]
+}
+
+// Une ligne delivree au sein d'un acte de delivrance (Delivrance) : quantite
+// reellement remise au patient pour une LignePrescription donnee, produit
+// delivre (identique ou substitue par un generique de meme DCI/dosage/forme,
+// jamais si LignePrescription.nonSubstituable), motif si quantite nulle ou
+// partielle (rupture de stock, refus du patient, cout, autre).
+model LigneDelivrance {
+  id                  String   @id @default(cuid())
+  delivranceId        String
+  delivrance          Delivrance @relation(fields: [delivranceId], references: [id], onDelete: Cascade)
+  lignePrescriptionId String
+  lignePrescription   LignePrescription @relation(fields: [lignePrescriptionId], references: [id])
+  quantiteDelivree    Int
+  medicamentDelivreId String?
+  medicamentDelivre   Medicament? @relation("MedicamentDelivre", fields: [medicamentDelivreId], references: [id])
+  motifNonDelivrance  String?
+  numeroLot           String?
+  datePeremption      DateTime?
 }
 
 // Correspond a EvenementHistoriquePrescription dans src/types/domain-clinical.ts.
@@ -340,4 +481,83 @@ model Notification {
   lien          String?
   lu            Boolean  @default(false)
   date          DateTime @default(now())
+}
+
+// Correspond a F-CLI-11 du pack : vaccination administree en etablissement
+// (calendrier PEV, section 18.4). Immuable une fois enregistree (RG-CLI-100) :
+// une erreur de saisie se corrige par un retrait motive, jamais une
+// modification ni une suppression.
+model Vaccination {
+  id                 String   @id @default(cuid())
+  patientId          String
+  patient            Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  professionnelId    String
+  professionnel      ProfessionnelSante @relation(fields: [professionnelId], references: [id])
+  etablissementId    String
+  etablissement      EtablissementSanitaire @relation(fields: [etablissementId], references: [id])
+  vaccin             String
+  numeroDose         Int
+  dateAdministration DateTime
+  numeroLot          String
+  siteInjection      String
+  voie               String
+  saisieParErreur    Boolean  @default(false)
+  motifRetrait       String?
+  dateCreation       DateTime @default(now())
+}
+
+// Correspond a F-CLI-13 du pack : document ajoute au dossier d'un patient
+// (compte rendu, resultat, imagerie, courrier, certificat...). RG-CLI-112 :
+// stocke hors du dossier public, jamais servi par une URL statique directe.
+// RG-CLI-113 : jamais supprime, seulement retire "ajoute par erreur".
+model DocumentMedical {
+  id                     String    @id @default(cuid())
+  patientId              String
+  patient                Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  auteurId               String
+  auteur                 User      @relation(fields: [auteurId], references: [id])
+  consultationId         String?
+  consultation           Consultation? @relation(fields: [consultationId], references: [id])
+  type                   String
+  titre                  String
+  dateDocument           DateTime
+  niveauConfidentialite  String    @default("normal")
+  cheminFichier          String
+  nomFichierOriginal     String
+  typeMime               String
+  tailleOctets           Int
+  retirePourErreur       Boolean   @default(false)
+  motifRetrait           String?
+  dateCreation           DateTime  @default(now())
+}
+
+// Correspond a F-CLI-12 du pack : prise en charge infirmiere (constantes,
+// priorite de tri, note de soins) avant la consultation medicale. Ne cree
+// jamais de Consultation (l'infirmier n'a pas cette permission) : le medecin
+// recupere la prise en charge non consommee la plus recente du patient pour
+// pre-remplir les constantes de sa propre consultation.
+model PriseEnChargeInfirmiere {
+  id                    String   @id @default(cuid())
+  patientId             String
+  patient               Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  infirmierId           String
+  infirmier             ProfessionnelSante @relation(fields: [infirmierId], references: [id])
+  etablissementId       String
+  etablissement         EtablissementSanitaire @relation(fields: [etablissementId], references: [id])
+  prioriteTri           String
+  temperatureCelsius    Float?
+  pouls                 Int?
+  tensionSystolique     Int?
+  tensionDiastolique    Int?
+  frequenceRespiratoire Int?
+  saturationOxygene     Int?
+  poidsKg               Float?
+  tailleCm              Float?
+  glycemieGL            Float?
+  noteSoins             String   @default("")
+  // en_attente | recuperee (par le medecin dans sa consultation)
+  statut                String   @default("en_attente")
+  consultationRattacheeId String? @unique
+  consultationRattachee   Consultation? @relation(fields: [consultationRattacheeId], references: [id])
+  date                  DateTime @default(now())
 }

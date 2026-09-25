@@ -2,6 +2,9 @@ import Link from "next/link";
 import { FlaskConical, Pill, Stethoscope } from "lucide-react";
 import { getMonProfil } from "@/modules/identity/actions";
 import { getRendezVousDuProfessionnel, type RendezVousResume } from "@/modules/facility/actions";
+import { getConsultationsDuProfessionnel } from "@/modules/clinical/actions";
+import { getExamensDemandesParProfessionnel } from "@/modules/laboratoire/actions";
+import { getPrescriptionsDuProfessionnel } from "@/modules/prescription/actions";
 import { getMonQrCode } from "@/modules/verification/actions";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
@@ -39,6 +42,27 @@ function formaterDateHeure(dateIso: string): string {
 }
 
 const NOMBRE_MAX_PROCHAINS_RENDEZ_VOUS = 4;
+
+/** Tuile de synthese chiffree, meme composant que src/app/app/medecin/DashboardInfirmier.tsx. */
+function TuileSynthese({ label, valeur }: { label: string; valeur: number }) {
+  return (
+    <div className="flex items-center gap-3 rounded-champ border border-bordure bg-plan px-4 py-3">
+      <div className="flex min-w-0 flex-col">
+        <span className="text-[12px] font-semibold uppercase tracking-[0.06em] text-encre-attenuee">
+          {label}
+        </span>
+        <span className="chiffres text-[22px] font-black text-encre">{valeur}</span>
+      </div>
+    </div>
+  );
+}
+
+function estDansLes7DerniersJours(dateIso: string): boolean {
+  const date = new Date(dateIso);
+  const ilYA7Jours = new Date();
+  ilYA7Jours.setDate(ilYA7Jours.getDate() - 7);
+  return date >= ilYA7Jours;
+}
 
 function ListePatientsDuJour({ rendezVous }: { rendezVous: RendezVousResume[] }) {
   if (rendezVous.length === 0) {
@@ -117,6 +141,84 @@ function ListeProchainsRendezVous({ rendezVous }: { rendezVous: RendezVousResume
   );
 }
 
+/**
+ * Resultats d'examens sensibles dont l'annonce au patient reste a faire
+ * (F-LAB-05 du pack, voir src/modules/laboratoire/referentiel-examens-sensibles.ts) :
+ * mis en avant sur le tableau de bord car sinon invisible tant qu'on ne va
+ * pas ouvrir "Mes examens demandes" par hasard.
+ */
+function ListeResultatsAAnnoncer({
+  examens,
+}: {
+  examens: { id: string; patientNomComplet: string | null; date: string }[];
+}) {
+  if (examens.length === 0) {
+    return (
+      <p className="text-[13px] text-encre-attenuee">
+        Aucun resultat sensible en attente d&apos;annonce.
+      </p>
+    );
+  }
+
+  return (
+    <ul className="flex flex-col gap-3">
+      {examens.map((examen) => (
+        <li
+          key={examen.id}
+          className="flex flex-col gap-1 border-b border-bordure pb-3 last:border-0 last:pb-0"
+        >
+          <span className="font-semibold text-encre">
+            {examen.patientNomComplet ?? "Patient non précisé"}
+          </span>
+          <span className="text-[13px] text-encre-secondaire">{formaterDateHeure(examen.date)}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * Brouillons de consultation encore ouverts (F-CLI-05 du pack). Sans tache
+ * planifiee d'abandon automatique a 7 jours (RG-CLI-43, voir
+ * docs/audit-cote-medecin.md), c'est le seul rappel qu'une saisie est restee
+ * en cours ; chaque ligne mene directement a sa reprise.
+ */
+function ListeBrouillonsEnCours({
+  consultations,
+}: {
+  consultations: { id: string; patientId: string; patientNomComplet: string | null; date: string }[];
+}) {
+  if (consultations.length === 0) {
+    return (
+      <p className="text-[13px] text-encre-attenuee">Aucun brouillon en cours.</p>
+    );
+  }
+
+  return (
+    <ul className="flex flex-col gap-3">
+      {consultations.map((consultation) => (
+        <li
+          key={consultation.id}
+          className="flex flex-col gap-1 border-b border-bordure pb-3 last:border-0 last:pb-0"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-semibold text-encre">
+              {consultation.patientNomComplet ?? "Patient non précisé"}
+            </span>
+            <span className="text-[13px] text-encre-secondaire">{formaterDateHeure(consultation.date)}</span>
+          </div>
+          <Link
+            href={`/app/medecin/consultations/nouvelle?patientId=${encodeURIComponent(consultation.patientId)}`}
+            className="w-fit text-[13px] font-semibold text-accent hover:underline"
+          >
+            Continuer la saisie
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** Raccourci de navigation stylisé, pour les trois workflows cliniques centraux du médecin. */
 function ActionRapide({
   href,
@@ -150,10 +252,13 @@ function ActionRapide({
  * de création).
  */
 export async function DashboardMedecin() {
-  const [profil, rendezVous, qrCode] = await Promise.all([
+  const [profil, rendezVous, qrCode, consultations, prescriptions, examens] = await Promise.all([
     getMonProfil(),
     getRendezVousDuProfessionnel(),
     getMonQrCode(),
+    getConsultationsDuProfessionnel(),
+    getPrescriptionsDuProfessionnel(),
+    getExamensDemandesParProfessionnel(),
   ]);
 
   const patientsDuJour = rendezVous.filter(
@@ -167,6 +272,23 @@ export async function DashboardMedecin() {
         !idsPatientsDuJour.has(rdv.id)
     )
     .slice(0, NOMBRE_MAX_PROCHAINS_RENDEZ_VOUS);
+
+  // Ne compte que les consultations validees : un brouillon encore ouvert
+  // n'est pas une activite clinique terminee (F-CLI-05/07 du pack).
+  const consultationsCetteSemaine = consultations.filter(
+    (consultation) => consultation.statut === "terminee" && estDansLes7DerniersJours(consultation.date)
+  );
+  // RG-CLI-40/43 du pack : sans tache planifiee d'abandon automatique a 7
+  // jours (voir docs/audit-cote-medecin.md, "Limites assumees"), le
+  // tableau de bord reste le seul rappel qu'un brouillon est resté ouvert.
+  const brouillonsEnCours = consultations.filter((consultation) => consultation.statut === "brouillon");
+  const prescriptionsActives = prescriptions.filter(
+    (prescription) => prescription.statut === "validee" || prescription.statut === "delivree_partiellement"
+  );
+  const resultatsAAnnoncer = examens.filter(
+    (examen) =>
+      examen.sensible && examen.statut === "termine" && !examen.resultatAnnonceAuPatient
+  );
 
   return (
     <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-8 px-4 py-8 sm:px-6 lg:px-8">
@@ -188,11 +310,59 @@ export async function DashboardMedecin() {
         ) : null}
       </header>
 
+      <section aria-labelledby="titre-synthese" className="flex flex-col gap-4">
+        <h2 id="titre-synthese" className="text-[20px] font-bold text-encre">
+          Vue d&apos;ensemble
+        </h2>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+          <TuileSynthese label="Consultations cette semaine" valeur={consultationsCetteSemaine.length} />
+          <TuileSynthese label="Brouillons en cours" valeur={brouillonsEnCours.length} />
+          <TuileSynthese label="Prescriptions actives" valeur={prescriptionsActives.length} />
+          <TuileSynthese label="Résultats à annoncer" valeur={resultatsAAnnoncer.length} />
+          <TuileSynthese label="Rendez-vous à venir" valeur={prochainRendezVous.length} />
+        </div>
+      </section>
+
       <section aria-labelledby="titre-activite" className="flex flex-col gap-4">
         <h2 id="titre-activite" className="text-[20px] font-bold text-encre">
           Mon activité
         </h2>
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {resultatsAAnnoncer.length > 0 ? (
+            <Card
+              className="border-critique bg-critique-clair"
+              title="Résultats à annoncer"
+              description="Résultats sensibles en attente d'annonce au patient."
+              actions={<Badge tone="critical">{resultatsAAnnoncer.length}</Badge>}
+            >
+              <div className="flex flex-col gap-4">
+                <ListeResultatsAAnnoncer examens={resultatsAAnnoncer} />
+                <Link
+                  href="/app/medecin/examens"
+                  className="w-fit text-[13px] font-semibold text-accent hover:underline"
+                >
+                  Voir mes examens demandés
+                </Link>
+              </div>
+            </Card>
+          ) : null}
+          {brouillonsEnCours.length > 0 ? (
+            <Card
+              title="Brouillons en cours"
+              description="Consultations démarrées mais pas encore validées."
+              actions={<Badge tone="warning">{brouillonsEnCours.length}</Badge>}
+            >
+              <div className="flex flex-col gap-4">
+                <ListeBrouillonsEnCours consultations={brouillonsEnCours} />
+                <Link
+                  href="/app/medecin/consultations"
+                  className="w-fit text-[13px] font-semibold text-accent hover:underline"
+                >
+                  Voir toutes mes consultations
+                </Link>
+              </div>
+            </Card>
+          ) : null}
           <Card
             title="Patients du jour"
             description="Rendez-vous confirmés pour aujourd'hui."

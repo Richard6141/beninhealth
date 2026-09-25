@@ -288,10 +288,19 @@ export default async function DossierPatientPage() {
                     className="flex flex-col gap-1 border-b border-bordure pb-4 last:border-0 last:pb-0"
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="text-[14px] font-semibold text-encre">
+                      <span
+                        className={
+                          consultation.saisieParErreur
+                            ? "text-[14px] font-semibold text-encre-attenuee line-through decoration-2"
+                            : "text-[14px] font-semibold text-encre"
+                        }
+                      >
                         {formaterDate(consultation.date)}
                       </span>
-                      <Badge tone="neutral">{capitaliser(consultation.statut)}</Badge>
+                      <div className="flex items-center gap-1.5">
+                        {consultation.saisieParErreur ? <Badge tone="critical">Retirée</Badge> : null}
+                        <Badge tone="neutral">{capitaliser(consultation.statut)}</Badge>
+                      </div>
                     </div>
                     <span className="text-[13px] text-encre-secondaire">
                       {consultation.motif}
@@ -303,6 +312,16 @@ export default async function DossierPatientPage() {
                       <p className="text-[13px] text-encre-attenuee">
                         Conclusion : {consultation.conclusion}
                       </p>
+                    ) : null}
+                    {consultation.addenda.length > 0 ? (
+                      <div className="mt-1 flex flex-col gap-1.5">
+                        {consultation.addenda.map((addendum) => (
+                          <p key={addendum.id} className="text-[12px] text-encre-attenuee">
+                            Addendum ({addendum.auteurNomComplet},{" "}
+                            {new Date(addendum.date).toLocaleDateString("fr-FR")}) : {addendum.contenu}
+                          </p>
+                        ))}
+                      </div>
                     ) : null}
                   </li>
                 ))}

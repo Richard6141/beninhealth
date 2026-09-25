@@ -23,24 +23,42 @@ Regle metier centrale, verifiee en base avant toute ecriture, jamais
 supposee : un professionnel ne peut creer une `Consultation` pour un patient
 que si ce patient lui a accorde un `Consentement` actif (`typeAcces`
 "dossier_complet" ou "consultations"). En l'absence de ce consentement,
-`creerConsultationAction` retourne une erreur explicite sans ecrire quoi que
-ce soit.
+`enregistrerConsultationAction` retourne une erreur explicite sans ecrire
+quoi que ce soit.
+
+Cycle de vie de la consultation (F-CLI-05/06/07/08 du pack) : `statut`
+brouillon -> terminee (validee), jamais l'inverse. Un brouillon (RG-CLI-40 :
+un seul par patient et par medecin, repris plutot que duplique) n'est visible
+que par son auteur (RG-CLI-41, exclu de `getMesConsultations` et
+`getConsultationsDeLEtablissement`). Une fois "terminee", le contenu est
+verrouille (empreinte SHA-256, `dateValidation`) ; seul un addendum
+(`ajouterAddendumConsultationAction`) ou un retrait pour saisie par erreur
+(`retirerConsultationAction`, re-authentification par mot de passe, fenetre
+de 12 mois) peuvent encore s'y ajouter.
 
 Fonctions exposees (voir `actions.ts` pour la signature complete) :
 
 - `getMesConsultations` : historique du patient connecte, du plus recent au
-  plus ancien.
+  plus ancien (brouillons toujours exclus).
 - `getPatientsAvecConsentement` : patients ayant accorde un consentement
   actif au professionnel connecte (peuple le selecteur de patient a l'ecran
   de creation de consultation).
-- `getConsultationsDuProfessionnel` : consultations creees par le
+- `getBrouillonExistant` : brouillon deja ouvert par le medecin connecte pour
+  un patient donne (RG-CLI-40), pour le rouvrir a l'ecran plutot que d'en
+  laisser commencer un second.
+- `getConsultationsDuProfessionnel` : consultations (brouillons inclus) du
   professionnel connecte, du plus recent au plus ancien.
-- `creerConsultationAction` : cree une consultation (statut "terminee") apres
-  verification du consentement ; si un `rendezVousId` est fourni, vérifie
-  qu'il appartient bien au meme couple patient/professionnel puis passe son
-  statut a "termine" dans la meme transaction.
+- `getConsultationsDeLEtablissement` : consultations validees de tout
+  l'etablissement du professionnel connecte, tous medecins confondus
+  (brouillons exclus, RG-CLI-41).
+- `enregistrerConsultationAction` : cree ou met a jour un brouillon, et le
+  valide dans la meme operation si l'intent transmis est "valider" (exige
+  alors motif et conclusion non vides) ; si un `rendezVousId` est fourni, le
+  passe a "termine" a la validation, pas a l'enregistrement du brouillon.
+- `ajouterAddendumConsultationAction` / `retirerConsultationAction` : F-CLI-08.
 
-Chaque creation de consultation est tracee dans `JournalAudit`.
+Chaque creation de consultation, ajout d'addendum et retrait est trace dans
+`JournalAudit`.
 
 Hors perimetre conserve : prescriptions et medicaments (module
 `prescription`), identite du patient ou du professionnel (modules `identity`

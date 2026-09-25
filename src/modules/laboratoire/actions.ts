@@ -18,13 +18,29 @@
  * rattache (meme verification de propriete/rattachement, jamais confiance en
  * l'id transmis). Toute creation ou modification d'examen est tracee dans
  * JournalAudit.
+ *
+ * F-LAB-04 du pack (principe des quatre yeux, RG-ROL-30) : un resultat saisi
+ * ("resultat_saisi") doit etre valide par un second professionnel avant de
+ * devenir visible en dehors du laboratoire ("termine", RG-LAB-30). Ce depot
+ * n'a pas de role LAB_SUPERVISOR distinct : la validation est ouverte a tout
+ * professionnel du role laboratoire de ce meme etablissement, autre que celui
+ * ayant saisi le resultat (quatre yeux entre pairs, pas une hierarchie
+ * superviseur/technicien). La re-authentification exigee par le pack (si
+ * derniere connexion de plus de 5 minutes) est remplacee par une re-saisie
+ * systematique du mot de passe a chaque validation, ce depot ne tracant pas
+ * d'horodatage de derniere authentification au niveau de la session (voir
+ * validerResultatExamenAction, meme pattern que retirerConsultationAction
+ * dans src/modules/clinical/actions.ts).
  */
 
 import { headers } from "next/headers";
+import { createHash } from "node:crypto";
+import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
+import { estExamenSensible } from "./referentiel-examens-sensibles";
 
 /** Etat renvoye par chaque Server Action de ce module, consomme via useActionState. */
 export interface LaboratoireActionState {
@@ -51,13 +67,39 @@ export interface ExamenResume {
   patientIdentifiantSante: string | null; // rempli cote medecin/laboratoire
   demandeurNomComplet: string | null; // rempli cote patient/laboratoire ("Dr. Prenom Nom")
   laboratoireNom: string; // toujours rempli
+  // F-LAB-01/02/05 du pack : un examen sensible (ex. serologie VIH) a son
+  // resultat masque au patient tant que resultatAnnonceAuPatient est faux
+  // (voir getMesExamens et annoncerResultatExamenAction ci-dessous).
+  sensible: boolean;
+  resultatAnnonceAuPatient: boolean;
+  // F-LAB-04 du pack (principe des quatre yeux) : ces quatre champs ne sont
+  // renseignes que pour une lecture cote laboratoire (getExamensPourLaboratoire),
+  // null pour les lectures medecin/patient qui n'ont pas a connaitre
+  // l'identite des professionnels du laboratoire ni le motif d'un renvoi.
+  saisiParId: string | null;
+  saisiParNomComplet: string | null;
+  valideParNomComplet: string | null;
+  commentaireValidation: string | null;
 }
 
 /** Types d'acces de consentement autorisant un professionnel a demander un examen. */
 const TYPES_ACCES_EXAMEN = ["dossier_complet", "examens"] as const;
 
-/** Statuts consideres comme "en attente de traitement" cote laboratoire, prioritaires dans la file. */
-const STATUTS_EN_ATTENTE_LABORATOIRE = ["demande", "en_cours"] as const;
+/**
+ * Statuts consideres comme "en attente de traitement" cote laboratoire,
+ * prioritaires dans la file : couvre aussi bien un examen pas encore traite
+ * qu'un resultat en attente de validation ou renvoye pour correction
+ * (F-LAB-04), seul un resultat "termine" ou "annule" quitte la file active.
+ */
+const STATUTS_EN_ATTENTE_LABORATOIRE = [
+  "demande",
+  "en_cours",
+  "resultat_saisi",
+  "correction_demandee",
+] as const;
+
+/** Statuts a partir desquels un resultat peut etre saisi ou resaisi (RG-ROL-31 : une resaisie apres correction reste une saisie, pas une modification silencieuse d'un resultat deja soumis). */
+const STATUTS_SAISIE_AUTORISEE = ["demande", "en_cours", "correction_demandee"] as const;
 
 const schemaDemandeExamen = z.object({
   patientId: z.string().trim().min(1, "Le patient est obligatoire."),
@@ -69,6 +111,20 @@ const schemaDemandeExamen = z.object({
 const schemaSaisieResultat = z.object({
   examenId: z.string().trim().min(1, "L'examen est obligatoire."),
   resultat: z.string().trim().min(1, "Le resultat est obligatoire."),
+});
+
+const schemaAnnonceResultat = z.object({
+  examenId: z.string().trim().min(1, "L'examen est obligatoire."),
+});
+
+const schemaValidationResultat = z.object({
+  examenId: z.string().trim().min(1, "L'examen est obligatoire."),
+  motDePasse: z.string().min(1, "Votre mot de passe est obligatoire pour confirmer."),
+});
+
+const schemaCorrectionResultat = z.object({
+  examenId: z.string().trim().min(1, "L'examen est obligatoire."),
+  commentaire: z.string().trim().min(1, "Le motif du renvoi pour correction est obligatoire."),
 });
 
 /** Adresse technique d'origine de la requete courante, pour le JournalAudit. */
@@ -125,6 +181,33 @@ async function professionnelDeLaSessionCourante() {
   return prisma.professionnelSante.findUnique({ where: { userId: session.userId } });
 }
 
+/**
+ * Identifiant ProfessionnelSante du titulaire de la session courante, utilise
+ * cote ecran (F-LAB-04) pour masquer des l'affichage le bouton "Valider" sur
+ * un resultat que le professionnel connecte a lui-meme saisi. Le controle
+ * serveur dans validerResultatExamenAction reste la seule autorite Zero
+ * Trust ; ce masquage cote client n'est qu'un confort d'interface.
+ */
+export async function getIdProfessionnelCourant(): Promise<string | null> {
+  const professionnel = await professionnelDeLaSessionCourante();
+  return professionnel ? professionnel.id : null;
+}
+
+/**
+ * Empreinte SHA-256 du resultat au moment de la validation (F-LAB-04), meme
+ * principe que calculerEmpreinteConsultation dans
+ * src/modules/clinical/actions.ts : cles triees, format stable, reproductible
+ * a partir des memes donnees.
+ */
+function calculerEmpreinteResultat(champs: {
+  examenId: string;
+  resultat: string;
+  saisiParId: string;
+}): string {
+  const contenuCanonique = JSON.stringify(champs, Object.keys(champs).sort());
+  return createHash("sha256").update(contenuCanonique).digest("hex");
+}
+
 /** Met en forme un examen medical (avec patient/demandeur/laboratoire selon besoin) en ExamenResume. */
 function versExamenResume(
   examen: {
@@ -135,11 +218,18 @@ function versExamenResume(
     resultat: string | null;
     dateResultat: Date | null;
     laboratoire: { nom: string };
+    sensible: boolean;
+    resultatAnnonceAuPatient: boolean;
   },
   options: {
     patientNomComplet: string | null;
     patientIdentifiantSante: string | null;
     demandeurNomComplet: string | null;
+    /** F-LAB-04, ne renseigner que depuis getExamensPourLaboratoire. */
+    saisiParId?: string | null;
+    saisiParNomComplet?: string | null;
+    valideParNomComplet?: string | null;
+    commentaireValidation?: string | null;
   }
 ): ExamenResume {
   return {
@@ -153,6 +243,12 @@ function versExamenResume(
     patientIdentifiantSante: options.patientIdentifiantSante,
     demandeurNomComplet: options.demandeurNomComplet,
     laboratoireNom: examen.laboratoire.nom,
+    sensible: examen.sensible,
+    resultatAnnonceAuPatient: examen.resultatAnnonceAuPatient,
+    saisiParId: options.saisiParId ?? null,
+    saisiParNomComplet: options.saisiParNomComplet ?? null,
+    valideParNomComplet: options.valideParNomComplet ?? null,
+    commentaireValidation: options.commentaireValidation ?? null,
   };
 }
 
@@ -168,6 +264,43 @@ export async function listLaboratoires(): Promise<LaboratoireOption[]> {
     nom: laboratoire.nom,
     localisation: laboratoire.localisation,
   }));
+}
+
+/**
+ * Resout le patient d'une consultation pour pre-selectionner le bon patient
+ * a l'ecran "Demander un examen" quand on y arrive depuis le lien "Demander
+ * un examen" d'une consultation (Zero Trust : verifie que la consultation
+ * appartient bien au professionnel connecte, jamais suppose valide).
+ */
+export async function getConsultationPourExamen(
+  consultationId: string
+): Promise<{ patientId: string; patientNomComplet: string; motif: string } | null> {
+  const professionnel = await professionnelDeLaSessionCourante();
+
+  if (!professionnel) {
+    return null;
+  }
+
+  const identifiantNettoye = consultationId.trim();
+
+  if (identifiantNettoye.length === 0) {
+    return null;
+  }
+
+  const consultation = await prisma.consultation.findUnique({
+    where: { id: identifiantNettoye },
+    include: { patient: { include: { user: true } } },
+  });
+
+  if (!consultation || consultation.professionnelId !== professionnel.id) {
+    return null;
+  }
+
+  return {
+    patientId: consultation.patientId,
+    patientNomComplet: nomComplet(consultation.patient.user),
+    motif: consultation.motif,
+  };
 }
 
 /**
@@ -235,6 +368,7 @@ export async function demanderExamenAction(
     const consentementValide =
       consentement !== null &&
       consentement.statut === "actif" &&
+      (consentement.dateFin === null || consentement.dateFin > new Date()) &&
       (TYPES_ACCES_EXAMEN as readonly string[]).includes(consentement.typeAcces);
 
     if (!consentementValide) {
@@ -279,6 +413,7 @@ export async function demanderExamenAction(
           consultationId: consultationIdValide,
           typeExamen,
           statut: "demande",
+          sensible: estExamenSensible(typeExamen),
         },
       });
 
@@ -321,18 +456,32 @@ export async function getExamensDemandesParProfessionnel(): Promise<ExamenResume
     orderBy: { date: "desc" },
   });
 
-  return examens.map((examen) =>
-    versExamenResume(examen, {
+  return examens.map((examen) => {
+    const resume = versExamenResume(examen, {
       patientNomComplet: nomComplet(examen.patient.user),
       patientIdentifiantSante: examen.patient.identifiantSante,
       demandeurNomComplet: null,
-    })
-  );
+    });
+
+    // RG-LAB-30 (F-LAB-04) : hors du laboratoire, un resultat n'est visible
+    // qu'une fois valide par un second professionnel (statut "termine"). Tant
+    // que l'examen est "resultat_saisi" ou "correction_demandee", le medecin
+    // demandeur ne doit pas y avoir acces, meme si le laboratoire l'a deja
+    // saisi en base.
+    if (resume.statut !== "termine") {
+      return { ...resume, resultat: null, dateResultat: null };
+    }
+
+    return resume;
+  });
 }
 
 /**
  * Recupere tous les examens medicaux du patient connecte (derive de
  * getSession(), jamais d'id en parametre), du plus recent au plus ancien.
+ * RG-LAB-02/RG-LAB-41 du pack : un examen sensible (ex. serologie VIH) garde
+ * son resultat masque tant qu'un medecin ne l'a pas explicitement annonce
+ * (annoncerResultatExamenAction), meme si le laboratoire l'a deja saisi.
  */
 export async function getMesExamens(): Promise<ExamenResume[]> {
   const patient = await patientDeLaSessionCourante();
@@ -347,13 +496,23 @@ export async function getMesExamens(): Promise<ExamenResume[]> {
     orderBy: { date: "desc" },
   });
 
-  return examens.map((examen) =>
-    versExamenResume(examen, {
+  return examens.map((examen) => {
+    const resume = versExamenResume(examen, {
       patientNomComplet: null,
       patientIdentifiantSante: null,
       demandeurNomComplet: nomCompletProfessionnel(examen.demandeur.user),
-    })
-  );
+    });
+
+    // RG-LAB-30 (F-LAB-04, visible seulement une fois valide) et
+    // RG-LAB-02/RG-LAB-41 (examen sensible masque tant que non annonce) :
+    // deux motifs de masquage distincts, cumules dans la meme condition
+    // plutot que dupliques dans deux blocs separes.
+    if (resume.statut !== "termine" || (resume.sensible && !resume.resultatAnnonceAuPatient)) {
+      return { ...resume, resultat: null, dateResultat: null };
+    }
+
+    return resume;
+  });
 }
 
 /**
@@ -387,6 +546,8 @@ export async function getExamensPourLaboratoire(): Promise<ExamenResume[]> {
       patient: { include: { user: true } },
       demandeur: { include: { user: true } },
       laboratoire: true,
+      saisiPar: { include: { user: true } },
+      validePar: { include: { user: true } },
     },
     orderBy: { date: "asc" },
   });
@@ -398,24 +559,35 @@ export async function getExamensPourLaboratoire(): Promise<ExamenResume[]> {
     (a, b) => prioriteStatut(a.statut) - prioriteStatut(b.statut)
   );
 
+  // Lecture cote laboratoire (F-LAB-04) : contrairement aux lectures
+  // medecin/patient ci-dessus, le resultat brut reste visible quel que soit
+  // le statut ("resultat_saisi", "correction_demandee" compris), c'est
+  // precisement l'ecran ou la validation a quatre yeux se joue.
   return examensTries.map((examen) =>
     versExamenResume(examen, {
       patientNomComplet: nomComplet(examen.patient.user),
       patientIdentifiantSante: examen.patient.identifiantSante,
       demandeurNomComplet: nomCompletProfessionnel(examen.demandeur.user),
+      saisiParId: examen.saisiParId,
+      saisiParNomComplet: examen.saisiPar ? nomComplet(examen.saisiPar.user) : null,
+      valideParNomComplet: examen.validePar ? nomComplet(examen.validePar.user) : null,
+      commentaireValidation: examen.commentaireValidation,
     })
   );
 }
 
 /**
- * Saisit le resultat d'un examen medical par le professionnel connecte,
- * cote laboratoire. Verifie que l'examen identifie par examenId est bien
- * assigne a l'etablissement auquel le professionnel connecte est rattache
- * (Zero Trust : jamais confiance en l'id transmis par le client sans
- * verification de propriete/rattachement, meme principe que la verification
- * de consultation dans creerPrescriptionAction). Passe le statut a
- * "termine", enregistre le resultat et horodate dateResultat. Trace la
- * modification dans JournalAudit.
+ * Saisit le resultat d'un examen medical par le professionnel connecte, cote
+ * laboratoire (premiere paire d'yeux du principe des quatre yeux, F-LAB-04).
+ * Verifie que l'examen identifie par examenId est bien assigne a
+ * l'etablissement auquel le professionnel connecte est rattache (Zero Trust :
+ * jamais confiance en l'id transmis par le client sans verification de
+ * propriete/rattachement, meme principe que la verification de consultation
+ * dans creerPrescriptionAction). Passe le statut a "resultat_saisi" (jamais
+ * "termine" directement, voir validerResultatExamenAction ci-dessous) et
+ * enregistre l'auteur de la saisie. Gere aussi la resaisie apres un renvoi
+ * pour correction (RG-ROL-31) : l'ancienne valeur et le motif du renvoi sont
+ * conserves dans le JournalAudit plutot qu'ecrases silencieusement.
  */
 export async function saisirResultatExamenAction(
   prevState: LaboratoireActionState,
@@ -461,11 +633,402 @@ export async function saisirResultatExamenAction(
 
     const examen = await prisma.examenMedical.findUnique({
       where: { id: examenId },
-      include: { patient: true, demandeur: true },
     });
 
     if (!examen || examen.laboratoireId !== professionnel.etablissementId) {
       return { error: "Cet examen est introuvable.", success: false };
+    }
+
+    if (!(STATUTS_SAISIE_AUTORISEE as readonly string[]).includes(examen.statut)) {
+      return {
+        error: "Le resultat de cet examen ne peut pas etre saisi dans son etat actuel.",
+        success: false,
+      };
+    }
+
+    const adresseTechnique = await adresseTechniqueCourante();
+    const etaitEnCorrection = examen.statut === "correction_demandee";
+
+    await prisma.$transaction(async (tx) => {
+      await tx.examenMedical.update({
+        where: { id: examenId },
+        data: {
+          statut: "resultat_saisi",
+          resultat,
+          dateResultat: new Date(),
+          saisiParId: professionnel.id,
+        },
+      });
+
+      await tx.journalAudit.create({
+        data: {
+          utilisateurId: session.userId,
+          action: "saisie_resultat_examen",
+          donneeConcernee: `examen_medical:${examenId}`,
+          adresseTechnique,
+          justification: etaitEnCorrection
+            ? `Resultat resaisi apres correction demandee. Ancienne valeur : ${examen.resultat ?? "aucune"}. Motif du renvoi : ${examen.commentaireValidation ?? "non precise"}.`
+            : `Resultat saisi pour l'examen medical ${examenId}, en attente de validation par un autre professionnel du laboratoire (principe des quatre yeux, F-LAB-04).`,
+        },
+      });
+    });
+
+    // Contrairement a l'ancien flux (saisie = disponible immediatement),
+    // aucune notification n'est declenchee ici : tant que le resultat n'est
+    // pas valide par un second professionnel, il n'est pas cense exister pour
+    // le patient ni le medecin demandeur (RG-LAB-30). Les notifications
+    // F-LAB-05 existantes sont deplacees dans validerResultatExamenAction,
+    // seul moment ou le resultat devient reellement disponible.
+
+    return { error: null, success: true };
+  } catch (erreur) {
+    console.error("Erreur lors de la saisie du resultat d'examen medical :", erreur);
+    return {
+      error: "Une erreur est survenue lors de la saisie du resultat. Veuillez reessayer.",
+      success: false,
+    };
+  }
+}
+
+/**
+ * Valide le resultat d'un examen medical (F-LAB-04 du pack, principe des
+ * quatre yeux, RG-ROL-30) : deuxieme paire d'yeux, distincte de celle ayant
+ * saisi le resultat. Exige la re-saisie du mot de passe du compte a chaque
+ * validation (adaptation actee de la re-authentification "moins de 5 minutes"
+ * du pack, ce depot ne tracant pas d'horodatage de derniere authentification
+ * au niveau de la session), meme pattern que retirerConsultationAction dans
+ * src/modules/clinical/actions.ts. CA-1 : un professionnel ne peut pas valider
+ * un resultat qu'il a lui-meme saisi, la tentative est refusee et tracee dans
+ * JournalAudit. Toute la verification puis l'ecriture se fait dans une seule
+ * transaction, y compris le refus trace (la transaction n'echoue pas pour
+ * autant : seule l'ecriture de l'examen est conditionnee au succes).
+ */
+export async function validerResultatExamenAction(
+  prevState: LaboratoireActionState,
+  formData: FormData
+): Promise<LaboratoireActionState> {
+  const session = await getSession();
+
+  if (!session) {
+    return { error: "Session expiree. Veuillez vous reconnecter.", success: false };
+  }
+
+  if (!session.roles.some((role) => can(role, "create", "validation_examen"))) {
+    return { error: "Action reservee au role laboratoire.", success: false };
+  }
+
+  const validation = schemaValidationResultat.safeParse({
+    examenId: texte(formData, "examenId"),
+    motDePasse: texte(formData, "motDePasse"),
+  });
+
+  if (!validation.success) {
+    return {
+      error: premierMessageErreur(validation.error, "Donnees de validation invalides."),
+      success: false,
+    };
+  }
+
+  const { examenId, motDePasse } = validation.data;
+
+  try {
+    const utilisateur = await prisma.user.findUnique({ where: { id: session.userId } });
+
+    if (!utilisateur) {
+      return { error: "Compte introuvable.", success: false };
+    }
+
+    const motDePasseValide = await bcrypt.compare(motDePasse, utilisateur.motDePasseHash);
+
+    if (!motDePasseValide) {
+      return { error: "Mot de passe incorrect.", success: false };
+    }
+
+    const professionnel = await prisma.professionnelSante.findUnique({
+      where: { userId: session.userId },
+    });
+
+    if (!professionnel) {
+      return { error: "Aucun profil professionnel associe a ce compte.", success: false };
+    }
+
+    const adresseTechnique = await adresseTechniqueCourante();
+
+    const resultatTransaction = await prisma.$transaction(async (tx) => {
+      const examen = await tx.examenMedical.findUnique({
+        where: { id: examenId },
+        include: { patient: true, demandeur: true },
+      });
+
+      if (!examen || examen.laboratoireId !== professionnel.etablissementId) {
+        return { error: "Cet examen est introuvable.", examen: null };
+      }
+
+      if (examen.statut !== "resultat_saisi") {
+        return { error: "Ce resultat n'est pas en attente de validation.", examen: null };
+      }
+
+      // CA-1 / RG-ROL-30 : la personne qui valide doit etre differente de
+      // celle qui a saisi le resultat. Ce depot n'a pas de role
+      // LAB_SUPERVISOR distinct : la validation est ouverte a tout
+      // professionnel du role laboratoire de ce laboratoire, autre que celui
+      // ayant saisi le resultat (quatre yeux entre pairs).
+      if (examen.saisiParId === professionnel.id) {
+        await tx.journalAudit.create({
+          data: {
+            utilisateurId: session.userId,
+            action: "tentative_autovalidation_refusee",
+            donneeConcernee: `examen_medical:${examenId}`,
+            adresseTechnique,
+            justification:
+              "Tentative de validation d'un resultat par le professionnel l'ayant lui-meme saisi, refusee (principe des quatre yeux, F-LAB-04).",
+          },
+        });
+
+        return {
+          error:
+            "Vous ne pouvez pas valider un resultat que vous avez vous-meme saisi. Un autre professionnel du laboratoire doit le valider.",
+          examen: null,
+        };
+      }
+
+      const empreinteResultat = calculerEmpreinteResultat({
+        examenId: examen.id,
+        resultat: examen.resultat ?? "",
+        saisiParId: examen.saisiParId ?? "",
+      });
+
+      await tx.examenMedical.update({
+        where: { id: examenId },
+        data: {
+          statut: "termine",
+          valideParId: professionnel.id,
+          dateValidation: new Date(),
+          empreinteResultat,
+          commentaireValidation: null,
+        },
+      });
+
+      await tx.journalAudit.create({
+        data: {
+          utilisateurId: session.userId,
+          action: "validation_resultat_examen",
+          donneeConcernee: `examen_medical:${examenId}`,
+          adresseTechnique,
+          justification: `Resultat de l'examen medical ${examenId} valide (principe des quatre yeux, saisi par le professionnel ${examen.saisiParId ?? "inconnu"}).`,
+        },
+      });
+
+      return { error: null, examen };
+    });
+
+    if (resultatTransaction.error || !resultatTransaction.examen) {
+      return { error: resultatTransaction.error ?? "Validation impossible.", success: false };
+    }
+
+    // Notification interne (Phase 10, F-LAB-05 deja implemente ailleurs, non
+    // modifie ici) : deplacee depuis saisirResultatExamenAction puisque
+    // c'est desormais la validation, et non la saisie, qui rend le resultat
+    // disponible (RG-LAB-30). Hors transaction : une notification manquee ne
+    // doit jamais faire echouer la validation elle-meme (deja actee en base).
+    const examenValide = resultatTransaction.examen;
+    const { creerNotification } = await import("@/modules/notification/actions");
+    await Promise.all([
+      creerNotification(
+        examenValide.patient.userId,
+        "resultat_examen_disponible",
+        "Un resultat d'analyse est disponible dans votre dossier.",
+        "/app/patient/examens"
+      ),
+      creerNotification(
+        examenValide.demandeur.userId,
+        "resultat_examen_disponible",
+        "Le resultat d'un examen que vous avez demande est disponible.",
+        "/app/medecin/examens"
+      ),
+    ]);
+
+    return { error: null, success: true };
+  } catch (erreur) {
+    console.error("Erreur lors de la validation du resultat d'examen medical :", erreur);
+    return {
+      error: "Une erreur est survenue lors de la validation du resultat. Veuillez reessayer.",
+      success: false,
+    };
+  }
+}
+
+/**
+ * Renvoie pour correction le resultat d'un examen medical (F-LAB-04 du pack) :
+ * meme garde-fou de symetrie avec CA-1 que validerResultatExamenAction, le
+ * professionnel qui renvoie pour correction doit lui aussi etre different de
+ * celui ayant saisi le resultat. Le commentaire (motif) est obligatoire et
+ * conserve en base jusqu'a la resaisie ou la validation suivante. Ne demande
+ * pas de mot de passe : contrairement a la validation, cette action ne
+ * verrouille rien de facon definitive.
+ */
+export async function renvoyerPourCorrectionAction(
+  prevState: LaboratoireActionState,
+  formData: FormData
+): Promise<LaboratoireActionState> {
+  const session = await getSession();
+
+  if (!session) {
+    return { error: "Session expiree. Veuillez vous reconnecter.", success: false };
+  }
+
+  if (!session.roles.some((role) => can(role, "create", "validation_examen"))) {
+    return { error: "Action reservee au role laboratoire.", success: false };
+  }
+
+  const validation = schemaCorrectionResultat.safeParse({
+    examenId: texte(formData, "examenId"),
+    commentaire: texte(formData, "commentaire"),
+  });
+
+  if (!validation.success) {
+    return {
+      error: premierMessageErreur(validation.error, "Donnees de renvoi invalides."),
+      success: false,
+    };
+  }
+
+  const { examenId, commentaire } = validation.data;
+
+  try {
+    const professionnel = await prisma.professionnelSante.findUnique({
+      where: { userId: session.userId },
+    });
+
+    if (!professionnel) {
+      return { error: "Aucun profil professionnel associe a ce compte.", success: false };
+    }
+
+    const adresseTechnique = await adresseTechniqueCourante();
+
+    const resultatTransaction = await prisma.$transaction(async (tx) => {
+      const examen = await tx.examenMedical.findUnique({ where: { id: examenId } });
+
+      if (!examen || examen.laboratoireId !== professionnel.etablissementId) {
+        return { error: "Cet examen est introuvable." };
+      }
+
+      if (examen.statut !== "resultat_saisi") {
+        return { error: "Ce resultat n'est pas en attente de validation." };
+      }
+
+      if (examen.saisiParId === professionnel.id) {
+        await tx.journalAudit.create({
+          data: {
+            utilisateurId: session.userId,
+            action: "tentative_autovalidation_refusee",
+            donneeConcernee: `examen_medical:${examenId}`,
+            adresseTechnique,
+            justification:
+              "Tentative de renvoi pour correction d'un resultat par le professionnel l'ayant lui-meme saisi, refusee (principe des quatre yeux, F-LAB-04).",
+          },
+        });
+
+        return {
+          error:
+            "Vous ne pouvez pas renvoyer pour correction un resultat que vous avez vous-meme saisi. Un autre professionnel du laboratoire doit le faire.",
+        };
+      }
+
+      await tx.examenMedical.update({
+        where: { id: examenId },
+        data: { statut: "correction_demandee", commentaireValidation: commentaire },
+      });
+
+      await tx.journalAudit.create({
+        data: {
+          utilisateurId: session.userId,
+          action: "renvoi_correction_examen",
+          donneeConcernee: `examen_medical:${examenId}`,
+          adresseTechnique,
+          justification: `Resultat de l'examen medical ${examenId} renvoye pour correction. Motif : ${commentaire}`,
+        },
+      });
+
+      return { error: null };
+    });
+
+    if (resultatTransaction.error) {
+      return { error: resultatTransaction.error, success: false };
+    }
+
+    return { error: null, success: true };
+  } catch (erreur) {
+    console.error("Erreur lors du renvoi pour correction de l'examen medical :", erreur);
+    return {
+      error: "Une erreur est survenue lors du renvoi pour correction. Veuillez reessayer.",
+      success: false,
+    };
+  }
+}
+
+/**
+ * Annonce au patient le resultat d'un examen sensible (F-LAB-05 / RG-LAB-41
+ * du pack) : reserve au medecin demandeur de cet examen precis (Zero Trust,
+ * meme principe que creerPrescriptionAction verifiant la consultation).
+ * N'a d'effet que sur un examen "sensible", termine, pas deja annonce ; sans
+ * cela, retourne une erreur explicite plutot que d'ecrire silencieusement.
+ * Une fois annonce, getMesExamens() cesse de masquer le resultat au patient.
+ */
+export async function annoncerResultatExamenAction(
+  prevState: LaboratoireActionState,
+  formData: FormData
+): Promise<LaboratoireActionState> {
+  const session = await getSession();
+
+  if (!session) {
+    return { error: "Session expiree. Veuillez vous reconnecter.", success: false };
+  }
+
+  if (!session.roles.some((role) => can(role, "create", "examen_medical"))) {
+    return { error: "Action reservee aux medecins.", success: false };
+  }
+
+  const validation = schemaAnnonceResultat.safeParse({
+    examenId: texte(formData, "examenId"),
+  });
+
+  if (!validation.success) {
+    return {
+      error: premierMessageErreur(validation.error, "Donnees invalides."),
+      success: false,
+    };
+  }
+
+  const { examenId } = validation.data;
+
+  try {
+    const professionnel = await prisma.professionnelSante.findUnique({
+      where: { userId: session.userId },
+    });
+
+    if (!professionnel) {
+      return { error: "Aucun profil professionnel associe a ce compte.", success: false };
+    }
+
+    const examen = await prisma.examenMedical.findUnique({
+      where: { id: examenId },
+      include: { patient: true },
+    });
+
+    if (!examen || examen.demandeurId !== professionnel.id) {
+      return { error: "Cet examen est introuvable.", success: false };
+    }
+
+    if (!examen.sensible || examen.statut !== "termine") {
+      return {
+        error: "Cet examen ne necessite pas d'annonce, ou son resultat n'est pas encore disponible.",
+        success: false,
+      };
+    }
+
+    if (examen.resultatAnnonceAuPatient) {
+      return { error: "Ce resultat a deja ete annonce au patient.", success: false };
     }
 
     const adresseTechnique = await adresseTechniqueCourante();
@@ -473,45 +1036,33 @@ export async function saisirResultatExamenAction(
     await prisma.$transaction(async (tx) => {
       await tx.examenMedical.update({
         where: { id: examenId },
-        data: { statut: "termine", resultat, dateResultat: new Date() },
+        data: { resultatAnnonceAuPatient: true },
       });
 
       await tx.journalAudit.create({
         data: {
           utilisateurId: session.userId,
-          action: "modification",
+          action: "annonce_resultat_examen",
           donneeConcernee: `examen_medical:${examenId}`,
           adresseTechnique,
-          justification: `Resultat saisi pour l'examen medical ${examenId}`,
+          justification: `Resultat d'examen sensible annonce au patient ${examen.patientId}`,
         },
       });
     });
 
-    // Notification interne (Phase 10) : hors transaction, une notification
-    // manquee ne doit jamais faire echouer la saisie du resultat elle-meme
-    // (deja actee en base a ce stade). Le patient ET le medecin demandeur
-    // sont prevenus.
     const { creerNotification } = await import("@/modules/notification/actions");
-    await Promise.all([
-      creerNotification(
-        examen.patient.userId,
-        "resultat_examen_disponible",
-        `Le resultat de votre examen "${examen.typeExamen}" est disponible.`,
-        "/app/patient/examens"
-      ),
-      creerNotification(
-        examen.demandeur.userId,
-        "resultat_examen_disponible",
-        `Le resultat de l'examen "${examen.typeExamen}" que vous avez demande est disponible.`,
-        "/app/medecin/examens"
-      ),
-    ]);
+    await creerNotification(
+      examen.patient.userId,
+      "resultat_examen_disponible",
+      "Un resultat d'analyse est desormais disponible dans votre dossier.",
+      "/app/patient/examens"
+    );
 
     return { error: null, success: true };
   } catch (erreur) {
-    console.error("Erreur lors de la saisie du resultat d'examen medical :", erreur);
+    console.error("Erreur lors de l'annonce du resultat d'examen medical :", erreur);
     return {
-      error: "Une erreur est survenue lors de la saisie du resultat. Veuillez reessayer.",
+      error: "Une erreur est survenue lors de l'annonce du resultat. Veuillez reessayer.",
       success: false,
     };
   }

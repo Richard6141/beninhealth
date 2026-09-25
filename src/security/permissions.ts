@@ -74,6 +74,10 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     'read:document_medical',
     'create:document_medical',
     'read:rendez_vous',
+    'read:vaccination',
+    'create:vaccination',
+    'read:prise_en_charge_infirmiere',
+    'create:acces_urgence',
   ]),
 
   infirmier: new Set<Permission>([
@@ -83,6 +87,11 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     'read:prescription',
     'read:examen_medical',
     'read:rendez_vous',
+    'read:vaccination',
+    'create:vaccination',
+    'read:prise_en_charge_infirmiere',
+    'create:prise_en_charge_infirmiere',
+    'create:acces_urgence',
   ]),
 
   agent_communautaire: new Set<Permission>([
@@ -97,11 +106,15 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     'read:medicament',
     'create:medicament',
     'update:medicament',
+    'create:delivrance',
+    'read:delivrance',
+    'update:delivrance',
   ]),
 
   laboratoire: new Set<Permission>([
     'read:examen_medical',
     'update:examen_medical',
+    'create:validation_examen',
   ]),
 
   admin_etablissement: new Set<Permission>([

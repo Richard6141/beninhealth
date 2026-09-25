@@ -5,10 +5,14 @@ import {
   ClipboardList,
   FlaskConical,
   FolderOpen,
+  History,
   LayoutDashboard,
+  HeartPulse,
   MapPin,
   Pill,
+  ShieldAlert,
   ShieldCheck,
+  Users,
 } from "lucide-react";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
@@ -63,6 +67,11 @@ const navigationPatient: ElementNavigation[] = [
     href: "/app/patient/consentements",
     icon: <ShieldCheck size={tailleIconeNav} aria-hidden="true" />,
   },
+  {
+    label: "Qui a consulté mon dossier",
+    href: "/app/patient/acces",
+    icon: <History size={tailleIconeNav} aria-hidden="true" />,
+  },
 ];
 
 /**
@@ -77,6 +86,11 @@ const navigationPatient: ElementNavigation[] = [
  */
 const navigationMedecin: ElementNavigation[] = [
   { label: "Tableau de bord", href: "/app/medecin", icon: iconeTableauDeBord },
+  {
+    label: "Patients",
+    href: "/app/medecin/patients",
+    icon: <Users size={tailleIconeNav} aria-hidden="true" />,
+  },
   {
     label: "Rendez-vous",
     href: "/app/medecin/rendez-vous",
@@ -97,11 +111,21 @@ const navigationMedecin: ElementNavigation[] = [
     href: "/app/medecin/examens",
     icon: <FlaskConical size={tailleIconeNav} aria-hidden="true" />,
   },
+  {
+    label: "Accès d'urgence",
+    href: "/app/medecin/urgence",
+    icon: <ShieldAlert size={tailleIconeNav} aria-hidden="true" />,
+  },
 ];
 
 /** Infirmier : lecture des consultations et rendez-vous, jamais de creation (voir permissions.ts). */
 const navigationInfirmier: ElementNavigation[] = [
   { label: "Tableau de bord", href: "/app/medecin", icon: iconeTableauDeBord },
+  {
+    label: "Prise en charge",
+    href: "/app/medecin/soins",
+    icon: <HeartPulse size={tailleIconeNav} aria-hidden="true" />,
+  },
   {
     label: "Rendez-vous",
     href: "/app/medecin/rendez-vous",
@@ -111,6 +135,11 @@ const navigationInfirmier: ElementNavigation[] = [
     label: "Consultations",
     href: "/app/medecin/consultations",
     icon: <ClipboardList size={tailleIconeNav} aria-hidden="true" />,
+  },
+  {
+    label: "Accès d'urgence",
+    href: "/app/medecin/urgence",
+    icon: <ShieldAlert size={tailleIconeNav} aria-hidden="true" />,
   },
 ];
 

@@ -20,7 +20,7 @@ const etatInitial: LaboratoireActionState = { error: null, success: false };
  * fait localement ailleurs dans le projet (src/app/app/patient/dossier/
  * FormulaireDossier.tsx, src/app/app/ministere/ChampTextarea.tsx).
  */
-function ChampResultat() {
+function ChampResultat({ valeurInitiale }: { valeurInitiale: string }) {
   const fieldId = useId();
 
   return (
@@ -39,6 +39,7 @@ function ChampResultat() {
         name="resultat"
         rows={6}
         required
+        defaultValue={valeurInitiale}
         placeholder="Valeurs mesurees, observations, conclusion..."
         className="w-full resize-y rounded-champ border border-bordure-forte bg-surface px-3 py-2 text-[16px] text-encre transition-colors motion-reduce:transition-none placeholder:text-encre-attenuee focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
       />
@@ -63,12 +64,15 @@ function ContenuFormulaire({
     saisirResultatExamenAction,
     etatInitial
   );
+  const enCorrection = examen.statut === "correction_demandee";
 
   if (state.success) {
     return (
       <div className="flex flex-col gap-4">
         <Alert level="success" title="Resultat enregistre">
-          Le resultat de l&apos;examen a bien ete enregistre.
+          Le resultat a bien ete enregistre. Il est desormais en attente de
+          validation par un autre professionnel du laboratoire (principe des
+          quatre yeux).
         </Alert>
         <Button type="button" variant="secondary" className="w-fit" onClick={onFermer}>
           Fermer
@@ -80,6 +84,12 @@ function ContenuFormulaire({
   return (
     <form action={formAction} aria-busy={pending} className="flex flex-col gap-5">
       <input type="hidden" name="examenId" value={examen.id} />
+
+      {enCorrection ? (
+        <Alert level="warning" title="Correction demandee">
+          {examen.commentaireValidation ?? "Motif du renvoi non precise."}
+        </Alert>
+      ) : null}
 
       {state.error ? (
         <Alert level="critical" title="Enregistrement impossible">
@@ -97,39 +107,44 @@ function ContenuFormulaire({
         <p className="text-[13px] text-encre-secondaire">{examen.typeExamen}</p>
       </div>
 
-      <ChampResultat />
+      <ChampResultat valeurInitiale={enCorrection ? examen.resultat ?? "" : ""} />
 
       <Button type="submit" variant="primary" className="w-fit" disabled={pending}>
-        {pending ? "Enregistrement en cours..." : "Enregistrer le resultat"}
+        {pending
+          ? "Enregistrement en cours..."
+          : enCorrection
+            ? "Resaisir le resultat"
+            : "Enregistrer le resultat"}
       </Button>
     </form>
   );
 }
 
 /**
- * Bouton "Saisir le resultat" + modale de saisie
- * (saisirResultatExamenAction, module laboratoire/actions, autre agent).
- * A la fermeture de la modale, la cle du contenu change pour repartir d'un
- * formulaire vierge a la prochaine ouverture.
+ * Bouton "Saisir le resultat" (ou "Resaisir le resultat" apres un renvoi pour
+ * correction, F-LAB-04) + modale de saisie (saisirResultatExamenAction,
+ * module laboratoire/actions). A la fermeture de la modale, la cle du contenu
+ * change pour repartir d'un formulaire vierge a la prochaine ouverture.
  */
 export function FormulaireResultat({ examen }: { examen: ExamenResume }) {
   const modalRef = useRef<ModalHandle>(null);
   const [cle, setCle] = useState(0);
+  const enCorrection = examen.statut === "correction_demandee";
 
   return (
     <>
       <Button
         type="button"
-        variant="secondary"
+        variant={enCorrection ? "danger" : "secondary"}
         className="w-fit"
         onClick={() => modalRef.current?.showModal()}
       >
-        Saisir le resultat
+        {enCorrection ? "Resaisir le resultat" : "Saisir le resultat"}
       </Button>
       <Modal
         ref={modalRef}
         width="wide"
-        title="Saisir le resultat"
+        title={enCorrection ? "Resaisir le resultat" : "Saisir le resultat"}
         description={`${examen.typeExamen}, ${examen.patientNomComplet ?? "patient non precise"}`}
         onClose={() => setCle((valeur) => valeur + 1)}
       >

@@ -1,5 +1,8 @@
 import Link from "next/link";
-import { getRendezVousDuProfessionnel, type RendezVousResume } from "@/modules/facility/actions";
+import {
+  getRendezVousDeLEtablissementDuProfessionnel,
+  type RendezVousResume,
+} from "@/modules/facility/actions";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 
@@ -131,7 +134,7 @@ function ListeProchainsRendezVous({ rendezVous }: { rendezVous: RendezVousResume
  * src/security/permissions.ts).
  */
 export async function DashboardInfirmier() {
-  const rendezVous = await getRendezVousDuProfessionnel();
+  const rendezVous = await getRendezVousDeLEtablissementDuProfessionnel();
 
   const patientsDuJour = rendezVous.filter(
     (rdv) => rdv.statut === "confirme" && estAujourdHui(rdv.date)

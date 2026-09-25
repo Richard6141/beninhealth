@@ -255,10 +255,17 @@ async function main() {
         date: ilYA20Jours,
         motif: "Douleurs abdominales",
         symptomes: JSON.stringify(["Douleurs abdominales", "Fievre legere"]),
-        constantes: "Temperature 37.8C, tension 12/8",
+        temperatureCelsius: 37.8,
+        tensionSystolique: 120,
+        tensionDiastolique: 80,
         observations: "Suspicion de paludisme, test rapide propose.",
         conclusion: "Paludisme simple confirme, traitement prescrit.",
         statut: "terminee",
+        // Consultation deja validee (donnee de demo historique) : renseigne
+        // dateValidation comme le ferait enregistrerConsultationAction,
+        // sinon la fenetre de 12 mois pour addendum/retrait (RG-CLI-70) la
+        // rejetterait a tort faute de date de validation.
+        dateValidation: ilYA20Jours,
       },
     });
 
@@ -268,6 +275,7 @@ async function main() {
         principeActif: "Arthemeter / Lumefantrine",
         dosage: "20 mg / 120 mg",
         forme: "comprime",
+        classeTherapeutique: "antipaludiques",
         informationsComplementaires: "Antipaludique de premiere intention (paludisme simple).",
       },
     });
@@ -278,16 +286,22 @@ async function main() {
         principeActif: "Paracetamol",
         dosage: "500 mg",
         forme: "comprime",
+        classeTherapeutique: "antalgiques",
         informationsComplementaires: "Antalgique et antipyretique.",
       },
     });
 
+    // Volontairement en conflit avec l'allergie "Penicilline" du patient de
+    // demonstration (voir plus haut) : permet de verifier a l'ecran le
+    // controle de securite F-PRE-02 / RG-PRE-10 (alerte bloquante par classe
+    // therapeutique) sans donnees de demo supplementaires.
     await prisma.medicament.create({
       data: {
         nom: "Amodex",
         principeActif: "Amoxicilline",
         dosage: "500 mg",
         forme: "gelule",
+        classeTherapeutique: "penicillines",
         informationsComplementaires: "Antibiotique a large spectre.",
       },
     });
@@ -299,6 +313,8 @@ async function main() {
         patientId: patientUser.patient.id,
         date: ilYA20Jours,
         statut: "validee",
+        numero: "RX-2026-0001",
+        empreinteContenu: "seed-demo",
         instructions: "Traitement a prendre avec de la nourriture. Bien s'hydrater.",
         lignes: {
           create: [

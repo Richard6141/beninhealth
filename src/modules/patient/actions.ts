@@ -19,7 +19,8 @@ import { headers } from "next/headers";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
-import type { ContactUrgence, GroupeSanguin, TypeAccesConsentement } from "@/types";
+import type { ContactUrgence, GroupeSanguin, NomRole, TypeAccesConsentement } from "@/types";
+import { calculerDateFinConsentement, DUREES_CONSENTEMENT_CONNUES } from "./consentement-durees";
 
 /** Etat renvoye par chaque Server Action de ce module, consomme via useActionState. */
 export interface PatientActionState {
@@ -46,9 +47,26 @@ export interface ConsentementAvecActeur {
   acteurNomComplet: string; // "Dr. Prenom Nom" ou "Prenom Nom"
   acteurSpecialite: string | null; // specialite si ProfessionnelSante, sinon null
   typeAcces: string;
+  /** Statut brut stocke en base ("actif" ou "retire"), voir statutEffectif pour l'affichage. */
   statut: string;
+  /**
+   * Statut a afficher au patient (F-CIT-10/RG-CIT-80 : actifs, expires et
+   * retires doivent apparaitre distinctement) : derive de `statut` et de la
+   * date de fin, jamais stocke tel quel (aucune tache planifiee ne fait
+   * transitionner un consentement a l'echeance, seule la date fait foi).
+   */
+  statutEffectif: "actif" | "expire" | "retire";
   dateDebut: string; // ISO
   dateFin: string | null; // ISO
+}
+
+function calculerStatutEffectifConsentement(
+  statut: string,
+  dateFin: Date | null
+): "actif" | "expire" | "retire" {
+  if (statut === "retire") return "retire";
+  if (dateFin !== null && dateFin.getTime() <= Date.now()) return "expire";
+  return "actif";
 }
 
 /** Professionnel de sante pouvant se voir accorder un acces au dossier du patient connecte. */
@@ -105,6 +123,7 @@ const schemaMiseAJourDossier = z
 const schemaOctroiConsentement = z.object({
   acteurAutoriseId: z.string().trim().min(1, "Le professionnel de sante est obligatoire."),
   typeAcces: z.enum(TYPES_ACCES_CONNUS, { message: "Type d'acces invalide." }),
+  duree: z.enum(DUREES_CONSENTEMENT_CONNUES, { message: "Duree d'autorisation invalide." }),
 });
 
 const schemaRetraitConsentement = z.object({
@@ -165,10 +184,10 @@ function parseListeLignes(valeur: string): string[] {
 /** Nom complet d'un acteur, prefixe de "Dr." s'il s'agit d'un professionnel de sante. */
 function nomCompletActeur(
   utilisateur: { nom: string; prenom: string },
-  estProfessionnel: boolean
+  estMedecin: boolean
 ): string {
   const nomComplet = `${utilisateur.prenom} ${utilisateur.nom}`;
-  return estProfessionnel ? `Dr. ${nomComplet}` : nomComplet;
+  return estMedecin ? `Dr. ${nomComplet}` : nomComplet;
 }
 
 /** Recupere le profil Patient du titulaire de la session courante, ou null si absent. */
@@ -237,9 +256,141 @@ export async function getMesConsentements(): Promise<ConsentementAvecActeur[]> {
     acteurSpecialite: consentement.acteurAutorise.professionnel?.specialite ?? null,
     typeAcces: consentement.typeAcces,
     statut: consentement.statut,
+    statutEffectif: calculerStatutEffectifConsentement(consentement.statut, consentement.dateFin),
     dateDebut: consentement.dateDebut.toISOString(),
     dateFin: consentement.dateFin ? consentement.dateFin.toISOString() : null,
   }));
+}
+
+/** Un acces au dossier du patient connecte par un tiers (F-CIT-12). */
+export interface AccesDossier {
+  id: string;
+  date: string; // ISO
+  acteurNomComplet: string;
+  acteurRole: NomRole | null;
+  etablissementNom: string | null;
+  // Type de ressource concernee (prefixe de donneeConcernee : "patient",
+  // "consultation", "prescription", "examen_medical", "suivi_communautaire"),
+  // necessaire cote ecran pour distinguer des actions au libelle ambigu
+  // (ex. "creation" existe pour une prescription, un examen ou un suivi).
+  cible: string;
+  action: string;
+  // Utilisee uniquement pour afficher la justification d'un acces d'urgence
+  // (F-CLI-10, CA-2) : jamais affichee pour les autres types d'acces.
+  justification: string;
+}
+
+/**
+ * Historique des acces au dossier du patient connecte par d'autres personnes
+ * (F-CIT-12 « Qui a consulte mon dossier »), du plus recent au plus ancien.
+ * Ne remonte jamais les consultations du patient de son propre dossier
+ * (RG-CIT-21 : non pertinentes pour cet historique, meme si elles restent
+ * journalisees ailleurs).
+ *
+ * RG-CIT-100 exige d'inclure les acces medecin, laboratoire, pharmacie et
+ * agent communautaire. JournalAudit.donneeConcernee ne pointe pas toujours
+ * directement `patient:<id>` (ex. une delivrance de prescription est tracee
+ * sous `prescription:<id>`) : on resout donc aussi les consultations,
+ * prescriptions, examens et suivis communautaires du patient pour retrouver
+ * ces entrees, sans changement de schema.
+ */
+export async function getMesAccesDossier(): Promise<AccesDossier[]> {
+  const patient = await patientDeLaSessionCourante();
+
+  if (!patient) {
+    return [];
+  }
+
+  const [consultations, prescriptions, examens, suivis] = await Promise.all([
+    prisma.consultation.findMany({ where: { patientId: patient.id }, select: { id: true } }),
+    prisma.prescription.findMany({ where: { patientId: patient.id }, select: { id: true } }),
+    prisma.examenMedical.findMany({ where: { patientId: patient.id }, select: { id: true } }),
+    prisma.suiviCommunautaire.findMany({ where: { patientId: patient.id }, select: { id: true } }),
+  ]);
+
+  const clesConcernees = [
+    `patient:${patient.id}`,
+    ...consultations.map((c) => `consultation:${c.id}`),
+    ...prescriptions.map((p) => `prescription:${p.id}`),
+    ...examens.map((e) => `examen_medical:${e.id}`),
+    ...suivis.map((s) => `suivi_communautaire:${s.id}`),
+  ];
+
+  const entrees = await prisma.journalAudit.findMany({
+    where: {
+      donneeConcernee: { in: clesConcernees },
+      utilisateurId: { not: patient.userId },
+    },
+    include: {
+      utilisateur: {
+        include: { roles: true, professionnel: { include: { etablissement: true } } },
+      },
+    },
+    orderBy: { date: "desc" },
+  });
+
+  return entrees.map((entree) => {
+    const role = (entree.utilisateur.roles[0]?.nom as NomRole | undefined) ?? null;
+    return {
+      id: entree.id,
+      date: entree.date.toISOString(),
+      acteurNomComplet: nomCompletActeur(entree.utilisateur, role === "medecin"),
+      acteurRole: role,
+      etablissementNom: entree.utilisateur.professionnel?.etablissement.nom ?? null,
+      cible: entree.donneeConcernee.split(":")[0] ?? "",
+      action: entree.action,
+      justification: entree.action === "acces_urgence" ? entree.justification : "",
+    };
+  });
+}
+
+/**
+ * RG-CIT-101 : le patient signale un acces qu'il ne reconnaît pas. Cree une
+ * entree JournalAudit dediee (pas de nouveau modele) plutot qu'un simple
+ * bouton sans effet, pour laisser une trace exploitable par un futur ecran
+ * d'audit (F-AUD-04, non construit dans ce depot). Revalide server-side que
+ * chaque id signale appartient bien a l'historique du patient connecte
+ * (Zero Trust : jamais confiance dans une liste d'ids fournie par le client).
+ */
+export async function signalerAccesSuspectAction(
+  prevState: PatientActionState,
+  formData: FormData
+): Promise<PatientActionState> {
+  const patient = await patientDeLaSessionCourante();
+
+  if (!patient) {
+    return { error: "Session expiree. Veuillez vous reconnecter.", success: false };
+  }
+
+  const entreeIds = formData.getAll("entreeId").map(String).filter((id) => id.length > 0);
+
+  if (entreeIds.length === 0) {
+    return { error: "Aucun accès à signaler.", success: false };
+  }
+
+  const accesConnus = await getMesAccesDossier();
+  const idsValides = new Set(accesConnus.map((acces) => acces.id));
+  const idsAValider = entreeIds.filter((id) => idsValides.has(id));
+
+  if (idsAValider.length === 0) {
+    return { error: "Cet accès n'a pas pu être retrouvé dans votre historique.", success: false };
+  }
+
+  const adresseTechnique = await adresseTechniqueCourante();
+  const motif = String(formData.get("motif") ?? "").trim();
+  const justification = motif.length > 0 ? motif : "Accès non reconnu par le patient";
+
+  await prisma.journalAudit.createMany({
+    data: idsAValider.map((id) => ({
+      utilisateurId: patient.userId,
+      action: "signalement_acces_suspect",
+      donneeConcernee: `journal_audit:${id}`,
+      adresseTechnique,
+      justification,
+    })),
+  });
+
+  return { error: null, success: true };
 }
 
 /**
@@ -379,6 +530,7 @@ export async function grantConsentAction(
   const validation = schemaOctroiConsentement.safeParse({
     acteurAutoriseId: formData.get("acteurAutoriseId"),
     typeAcces: formData.get("typeAcces"),
+    duree: formData.get("duree"),
   });
 
   if (!validation.success) {
@@ -388,7 +540,7 @@ export async function grantConsentAction(
     };
   }
 
-  const { acteurAutoriseId, typeAcces } = validation.data;
+  const { acteurAutoriseId, typeAcces, duree } = validation.data;
 
   try {
     const patient = await prisma.patient.findUnique({ where: { userId: session.userId } });
@@ -410,6 +562,7 @@ export async function grantConsentAction(
 
     const adresseTechnique = await adresseTechniqueCourante();
     const maintenant = new Date();
+    const dateFin = calculerDateFinConsentement(duree, maintenant);
 
     const consentement = await prisma.consentement.upsert({
       where: {
@@ -424,13 +577,13 @@ export async function grantConsentAction(
         typeAcces,
         statut: "actif",
         dateDebut: maintenant,
-        dateFin: null,
+        dateFin,
       },
       update: {
         typeAcces,
         statut: "actif",
         dateDebut: maintenant,
-        dateFin: null,
+        dateFin,
       },
     });
 
@@ -440,7 +593,7 @@ export async function grantConsentAction(
         action: "consentement_accorde",
         donneeConcernee: `consentement:${consentement.id}`,
         adresseTechnique,
-        justification: `Consentement accorde (${typeAcces}) a l'acteur ${acteurAutoriseId}`,
+        justification: `Consentement accorde (${typeAcces}, ${duree}) a l'acteur ${acteurAutoriseId}, jusqu'au ${dateFin.toISOString()}`,
       },
     });
 

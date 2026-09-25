@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
+import { ModalNouveauPatient, type PatientCree } from "@/app/app/medecin/patients/ModalNouveauPatient";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { SelectField } from "@/components/ui/SelectField";
@@ -36,30 +37,43 @@ export function SelecteurPatient({ patients }: SelecteurPatientProps) {
     setPatientId(event.target.value);
   }
 
-  function handleContinuer() {
-    if (!patientId) return;
+  function handleContinuer(id: string) {
+    if (!id) return;
     router.push(
-      `/app/medecin/consultations/nouvelle?patientId=${encodeURIComponent(patientId)}`
+      `/app/medecin/consultations/nouvelle?patientId=${encodeURIComponent(id)}`
     );
+  }
+
+  function handlePatientCree(patient: PatientCree) {
+    // Un patient nouvellement cree a systematiquement le Consentement
+    // "dossier_complet" accorde automatiquement au medecin createur
+    // (creerPatientParProfessionnelAction) : on peut donc demarrer sa
+    // consultation immediatement, sans repasser par ce selecteur.
+    handleContinuer(patient.patientId);
   }
 
   return (
     <Card description="Seuls les patients vous ayant accorde un acces a leur dossier apparaissent dans cette liste.">
       <div className="flex flex-col gap-4">
-        <SelectField
-          label="Patient"
-          required
-          options={options}
-          placeholder="Choisir un patient"
-          value={patientId}
-          onChange={handleChange}
-        />
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="min-w-[240px] flex-1">
+            <SelectField
+              label="Patient"
+              required
+              options={options}
+              placeholder="Choisir un patient"
+              value={patientId}
+              onChange={handleChange}
+            />
+          </div>
+          <ModalNouveauPatient onPatientCree={handlePatientCree} libelleBouton="Ajouter un patient" />
+        </div>
         <Button
           type="button"
           variant="primary"
           className="w-fit"
           disabled={!patientId}
-          onClick={handleContinuer}
+          onClick={() => handleContinuer(patientId)}
         >
           Continuer
         </Button>

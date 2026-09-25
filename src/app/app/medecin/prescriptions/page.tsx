@@ -7,6 +7,22 @@ import {
 import { Badge } from "@/components/ui/Badge";
 import type { BadgeTone } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
+import { cn } from "@/lib/cn";
+
+/** Bouton de navigation stylise comme un Button primaire, rendu comme un lien unique. */
+function LienNouvellePrescription() {
+  return (
+    <Link
+      href="/app/medecin/prescriptions/nouvelle"
+      className={cn(
+        "inline-flex h-11 w-fit items-center justify-center gap-2 rounded-champ bg-accent px-4 text-[15px] font-semibold text-white transition-colors motion-reduce:transition-none hover:bg-accent-fonce",
+        "focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+      )}
+    >
+      Nouvelle prescription
+    </Link>
+  );
+}
 
 function libelleStatut(statut: string): { texte: string; tone: BadgeTone } {
   const cle = statut.trim().toLowerCase();
@@ -86,22 +102,25 @@ export default async function PrescriptionsProfessionnelPage() {
 
   return (
     <div className="conteneur-page mx-auto flex flex-col gap-8 px-4 py-8 sm:px-6">
-      <header className="flex flex-col gap-2">
-        <Link
-          href="/app/medecin"
-          className="inline-flex w-fit items-center gap-1 text-[13px] font-semibold text-accent hover:underline"
-        >
-          <ArrowLeft size={14} aria-hidden="true" />
-          Retour au tableau de bord
-        </Link>
-        <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-accent">
-          Espace professionnel
-        </p>
-        <h1 className="text-[28px] font-black text-encre">Mes prescriptions</h1>
-        <p className="max-w-2xl text-[15px] text-encre-secondaire">
-          Historique des prescriptions que vous avez etablies, les plus
-          recentes en premier.
-        </p>
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="flex flex-col gap-2">
+          <Link
+            href="/app/medecin"
+            className="inline-flex w-fit items-center gap-1 text-[13px] font-semibold text-accent hover:underline"
+          >
+            <ArrowLeft size={14} aria-hidden="true" />
+            Retour au tableau de bord
+          </Link>
+          <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-accent">
+            Espace professionnel
+          </p>
+          <h1 className="text-[28px] font-black text-encre">Mes prescriptions</h1>
+          <p className="max-w-2xl text-[15px] text-encre-secondaire">
+            Historique des prescriptions que vous avez etablies, les plus
+            recentes en premier.
+          </p>
+        </div>
+        <LienNouvellePrescription />
       </header>
 
       {prescriptions.length === 0 ? (
@@ -115,7 +134,7 @@ export default async function PrescriptionsProfessionnelPage() {
             </p>
             <p className="max-w-[36ch] text-[13px] text-encre-attenuee">
               Vous n&apos;avez pour le moment etabli aucune prescription.
-              Elles se creent depuis une consultation terminee.
+              Cliquez sur « Nouvelle prescription » pour en creer une.
             </p>
           </div>
         </Card>

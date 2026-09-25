@@ -40,7 +40,7 @@ function ApercuPrescription({ prescription }: { prescription: PrescriptionResume
  * Tableau de bord dédié au rôle pharmacien : uniquement les prescriptions à
  * délivrer, jamais de section "Patients du jour" ou "Rendez-vous" (ce rôle ne
  * détient aucune permission read:rendez_vous ni read:patient dans la matrice
- * RBAC, voir src/security/permissions.ts — les afficher aurait été trompeur).
+ * RBAC, voir src/security/permissions.ts (les afficher aurait été trompeur).
  */
 export async function DashboardPharmacien() {
   const prescriptions = await getPrescriptionsADelivrer();

@@ -257,7 +257,7 @@ export function ListeRendezVous({ rendezVous }: ListeRendezVousProps) {
  * Tuile "libellé / valeur" réutilisée dans la modale de détails : même
  * gabarit (bordure, fond, libellé en majuscules) pour chaque bloc
  * d'information, sans icône décorative sur certains blocs seulement (Date,
- * Motif) et pas sur d'autres (Statut) — un style unique et prévisible plutôt
+ * Motif) et pas sur d'autres (Statut) : un style unique et prévisible plutôt
  * qu'un mélange.
  */
 function TuileDetail({ label, children }: { label: string; children: ReactNode }) {

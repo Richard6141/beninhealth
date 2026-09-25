@@ -42,6 +42,11 @@ yarn-error.log*
 /public/uploads/*
 !/public/uploads/**/.gitkeep
 
+# documents medicaux prives (F-CLI-13, RG-CLI-112) : jamais dans le depot,
+# donnees medicales sensibles, hors de public/ par construction
+/private-uploads/*
+!/private-uploads/**/.gitkeep
+
 # vercel
 .vercel
 

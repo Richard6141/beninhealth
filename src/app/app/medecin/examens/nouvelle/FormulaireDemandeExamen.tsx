@@ -1,12 +1,13 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import Link from "next/link";
 import {
   demanderExamenAction,
   type LaboratoireActionState,
   type LaboratoireOption,
 } from "@/modules/laboratoire/actions";
+import { ModalNouveauPatient, type PatientCree } from "@/app/app/medecin/patients/ModalNouveauPatient";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -15,31 +16,57 @@ import { TextField } from "@/components/ui/TextField";
 
 const etatInitial: LaboratoireActionState = { error: null, success: false };
 
+export interface PatientPourSelection {
+  patientId: string;
+  nomComplet: string;
+  identifiantSante: string;
+}
+
 export interface FormulaireDemandeExamenProps {
   laboratoires: LaboratoireOption[];
+  patients: PatientPourSelection[];
   /** Chaine vide si aucune consultation n'est a l'origine de la demande. */
   consultationId: string;
+  /** PatientId a pre-selectionner quand la demande part d'une consultation precise. */
+  patientIdPreselectionne: string;
 }
 
 /**
- * Formulaire de demande d'examen (Phase 8). demanderExamenAction (module
- * laboratoire) attend toujours un patientId explicite dans le FormData, que
- * la demande parte ou non d'une consultation : le champ "Identifiant du
- * patient" reste donc une saisie libre dans les deux cas pour cette premiere
- * version. Un rappel s'affiche quand consultationId est fourni, car la
- * resolution automatique du patient depuis la consultation n'est pas encore
- * disponible avec le contrat expose par le module laboratoire.
+ * Formulaire de demande d'examen (Phase 8) : patient choisi dans un
+ * selecteur (meme source que /app/medecin/consultations/nouvelle -
+ * getPatientsAvecConsentement), pre-rempli automatiquement quand on arrive
+ * depuis le lien "Demander un examen" d'une consultation. Le bouton
+ * "Ajouter un patient" ouvre ModalNouveauPatient (F-CLI-03 du pack) pour un
+ * patient qui n'a pas encore de dossier, et le selectionne immediatement une
+ * fois cree.
  */
 export function FormulaireDemandeExamen({
   laboratoires,
+  patients: patientsInitiaux,
   consultationId,
+  patientIdPreselectionne,
 }: FormulaireDemandeExamenProps) {
   const [state, formAction, pending] = useActionState(demanderExamenAction, etatInitial);
+  const [patients, setPatients] = useState(patientsInitiaux);
+  const [patientId, setPatientId] = useState(patientIdPreselectionne);
 
   const optionsLaboratoires = laboratoires.map((laboratoire) => ({
     value: laboratoire.id,
     label: `${laboratoire.nom} (${laboratoire.localisation})`,
   }));
+
+  const optionsPatients = patients.map((patient) => ({
+    value: patient.patientId,
+    label: `${patient.nomComplet} (${patient.identifiantSante})`,
+  }));
+
+  function handlePatientCree(patient: PatientCree) {
+    setPatients((actuels) => [
+      { patientId: patient.patientId, nomComplet: patient.nomComplet, identifiantSante: patient.identifiantSante },
+      ...actuels,
+    ]);
+    setPatientId(patient.patientId);
+  }
 
   const erreurConsentement =
     state.error !== null && state.error.toLowerCase().includes("consentement");
@@ -77,6 +104,7 @@ export function FormulaireDemandeExamen({
     >
       <form action={formAction} aria-busy={pending} className="flex flex-col gap-6">
         <input type="hidden" name="consultationId" value={consultationId} />
+        <input type="hidden" name="patientId" value={patientId} />
 
         {state.error ? (
           erreurConsentement ? (
@@ -90,20 +118,28 @@ export function FormulaireDemandeExamen({
           )
         ) : null}
 
-        {consultationId ? (
-          <Alert level="info" title="Fonctionnalite disponible uniquement depuis une consultation pour l'instant">
-            La recuperation automatique du patient depuis cette consultation
-            n&apos;est pas encore disponible : renseignez ci-dessous
-            l&apos;identifiant du patient pour finaliser cette demande.
-          </Alert>
-        ) : null}
-
-        <TextField
-          label="Identifiant du patient"
-          name="patientId"
-          required
-          hint="Vous pouvez aussi arriver sur cet ecran depuis une consultation, via le lien « Demander un examen »."
-        />
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="min-w-[240px] flex-1">
+              <SelectField
+                label="Patient"
+                required
+                options={optionsPatients}
+                placeholder="Choisir un patient"
+                value={patientId}
+                onChange={(event) => setPatientId(event.target.value)}
+              />
+            </div>
+            <ModalNouveauPatient onPatientCree={handlePatientCree} libelleBouton="Ajouter un patient" />
+          </div>
+          {patients.length === 0 ? (
+            <p className="text-[13px] text-encre-attenuee">
+              Aucun patient ne vous a encore accorde d&apos;acces a son
+              dossier. Utilisez « Ajouter un patient » pour un patient qui se
+              presente sans compte.
+            </p>
+          ) : null}
+        </div>
 
         <SelectField
           label="Laboratoire"
@@ -120,7 +156,7 @@ export function FormulaireDemandeExamen({
           placeholder="Ex. Numeration formule sanguine"
         />
 
-        <Button type="submit" variant="primary" className="w-fit" disabled={pending}>
+        <Button type="submit" variant="primary" className="w-fit" disabled={pending || !patientId}>
           {pending ? "Envoi en cours..." : "Envoyer la demande"}
         </Button>
       </form>

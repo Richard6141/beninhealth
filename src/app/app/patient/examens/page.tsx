@@ -70,7 +70,11 @@ function CarteExamen({ examen }: { examen: ExamenResume }) {
           <p className="text-[13px] font-semibold text-encre-secondaire">
             Resultat
           </p>
-          {estTermine ? (
+          {estTermine && examen.sensible && !examen.resultatAnnonceAuPatient ? (
+            <p className="text-[13px] text-encre-attenuee">
+              Un resultat vous sera communique par votre medecin.
+            </p>
+          ) : estTermine ? (
             <>
               <p className="text-[14px] text-encre">
                 {examen.resultat || "Resultat transmis sans detail."}

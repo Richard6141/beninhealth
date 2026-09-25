@@ -2,16 +2,64 @@ import Link from "next/link";
 import { ArrowLeft, FlaskConical, Pill, Stethoscope } from "lucide-react";
 import { getSession } from "@/lib/session";
 import {
+  getConsultationsDeLEtablissement,
   getConsultationsDuProfessionnel,
   type ConsultationResume,
 } from "@/modules/clinical/actions";
+import { Alert } from "@/components/ui/Alert";
 import { Badge } from "@/components/ui/Badge";
 import type { BadgeTone } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { cn } from "@/lib/cn";
+import { FormulaireAddendum } from "./FormulaireAddendum";
+import { FormulaireRetrait } from "./FormulaireRetrait";
+
+const LIBELLES_MOTIF_ADDENDUM: Record<string, string> = {
+  complement_information: "Complément d'information",
+  correction: "Correction",
+  resultat_recu: "Résultat reçu",
+  autre: "Autre",
+};
+
+function libelleMotifAddendum(motif: string): string {
+  return LIBELLES_MOTIF_ADDENDUM[motif] ?? motif;
+}
+
+/** Met en forme les constantes vitales structurees (F-CLI-06) en une ligne compacte lisible. */
+function formaterConstantes(consultation: ConsultationResume): string | null {
+  const parties: string[] = [];
+
+  if (consultation.temperatureCelsius !== null) {
+    parties.push(`Température : ${consultation.temperatureCelsius}°C`);
+  }
+  if (consultation.tensionSystolique !== null && consultation.tensionDiastolique !== null) {
+    parties.push(`Tension : ${consultation.tensionSystolique}/${consultation.tensionDiastolique} mmHg`);
+  }
+  if (consultation.pouls !== null) {
+    parties.push(`Pouls : ${consultation.pouls} bpm`);
+  }
+  if (consultation.frequenceRespiratoire !== null) {
+    parties.push(`Fréquence respiratoire : ${consultation.frequenceRespiratoire}/min`);
+  }
+  if (consultation.saturationOxygene !== null) {
+    parties.push(`Saturation : ${consultation.saturationOxygene}%`);
+  }
+  if (consultation.poidsKg !== null) {
+    parties.push(`Poids : ${consultation.poidsKg} kg`);
+  }
+  if (consultation.tailleCm !== null) {
+    parties.push(`Taille : ${consultation.tailleCm} cm`);
+  }
+  if (consultation.glycemieGL !== null) {
+    parties.push(`Glycémie : ${consultation.glycemieGL} g/L`);
+  }
+
+  return parties.length > 0 ? parties.join(" · ") : null;
+}
 
 function libelleStatut(statut: string): { texte: string; tone: BadgeTone } {
   const cle = statut.trim().toLowerCase();
+  if (cle === "brouillon") return { texte: "Brouillon", tone: "warning" };
   if (cle === "planifiee") return { texte: "Planifiee", tone: "info" };
   if (cle === "en_cours") return { texte: "En cours", tone: "warning" };
   if (cle === "terminee") return { texte: "Terminee", tone: "good" };
@@ -88,9 +136,22 @@ function CarteConsultation({
 
   return (
     <Card
-      title={consultation.patientNomComplet ?? "Patient non precise"}
+      title={
+        consultation.saisieParErreur ? (
+          <span className="line-through decoration-2">
+            {consultation.patientNomComplet ?? "Patient non precise"}
+          </span>
+        ) : (
+          (consultation.patientNomComplet ?? "Patient non precise")
+        )
+      }
       description={consultation.motif}
-      actions={<Badge tone={statut.tone}>{statut.texte}</Badge>}
+      actions={
+        <div className="flex flex-wrap items-center justify-end gap-1.5">
+          {consultation.saisieParErreur ? <Badge tone="critical">Retirée</Badge> : null}
+          <Badge tone={statut.tone}>{statut.texte}</Badge>
+        </div>
+      }
     >
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-2">
@@ -100,6 +161,11 @@ function CarteConsultation({
           {consultation.patientIdentifiantSante ? (
             <span className="text-[13px] text-encre-attenuee">
               Identifiant sante : {consultation.patientIdentifiantSante}
+            </span>
+          ) : null}
+          {consultation.professionnelNomComplet ? (
+            <span className="text-[13px] text-encre-attenuee">
+              {consultation.professionnelNomComplet}
             </span>
           ) : null}
         </div>
@@ -114,12 +180,15 @@ function CarteConsultation({
           </div>
         ) : null}
 
-        {consultation.constantes ? (
-          <p className="text-[13px] text-encre-secondaire">
-            <span className="font-semibold text-encre">Constantes : </span>
-            {consultation.constantes}
-          </p>
-        ) : null}
+        {(() => {
+          const constantes = formaterConstantes(consultation);
+          return constantes ? (
+            <p className="text-[13px] text-encre-secondaire">
+              <span className="font-semibold text-encre">Constantes : </span>
+              {constantes}
+            </p>
+          ) : null;
+        })()}
 
         {consultation.observations ? (
           <p className="text-[13px] text-encre-secondaire">
@@ -135,10 +204,56 @@ function CarteConsultation({
           </p>
         </div>
 
+        {consultation.saisieParErreur && consultation.motifRetrait ? (
+          <Alert level="warning" title="Consultation retirée (saisie par erreur)">
+            {consultation.motifRetrait}
+          </Alert>
+        ) : null}
+
+        {consultation.addenda.length > 0 ? (
+          <div className="flex flex-col gap-2">
+            <p className="text-[13px] font-semibold text-encre-secondaire">Addenda</p>
+            {consultation.addenda.map((addendum) => (
+              <div key={addendum.id} className="rounded-champ border border-bordure bg-plan px-3 py-2">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <span className="text-[13px] font-semibold text-encre">
+                    {libelleMotifAddendum(addendum.motif)}
+                  </span>
+                  <span className="text-[12px] text-encre-attenuee">
+                    {addendum.auteurNomComplet} · {formaterDateHeure(addendum.date)}
+                  </span>
+                </div>
+                <p className="mt-1 text-[13px] text-encre-secondaire">{addendum.contenu}</p>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {peutAgir && consultation.statut === "brouillon" ? (
+          <div className="flex flex-wrap justify-end gap-2">
+            <Link
+              href={`/app/medecin/consultations/nouvelle?patientId=${encodeURIComponent(consultation.patientId)}`}
+              className={cn(
+                "inline-flex h-9 w-fit items-center justify-center gap-1.5 rounded-champ bg-accent px-3 text-[13px] font-semibold text-white transition-colors motion-reduce:transition-none hover:bg-accent-fonce",
+                "focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+              )}
+            >
+              Continuer la saisie
+            </Link>
+          </div>
+        ) : null}
+
         {peutAgir ? (
           <div className="flex flex-wrap justify-end gap-2">
             <LienDemanderExamen consultationId={consultation.id} />
             <LienPrescrire consultationId={consultation.id} />
+          </div>
+        ) : null}
+
+        {peutAgir && consultation.statut === "terminee" && !consultation.saisieParErreur ? (
+          <div className="flex flex-col gap-2 border-t border-bordure pt-3">
+            <FormulaireAddendum consultationId={consultation.id} />
+            <FormulaireRetrait consultationId={consultation.id} />
           </div>
         ) : null}
       </div>
@@ -160,7 +275,13 @@ export default async function ConsultationsProfessionnelPage() {
   // page reste accessible en lecture a infirmier (read:consultation), mais
   // les actions de creation ne doivent jamais leur etre proposees.
   const peutAgir = session?.roles[0] === "medecin";
-  const consultations = await getConsultationsDuProfessionnel();
+  // L'infirmier ne cree jamais lui-meme de consultation : il suit celles de
+  // son etablissement, tous medecins confondus (meme principe que la page
+  // "Mes rendez-vous", voir getRendezVousDeLEtablissementDuProfessionnel).
+  const estInfirmier = session?.roles.includes("infirmier") ?? false;
+  const consultations = estInfirmier
+    ? await getConsultationsDeLEtablissement()
+    : await getConsultationsDuProfessionnel();
 
   return (
     <div className="conteneur-page mx-auto flex flex-col gap-8 px-4 py-8 sm:px-6">
@@ -176,10 +297,13 @@ export default async function ConsultationsProfessionnelPage() {
           <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-accent">
             Espace professionnel
           </p>
-          <h1 className="text-[28px] font-black text-encre">Mes consultations</h1>
+          <h1 className="text-[28px] font-black text-encre">
+            {estInfirmier ? "Consultations de l'etablissement" : "Mes consultations"}
+          </h1>
           <p className="max-w-2xl text-[15px] text-encre-secondaire">
-            Historique des consultations que vous avez realisees, les plus
-            recentes en premier.
+            {estInfirmier
+              ? "Historique des consultations realisees dans votre etablissement, tous medecins confondus, les plus recentes en premier."
+              : "Historique des consultations que vous avez realisees, les plus recentes en premier."}
           </p>
         </div>
         {peutAgir ? <LienNouvelleConsultation /> : null}
@@ -197,7 +321,9 @@ export default async function ConsultationsProfessionnelPage() {
             <p className="max-w-[36ch] text-[13px] text-encre-attenuee">
               {peutAgir
                 ? "Vous n'avez pour le moment realise aucune consultation. Demarrez-en une depuis un rendez-vous confirme ou directement ci-dessus."
-                : "Aucune consultation ne vous a ete associee pour le moment."}
+                : estInfirmier
+                  ? "Aucune consultation n'a encore ete enregistree dans votre etablissement."
+                  : "Aucune consultation ne vous a ete associee pour le moment."}
             </p>
           </div>
         </Card>

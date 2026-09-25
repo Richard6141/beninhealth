@@ -7,6 +7,7 @@ import {
   type PatientActionState,
   type ProfessionnelDisponible,
 } from "@/modules/patient/actions";
+import { OPTIONS_DUREE_CONSENTEMENT } from "@/modules/patient/consentement-durees";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -46,8 +47,13 @@ export function FormulaireNouveauConsentement({
     label: `${professionnel.nomComplet}, ${professionnel.specialite}, ${professionnel.etablissementNom}`,
   }));
 
+  const optionsDuree = OPTIONS_DUREE_CONSENTEMENT.map((option) => ({
+    value: option.valeur,
+    label: option.libelle,
+  }));
+
   return (
-    <Card description="Le professionnel choisi pourra consulter les informations correspondant au type d'accès sélectionné, jusqu'à ce que vous retiriez cet accès.">
+    <Card description="Le professionnel choisi pourra consulter les informations correspondant au type d'accès sélectionné, pour la durée choisie. Vous pouvez retirer l'accès à tout moment avant l'échéance.">
       <form action={formAction} aria-busy={pending} className="flex flex-col gap-4">
         {state.error ? (
           <Alert level="critical" title="Autorisation impossible">
@@ -75,6 +81,15 @@ export function FormulaireNouveauConsentement({
           required
           options={optionsTypeAcces}
           placeholder="Choisir un type d'accès"
+        />
+
+        <SelectField
+          label="Durée de l'autorisation"
+          name="duree"
+          required
+          options={optionsDuree}
+          placeholder="Choisir une durée"
+          hint="Maximum 12 mois. Vous pourrez retirer l'accès avant l'échéance à tout moment."
         />
 
         <Button type="submit" variant="primary" className="w-fit" disabled={pending}>

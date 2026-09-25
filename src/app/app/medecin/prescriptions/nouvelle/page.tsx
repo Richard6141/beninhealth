@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+import { getConsultationsDuProfessionnel } from "@/modules/clinical/actions";
 import {
   getConsultationPourPrescription,
   listMedicaments,
 } from "@/modules/prescription/actions";
 import { Alert } from "@/components/ui/Alert";
 import { FormulairePrescription } from "./FormulairePrescription";
+import { SelecteurConsultation } from "./SelecteurConsultation";
 
 interface NouvellePrescriptionPageProps {
   searchParams: Promise<{ consultationId?: string | string[] }>;
@@ -30,13 +32,17 @@ function LienRetour() {
 
 /**
  * Ecran "Nouvelle prescription" (Phase 5) : lit consultationId en query param,
- * transmis depuis le lien "Prescrire" de /app/medecin/consultations. Verifie
- * via getConsultationPourPrescription que la consultation existe et
- * appartient bien au professionnel connecte (Zero Trust deja applique cote
- * module, qui retourne null si la consultation est introuvable ou ne lui
- * appartient pas). Si une prescription existe deja pour cette consultation,
- * un bandeau d'avertissement est affiche au-dessus du formulaire mais la
- * creation d'une nouvelle prescription reste possible (pas de blocage).
+ * transmis soit depuis le lien "Prescrire" d'une consultation precise, soit
+ * depuis le bouton "Nouvelle prescription" de /app/medecin/prescriptions
+ * (sans id, affiche alors SelecteurConsultation - RG-PRE-01 du pack : une
+ * prescription est toujours liee a une consultation, jamais creee dans
+ * l'absolu). Verifie via getConsultationPourPrescription que la consultation
+ * existe et appartient bien au professionnel connecte (Zero Trust deja
+ * applique cote module, qui retourne null si la consultation est introuvable
+ * ou ne lui appartient pas). Si une prescription existe deja pour cette
+ * consultation, un bandeau d'avertissement est affiche au-dessus du
+ * formulaire mais la creation d'une nouvelle prescription reste possible
+ * (pas de blocage).
  */
 export default async function NouvellePrescriptionPage({
   searchParams,
@@ -45,13 +51,24 @@ export default async function NouvellePrescriptionPage({
   const consultationId = premiereValeur(params.consultationId).trim();
 
   if (!consultationId) {
+    const consultations = await getConsultationsDuProfessionnel();
+
     return (
       <div className="conteneur-page mx-auto flex flex-col gap-6 px-4 py-8 sm:px-6">
         <LienRetour />
-        <Alert level="critical" title="Consultation non precisee">
-          Aucune consultation n&apos;a ete indiquee. Ouvrez cet ecran depuis le
-          bouton « Prescrire » d&apos;une consultation dans votre historique.
-        </Alert>
+        <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-accent">
+          Espace professionnel
+        </p>
+        <h1 className="text-[28px] font-black text-encre">Nouvelle prescription</h1>
+        {consultations.length > 0 ? (
+          <SelecteurConsultation consultations={consultations} />
+        ) : (
+          <Alert level="info" title="Aucune consultation disponible">
+            Vous n&apos;avez pour le moment aucune consultation enregistrée.
+            Démarrez-en une depuis l&apos;historique des consultations avant
+            de pouvoir prescrire.
+          </Alert>
+        )}
       </div>
     );
   }
@@ -97,6 +114,8 @@ export default async function NouvellePrescriptionPage({
       <FormulairePrescription
         consultationId={consultation.id}
         medicaments={medicaments}
+        patientAllergies={consultation.patientAllergies}
+        patientTraitementsActifs={consultation.patientTraitementsActifs}
       />
     </div>
   );

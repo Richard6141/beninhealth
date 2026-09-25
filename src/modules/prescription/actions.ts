@@ -23,11 +23,30 @@
  */
 
 import { headers } from "next/headers";
+import { createHash } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
+import { creerNotification } from "@/modules/notification/actions";
+import {
+  allergieCorrespondante,
+  LONGUEUR_MIN_JUSTIFICATION_FORCAGE,
+} from "./referentiel-allergies";
+import {
+  avertissementPourLigne,
+  libelleAvertissement,
+  type LigneComparable,
+} from "./controles-doublons";
+import {
+  MOTIFS_NON_DELIVRANCE_VALEURS,
+  LONGUEUR_MIN_MOTIF_ANNULATION_DELIVRANCE,
+  HEURES_FENETRE_ANNULATION_DELIVRANCE,
+  delaiAnnulationDelivranceDepasse,
+  type MotifNonDelivrance,
+} from "./referentiel-delivrance";
 
 /** Etat renvoye par chaque Server Action de ce module, consomme via useActionState. */
 export interface PrescriptionActionState {
@@ -42,6 +61,10 @@ export interface MedicamentOption {
   principeActif: string;
   dosage: string;
   forme: string;
+  // Utilise cote client pour l'alerte allergie immediate (F-PRE-02), voir
+  // src/modules/prescription/referentiel-allergies.ts. La verification
+  // serveur ci-dessous reste la seule autorite reelle.
+  classeTherapeutique: string;
 }
 
 /** Detail d'une ligne de prescription, enrichi des informations du medicament. */
@@ -61,6 +84,8 @@ export interface PrescriptionResume {
   id: string;
   date: string; // ISO
   statut: string;
+  // Numero d'ordonnance lisible (F-PRE-04 du pack), format RX-<annee>-<sequence 4 chiffres>.
+  numero: string;
   instructions: string;
   lignes: LignePrescriptionDetail[];
   medecinNomComplet: string | null; // rempli cote patient
@@ -81,6 +106,13 @@ const schemaLigneSoumise = z.object({
     .number({ message: "La duree de traitement doit etre un nombre." })
     .int("La duree de traitement doit etre un nombre entier.")
     .positive("La duree de traitement doit etre strictement positive."),
+  // F-PRE-02 / RG-PRE-10 : forcage d'une alerte allergie bloquante, avec
+  // justification obligatoire (20 caracteres minimum), trace en audit.
+  forcerAlerteAllergie: z.coerce.boolean().optional().default(false),
+  justificationForcage: z.string().trim().optional().default(""),
+  // F-PRE-02 : avertissement "doublon" ou "meme classe" (niveau Avertissement,
+  // pas Bloquant) : une simple confirmation suffit, pas de justification.
+  confirmerAvertissement: z.coerce.boolean().optional().default(false),
 });
 
 const schemaCreationPrescription = z.object({
@@ -119,8 +151,44 @@ function nomCompletProfessionnel(utilisateur: { nom: string; prenom: string }): 
   return `Dr. ${utilisateur.prenom} ${utilisateur.nom}`;
 }
 
+/** Convertit une chaine JSON de tableau (telle que stockee en base) en tableau de chaines. */
+function parseListeJSON(valeur: string): string[] {
+  try {
+    const donnees: unknown = JSON.parse(valeur);
+    return Array.isArray(donnees)
+      ? donnees.filter((item): item is string => typeof item === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 function premierMessageErreur(erreur: z.ZodError, messageParDefaut: string): string {
   return erreur.issues[0]?.message ?? messageParDefaut;
+}
+
+/**
+ * Numero d'ordonnance lisible (F-PRE-04 du pack, format RX-XXXX-XXXX) :
+ * RX-<annee>-<sequence sur 4 chiffres dans l'annee>, meme principe que
+ * src/modules/identity/identifiants.ts (comptage, pas de sequence DB dediee).
+ * Doit etre appele dans la meme transaction que la creation pour eviter un
+ * doublon en cas d'ecritures concurrentes.
+ */
+async function genererNumeroOrdonnance(tx: Prisma.TransactionClient, date: Date): Promise<string> {
+  const annee = date.getFullYear();
+  const compte = await tx.prescription.count({
+    where: { numero: { startsWith: `RX-${annee}-` } },
+  });
+  return `RX-${annee}-${String(compte + 1).padStart(4, "0")}`;
+}
+
+/** Empreinte SHA-256 du contenu canonique d'une prescription (F-PRE-04 du pack). */
+function calculerEmpreintePrescription(champs: {
+  instructions: string;
+  lignes: { medicamentId: string; posologie: string; quantite: number; dureeTraitementJours: number }[];
+}): string {
+  const contenuCanonique = JSON.stringify(champs, Object.keys(champs).sort());
+  return createHash("sha256").update(contenuCanonique).digest("hex");
 }
 
 /** Recupere le profil Patient du titulaire de la session courante, ou null si absent. */
@@ -151,6 +219,7 @@ function versPrescriptionResume(
     id: string;
     date: Date;
     statut: string;
+    numero: string;
     instructions: string;
     consultation: { motif: string };
     lignes: {
@@ -171,6 +240,7 @@ function versPrescriptionResume(
     id: prescription.id,
     date: prescription.date.toISOString(),
     statut: prescription.statut,
+    numero: prescription.numero,
     instructions: prescription.instructions,
     consultationMotif: prescription.consultation.motif,
     lignes: prescription.lignes.map((ligne) => ({
@@ -201,6 +271,7 @@ export async function listMedicaments(): Promise<MedicamentOption[]> {
     principeActif: medicament.principeActif,
     dosage: medicament.dosage,
     forme: medicament.forme,
+    classeTherapeutique: medicament.classeTherapeutique,
   }));
 }
 
@@ -244,6 +315,12 @@ export async function getConsultationPourPrescription(consultationId: string): P
   id: string;
   motif: string;
   patientNomComplet: string;
+  patientAllergies: string[];
+  // F-PRE-02 : medicaments des ordonnances actives du patient, pour
+  // l'avertissement "doublon"/"meme classe" affiche cote client avant meme
+  // la soumission (le serveur reste la seule autorite reelle, voir
+  // creerPrescriptionAction).
+  patientTraitementsActifs: LigneComparable[];
   dejaPrescription: boolean;
 } | null> {
   const professionnel = await professionnelDeLaSessionCourante();
@@ -270,10 +347,27 @@ export async function getConsultationPourPrescription(consultationId: string): P
     return null;
   }
 
+  const prescriptionsActives = await prisma.prescription.findMany({
+    where: {
+      patientId: consultation.patientId,
+      statut: { in: ["validee", "delivree_partiellement"] },
+    },
+    include: { lignes: { include: { medicament: true } } },
+  });
+
+  const patientTraitementsActifs: LigneComparable[] = prescriptionsActives.flatMap((prescription) =>
+    prescription.lignes.map((ligne) => ({
+      principeActif: ligne.medicament.principeActif,
+      classeTherapeutique: ligne.medicament.classeTherapeutique,
+    }))
+  );
+
   return {
     id: consultation.id,
     motif: consultation.motif,
     patientNomComplet: nomComplet(consultation.patient.user),
+    patientAllergies: parseListeJSON(consultation.patient.allergies),
+    patientTraitementsActifs,
     dejaPrescription: consultation.prescriptions.length > 0,
   };
 }
@@ -359,36 +453,121 @@ export async function creerPrescriptionAction(
 
     const medicamentParId = new Map(medicamentsTrouves.map((medicament) => [medicament.id, medicament]));
 
-    const principesActifsVus = new Map<string, string>();
+    for (const ligne of lignes) {
+      if (!medicamentParId.has(ligne.medicamentId)) {
+        return { error: "Un des medicaments selectionnes est introuvable au catalogue.", success: false };
+      }
+    }
+
+    // F-PRE-02 : controles "doublon" et "meme classe" (niveau Avertissement,
+    // pas Bloquant) : meme DCI ou meme classe therapeutique deja presente
+    // dans cette ordonnance OU dans une ordonnance active du patient
+    // (controles-doublons.ts). RG-PRE-12 : une aide, pas un blocage
+    // definitif -> simple confirmation, pas de justification exigee.
+    const prescriptionsActives = await prisma.prescription.findMany({
+      where: {
+        patientId: consultation.patientId,
+        statut: { in: ["validee", "delivree_partiellement"] },
+      },
+      include: { lignes: { include: { medicament: true } } },
+    });
+
+    const traitementsActifs: LigneComparable[] = prescriptionsActives.flatMap((prescription) =>
+      prescription.lignes.map((ligne) => ({
+        principeActif: ligne.medicament.principeActif,
+        classeTherapeutique: ligne.medicament.classeTherapeutique,
+      }))
+    );
+
+    const lignesDejaRetenues: LigneComparable[] = [...traitementsActifs];
 
     for (const ligne of lignes) {
       const medicament = medicamentParId.get(ligne.medicamentId);
+      if (!medicament) continue;
 
-      if (!medicament) {
-        return { error: "Un des medicaments selectionnes est introuvable au catalogue.", success: false };
-      }
+      const candidate: LigneComparable = {
+        principeActif: medicament.principeActif,
+        classeTherapeutique: medicament.classeTherapeutique,
+      };
 
-      const principeActifExistant = principesActifsVus.get(medicament.principeActif);
+      const avertissement = avertissementPourLigne(candidate, lignesDejaRetenues);
 
-      if (principeActifExistant !== undefined) {
+      if (avertissement && !ligne.confirmerAvertissement) {
         return {
-          error: `Deux medicaments de cette prescription partagent le meme principe actif (${medicament.principeActif}) : verifiez qu'il n'y a pas de doublon ou de risque d'interaction avant de valider.`,
+          error: `${medicament.nom} : ${libelleAvertissement(avertissement)} Confirmez si vous souhaitez maintenir cette ligne malgre tout, ou retirez-la.`,
           success: false,
         };
       }
 
-      principesActifsVus.set(medicament.principeActif, medicament.id);
+      lignesDejaRetenues.push(candidate);
+    }
+
+    // F-PRE-02 / RG-PRE-10 : controle de securite allergie <-> medicament,
+    // sur la DCI et sur la classe therapeutique (referentiel-allergies.ts).
+    // Bloquant : soit la ligne est retiree par le medecin, soit il force
+    // avec une justification d'au moins 20 caracteres, tracee en audit.
+    const patient = await prisma.patient.findUnique({ where: { id: consultation.patientId } });
+    const allergiesPatient = patient ? parseListeJSON(patient.allergies) : [];
+    const lignesForcees: { medicamentNom: string; allergie: string; justification: string }[] = [];
+
+    if (allergiesPatient.length > 0) {
+      for (const ligne of lignes) {
+        const medicament = medicamentParId.get(ligne.medicamentId);
+        if (!medicament) continue;
+
+        const allergie = allergieCorrespondante(medicament, allergiesPatient);
+        if (!allergie) continue;
+
+        if (!ligne.forcerAlerteAllergie) {
+          return {
+            error: `Alerte allergie bloquante : le patient est declare allergique a "${allergie}", ce qui correspond a ${medicament.nom} (${medicament.principeActif}). Retirez cette ligne ou forcez la prescription avec une justification.`,
+            success: false,
+          };
+        }
+
+        if (ligne.justificationForcage.length < LONGUEUR_MIN_JUSTIFICATION_FORCAGE) {
+          return {
+            error: `La justification du forcage de l'alerte allergie sur ${medicament.nom} doit comporter au moins ${LONGUEUR_MIN_JUSTIFICATION_FORCAGE} caracteres.`,
+            success: false,
+          };
+        }
+
+        lignesForcees.push({
+          medicamentNom: medicament.nom,
+          allergie,
+          justification: ligne.justificationForcage,
+        });
+      }
     }
 
     const adresseTechnique = await adresseTechniqueCourante();
+    const dateCreation = new Date();
+    // F-PRE-04 du pack : numero + empreinte fixes des la creation (voir la
+    // remarque sur le perimetre de cette phase dans la docstring de module :
+    // pas de signature separee, la prescription est deja "validee" a la
+    // creation).
+    const empreinteContenu = calculerEmpreintePrescription({
+      instructions,
+      lignes: lignes.map(({ medicamentId, posologie, quantite, dureeTraitementJours }) => ({
+        medicamentId,
+        posologie,
+        quantite,
+        dureeTraitementJours,
+      })),
+    });
 
     const prescriptionCreeeId = await prisma.$transaction(async (tx) => {
+      const numero = await genererNumeroOrdonnance(tx, dateCreation);
+
       const prescriptionCreee = await tx.prescription.create({
         data: {
           consultationId: consultation.id,
           medecinPrescripteurId: professionnel.id,
           patientId: consultation.patientId,
+          date: dateCreation,
           statut: "validee",
+          numero,
+          empreinteContenu,
           instructions,
           lignes: {
             create: lignes.map((ligne) => ({
@@ -409,6 +588,27 @@ export async function creerPrescriptionAction(
           commentaire: null,
         },
       });
+
+      for (const ligneForcee of lignesForcees) {
+        await tx.evenementPrescription.create({
+          data: {
+            prescriptionId: prescriptionCreee.id,
+            type: "forcage_alerte_allergie",
+            utilisateurId: session.userId,
+            commentaire: `Alerte allergie "${ligneForcee.allergie}" forcee pour ${ligneForcee.medicamentNom} : ${ligneForcee.justification}`,
+          },
+        });
+
+        await tx.journalAudit.create({
+          data: {
+            utilisateurId: session.userId,
+            action: "forcage_alerte_allergie",
+            donneeConcernee: `prescription:${prescriptionCreee.id}`,
+            adresseTechnique,
+            justification: `Allergie "${ligneForcee.allergie}" forcee pour ${ligneForcee.medicamentNom} : ${ligneForcee.justification}`,
+          },
+        });
+      }
 
       await tx.journalAudit.create({
         data: {
@@ -467,11 +667,15 @@ export async function getPrescriptionsDuProfessionnel(): Promise<PrescriptionRes
 }
 
 /**
- * Module pharmacie (Phase 9) : delivrance des prescriptions en officine.
- * Reprend le meme cycle de vie que la creation (statut Prescription,
- * EvenementPrescription, JournalAudit), sans nouveau modele Prisma : la
- * delivrance est une transition de statut sur une Prescription existante,
- * pas une ressource a part. Reserve au role "pharmacien", verifie
+ * Module pharmacie : delivrance des prescriptions en officine (F-PHA-03 du
+ * pack). Chaque acte de delivrance (Delivrance) porte une ou plusieurs
+ * lignes (LigneDelivrance), avec la quantite reellement remise au patient
+ * pour chaque ligne de la prescription, le produit delivre (identique ou
+ * substitue par un generique de meme DCI/dosage/forme, jamais si la ligne
+ * est non substituable) et, si la quantite est nulle ou partielle, un motif.
+ * Une delivrance est immuable (RG-PHA-13) : une erreur se corrige par une
+ * annulation motivee dans les 24h suivant sa creation, jamais une
+ * modification de ses lignes. Reserve au role "pharmacien", verifie
  * explicitement dans chaque fonction (Zero Trust : le role RBAC
  * "update:prescription" est aussi accorde au medecin, il ne suffit donc pas
  * a lui seul a distinguer "delivrer en pharmacie" de "modifier sa propre
@@ -480,13 +684,92 @@ export async function getPrescriptionsDuProfessionnel(): Promise<PrescriptionRes
 
 const STATUTS_EN_ATTENTE_DE_DELIVRANCE = ["validee", "delivree_partiellement"] as const;
 
+const schemaLigneDelivranceSoumise = z.object({
+  lignePrescriptionId: z.string().trim().min(1, "Ligne de prescription invalide."),
+  quantiteDelivree: z.coerce
+    .number({ message: "La quantite delivree doit etre un nombre." })
+    .int("La quantite delivree doit etre un nombre entier.")
+    .min(0, "La quantite delivree ne peut pas etre negative."),
+  medicamentDelivreId: z.string().trim().optional().default(""),
+  motifNonDelivrance: z.string().trim().optional().default(""),
+  numeroLot: z.string().trim().optional().default(""),
+  datePeremption: z.string().trim().optional().default(""),
+});
+
 const schemaDelivrance = z.object({
   prescriptionId: z.string().trim().min(1, "La prescription est obligatoire."),
-  statutLivraison: z.enum(["delivree", "delivree_partiellement"], {
-    message: "Statut de delivrance invalide.",
-  }),
-  commentaire: z.string().trim().optional().default(""),
+  lignes: z.array(schemaLigneDelivranceSoumise).min(1, "Au moins une ligne est obligatoire."),
 });
+
+const schemaAnnulationDelivrance = z.object({
+  delivranceId: z.string().trim().min(1, "La delivrance est obligatoire."),
+  motif: z
+    .string()
+    .trim()
+    .min(
+      LONGUEUR_MIN_MOTIF_ANNULATION_DELIVRANCE,
+      `Le motif de l'annulation doit comporter au moins ${LONGUEUR_MIN_MOTIF_ANNULATION_DELIVRANCE} caracteres.`
+    ),
+});
+
+/** Medicament candidat a une substitution (meme principe actif, dosage et forme que le medicament prescrit). */
+export interface CandidatSubstitution {
+  id: string;
+  nom: string;
+  dosage: string;
+  forme: string;
+}
+
+/** Une ligne de prescription telle que preparee pour l'ecran de delivrance : quantites deja livree/restante, substituts possibles. */
+export interface LignePourDelivrance {
+  ligneId: string;
+  medicamentId: string;
+  medicamentNom: string;
+  principeActif: string;
+  dosage: string;
+  forme: string;
+  posologie: string;
+  quantitePrescrite: number;
+  quantiteDejaLivree: number;
+  quantiteRestante: number;
+  nonSubstituable: boolean;
+  substitutsPossibles: CandidatSubstitution[];
+}
+
+/** Une ligne deja delivree, telle qu'affichee dans l'historique des delivrances d'une prescription. */
+export interface DelivranceLigneResume {
+  medicamentNom: string;
+  quantiteDelivree: number;
+  medicamentDelivreNom: string | null;
+  motifNonDelivrance: string | null;
+  numeroLot: string | null;
+  datePeremption: string | null; // ISO
+}
+
+/** Un acte de delivrance deja enregistre, avec ses lignes et si le pharmacien connecte peut encore l'annuler (RG-PHA-13). */
+export interface DelivranceResume {
+  id: string;
+  date: string; // ISO
+  annulee: boolean;
+  motifAnnulation: string | null;
+  dateAnnulation: string | null;
+  pharmacienNomComplet: string;
+  lignes: DelivranceLigneResume[];
+  peutEtreAnnulee: boolean;
+}
+
+/** Detail complet d'une prescription pour l'ecran de delivrance du pharmacien (F-PHA-03). */
+export interface DetailPrescriptionPourDelivrance {
+  id: string;
+  numero: string;
+  statut: string;
+  date: string; // ISO
+  instructions: string;
+  patientNomComplet: string;
+  patientIdentifiantSante: string;
+  lignes: LignePourDelivrance[];
+  delivrances: DelivranceResume[];
+}
 
 /**
  * Prescriptions en attente de delivrance (statut "validee" ou
@@ -537,10 +820,174 @@ export async function getPrescriptionsADelivrer(recherche?: string): Promise<Pre
 }
 
 /**
- * Marque une prescription comme delivree (totalement ou partiellement) par
- * le pharmacien connecte. Refuse toute prescription qui n'est pas
- * actuellement "validee" ou "delivree_partiellement" (deja entierement
- * delivree, ou annulee), sans rien ecrire en base dans ce cas.
+ * Detail d'une prescription pour l'ecran de delivrance (F-PHA-03) : chaque
+ * ligne avec sa quantite deja livree (somme des LigneDelivrance non
+ * annulees), sa quantite restante, et la liste des medicaments candidats a
+ * une substitution (meme principe actif, dosage et forme), sauf si la ligne
+ * est marquee non substituable (RG-PHA-12 : le formulaire ne doit alors meme
+ * pas proposer de choix). Inclut aussi l'historique des delivrances deja
+ * enregistrees pour cette prescription, avec pour chacune si le pharmacien
+ * connecte peut encore l'annuler (RG-PHA-13 : meme pharmacie, dans les 24h).
+ * Zero Trust : verifie le role et la permission a chaque appel, ne fait
+ * aucune supposition sur l'identifiant de prescription transmis par le
+ * client. Retourne null si la prescription est introuvable ou si
+ * l'utilisateur connecte n'est pas un pharmacien.
+ */
+export async function getDetailPrescriptionPourDelivrance(
+  prescriptionId: string
+): Promise<DetailPrescriptionPourDelivrance | null> {
+  const session = await getSession();
+
+  if (!session || !session.roles.includes("pharmacien") || !can("pharmacien", "read", "delivrance")) {
+    return null;
+  }
+
+  const professionnel = await professionnelDeLaSessionCourante();
+
+  if (!professionnel) {
+    return null;
+  }
+
+  const identifiantNettoye = prescriptionId.trim();
+
+  if (identifiantNettoye.length === 0) {
+    return null;
+  }
+
+  const prescription = await prisma.prescription.findUnique({
+    where: { id: identifiantNettoye },
+    include: {
+      patient: { include: { user: true } },
+      lignes: { include: { medicament: true } },
+      delivrances: {
+        include: {
+          pharmacien: { include: { user: true } },
+          lignes: {
+            include: {
+              medicamentDelivre: true,
+              lignePrescription: { include: { medicament: true } },
+            },
+          },
+        },
+        orderBy: { date: "desc" },
+      },
+    },
+  });
+
+  if (!prescription) {
+    return null;
+  }
+
+  // RG-PHA-13 : une delivrance annulee ne compte plus dans les quantites
+  // deja livrees (l'annulation restitue la quantite au niveau du calcul).
+  const dejaLivreParLigne = new Map<string, number>();
+  for (const delivrance of prescription.delivrances) {
+    if (delivrance.annulee) continue;
+    for (const ligneDelivree of delivrance.lignes) {
+      dejaLivreParLigne.set(
+        ligneDelivree.lignePrescriptionId,
+        (dejaLivreParLigne.get(ligneDelivree.lignePrescriptionId) ?? 0) + ligneDelivree.quantiteDelivree
+      );
+    }
+  }
+
+  const lignes: LignePourDelivrance[] = [];
+
+  for (const ligne of prescription.lignes) {
+    const quantiteDejaLivree = dejaLivreParLigne.get(ligne.id) ?? 0;
+
+    // RG-PHA-12 : une ligne non substituable ne propose meme pas de choix.
+    const substitutsPossibles = ligne.nonSubstituable
+      ? []
+      : (
+          await prisma.medicament.findMany({
+            where: {
+              principeActif: ligne.medicament.principeActif,
+              dosage: ligne.medicament.dosage,
+              forme: ligne.medicament.forme,
+              id: { not: ligne.medicamentId },
+            },
+            orderBy: { nom: "asc" },
+          })
+        ).map((medicament) => ({
+          id: medicament.id,
+          nom: medicament.nom,
+          dosage: medicament.dosage,
+          forme: medicament.forme,
+        }));
+
+    lignes.push({
+      ligneId: ligne.id,
+      medicamentId: ligne.medicamentId,
+      medicamentNom: ligne.medicament.nom,
+      principeActif: ligne.medicament.principeActif,
+      dosage: ligne.medicament.dosage,
+      forme: ligne.medicament.forme,
+      posologie: ligne.posologie,
+      quantitePrescrite: ligne.quantite,
+      quantiteDejaLivree,
+      quantiteRestante: Math.max(0, ligne.quantite - quantiteDejaLivree),
+      nonSubstituable: ligne.nonSubstituable,
+      substitutsPossibles,
+    });
+  }
+
+  const delivrances: DelivranceResume[] = prescription.delivrances.map((delivrance) => ({
+    id: delivrance.id,
+    date: delivrance.date.toISOString(),
+    annulee: delivrance.annulee,
+    motifAnnulation: delivrance.motifAnnulation,
+    dateAnnulation: delivrance.dateAnnulation ? delivrance.dateAnnulation.toISOString() : null,
+    pharmacienNomComplet: nomCompletProfessionnel(delivrance.pharmacien.user),
+    lignes: delivrance.lignes.map((ligneDelivree) => ({
+      medicamentNom: ligneDelivree.lignePrescription.medicament.nom,
+      quantiteDelivree: ligneDelivree.quantiteDelivree,
+      medicamentDelivreNom: ligneDelivree.medicamentDelivre?.nom ?? null,
+      motifNonDelivrance: ligneDelivree.motifNonDelivrance,
+      numeroLot: ligneDelivree.numeroLot,
+      datePeremption: ligneDelivree.datePeremption ? ligneDelivree.datePeremption.toISOString() : null,
+    })),
+    // RG-PHA-13 : annulable par la meme pharmacie (etablissement), dans les 24h.
+    peutEtreAnnulee:
+      !delivrance.annulee &&
+      delivrance.etablissementId === professionnel.etablissementId &&
+      !delaiAnnulationDelivranceDepasse(delivrance.date),
+  }));
+
+  return {
+    id: prescription.id,
+    numero: prescription.numero,
+    statut: prescription.statut,
+    date: prescription.date.toISOString(),
+    instructions: prescription.instructions,
+    patientNomComplet: nomComplet(prescription.patient.user),
+    patientIdentifiantSante: prescription.patient.identifiantSante,
+    lignes,
+    delivrances,
+  };
+}
+
+/**
+ * Enregistre une delivrance (F-PHA-03 du pack) : une ou plusieurs lignes,
+ * chacune avec sa quantite reellement remise (0 a la quantite restante), le
+ * produit delivre (identique au medicament prescrit, ou substitue), et un
+ * motif si la quantite est nulle ou partielle. Le formulaire doit couvrir
+ * exactement chaque ligne de la prescription (le pack decrit un parcours
+ * "pour chaque ligne de l'ordonnance").
+ *
+ * RG-PHA-11 : la quantite delivree cumulee par ligne ne doit jamais depasser
+ * la quantite prescrite, meme si deux delivrances sont tentees au meme
+ * moment. La quantite deja livree par ligne est donc relue ici, a
+ * l'interieur de cette meme transaction, jamais deduite des donnees
+ * affichees au pharmacien au chargement de l'ecran (qui peuvent etre
+ * perimees si une autre delivrance a eu lieu entre-temps). Ce depot tourne
+ * sur SQLite en developpement, ou un seul writer ecrit a la fois (voir
+ * l'en-tete de prisma/schema.prisma) : ce controle "lire puis ecrire" a
+ * l'interieur d'un seul prisma.$transaction suffit donc ici a garantir
+ * l'exclusion mutuelle. Une migration vers PostgreSQL (deja prevue par ce
+ * projet) exigerait, elle, un vrai verrou de ligne (`SELECT ... FOR UPDATE`)
+ * ou une colonne de version optimiste sur LignePrescription pour conserver
+ * la meme garantie en concurrence reelle multi-connexions.
  */
 export async function delivrerPrescriptionAction(
   prevState: PrescriptionActionState,
@@ -548,14 +995,22 @@ export async function delivrerPrescriptionAction(
 ): Promise<PrescriptionActionState> {
   const session = await getSession();
 
-  if (!session || !session.roles.includes("pharmacien")) {
+  if (!session || !session.roles.includes("pharmacien") || !can("pharmacien", "create", "delivrance")) {
     return { error: "Action reservee au role pharmacien.", success: false };
+  }
+
+  const lignesJSON = texte(formData, "lignesJSON");
+  let lignesBrutes: unknown;
+
+  try {
+    lignesBrutes = lignesJSON.trim().length > 0 ? JSON.parse(lignesJSON) : [];
+  } catch {
+    return { error: "Les lignes de delivrance sont mal formees.", success: false };
   }
 
   const validation = schemaDelivrance.safeParse({
     prescriptionId: texte(formData, "prescriptionId"),
-    statutLivraison: texte(formData, "statutLivraison"),
-    commentaire: texte(formData, "commentaire"),
+    lignes: lignesBrutes,
   });
 
   if (!validation.success) {
@@ -565,53 +1020,257 @@ export async function delivrerPrescriptionAction(
     };
   }
 
-  const { prescriptionId, statutLivraison, commentaire } = validation.data;
+  const { prescriptionId, lignes } = validation.data;
+
+  const professionnel = await professionnelDeLaSessionCourante();
+
+  if (!professionnel) {
+    return { error: "Aucun profil professionnel associe a ce compte.", success: false };
+  }
+
+  for (const ligneSoumise of lignes) {
+    if (
+      ligneSoumise.motifNonDelivrance.length > 0 &&
+      !MOTIFS_NON_DELIVRANCE_VALEURS.includes(ligneSoumise.motifNonDelivrance as MotifNonDelivrance)
+    ) {
+      return { error: "Motif de non delivrance invalide.", success: false };
+    }
+
+    if (
+      ligneSoumise.datePeremption.length > 0 &&
+      Number.isNaN(new Date(ligneSoumise.datePeremption).getTime())
+    ) {
+      return { error: "Une date de peremption saisie est invalide.", success: false };
+    }
+  }
+
+  const adresseTechnique = await adresseTechniqueCourante();
 
   try {
-    const prescription = await prisma.prescription.findUnique({ where: { id: prescriptionId } });
-
-    if (!prescription) {
-      return { error: "Cette prescription est introuvable.", success: false };
-    }
-
-    if (!STATUTS_EN_ATTENTE_DE_DELIVRANCE.includes(prescription.statut as "validee" | "delivree_partiellement")) {
-      return {
-        error:
-          prescription.statut === "delivree"
-            ? "Cette prescription a deja ete entierement delivree."
-            : "Cette prescription est annulee et ne peut pas etre delivree.",
-        success: false,
-      };
-    }
-
-    const adresseTechnique = await adresseTechniqueCourante();
-
-    await prisma.$transaction([
-      prisma.prescription.update({
+    const resultat = await prisma.$transaction(async (tx) => {
+      const prescriptionActuelle = await tx.prescription.findUnique({
         where: { id: prescriptionId },
-        data: { statut: statutLivraison },
-      }),
-      prisma.evenementPrescription.create({
-        data: {
-          prescriptionId,
-          type: statutLivraison === "delivree" ? "delivrance" : "delivrance_partielle",
-          utilisateurId: session.userId,
-          commentaire: commentaire.length > 0 ? commentaire : null,
+        include: {
+          patient: { include: { user: true } },
+          lignes: { include: { medicament: true } },
         },
-      }),
-      prisma.journalAudit.create({
+      });
+
+      if (!prescriptionActuelle) {
+        return { ok: false as const, error: "Cette prescription est introuvable." };
+      }
+
+      // RG-PHA-10 : message distinct selon l'etat bloquant reel.
+      if (
+        !STATUTS_EN_ATTENTE_DE_DELIVRANCE.includes(
+          prescriptionActuelle.statut as (typeof STATUTS_EN_ATTENTE_DE_DELIVRANCE)[number]
+        )
+      ) {
+        return {
+          ok: false as const,
+          error:
+            prescriptionActuelle.statut === "delivree"
+              ? "Cette prescription a deja ete entierement delivree."
+              : prescriptionActuelle.statut === "annulee"
+                ? "Cette prescription est annulee et ne peut pas etre delivree."
+                : "Cette prescription n'est pas dans un etat permettant une delivrance.",
+        };
+      }
+
+      const ligneParId = new Map(prescriptionActuelle.lignes.map((ligne) => [ligne.id, ligne]));
+      const idsSoumis = lignes.map((ligne) => ligne.lignePrescriptionId);
+      const ensembleIdsSoumis = new Set(idsSoumis);
+
+      // Le formulaire doit couvrir exactement chaque ligne de l'ordonnance,
+      // sans doublon (parcours du pack : "pour chaque ligne de l'ordonnance").
+      if (
+        ensembleIdsSoumis.size !== idsSoumis.length ||
+        ensembleIdsSoumis.size !== ligneParId.size ||
+        ![...ligneParId.keys()].every((id) => ensembleIdsSoumis.has(id))
+      ) {
+        return {
+          ok: false as const,
+          error: "Le formulaire doit renseigner exactement chaque ligne de cette prescription, sans doublon.",
+        };
+      }
+
+      // RG-PHA-11 : lecture fraiche, a l'interieur de cette transaction (voir
+      // le commentaire de fonction pour la garantie que cela apporte ici).
+      const sommesExistantes = await tx.ligneDelivrance.groupBy({
+        by: ["lignePrescriptionId"],
+        where: { lignePrescriptionId: { in: [...ligneParId.keys()] }, delivrance: { annulee: false } },
+        _sum: { quantiteDelivree: true },
+      });
+      const dejaLivreParLigne = new Map(
+        sommesExistantes.map((somme) => [somme.lignePrescriptionId, somme._sum.quantiteDelivree ?? 0])
+      );
+
+      const lignesAEnregistrer: {
+        lignePrescriptionId: string;
+        quantiteDelivree: number;
+        medicamentDelivreId: string | null;
+        motifNonDelivrance: string | null;
+        numeroLot: string | null;
+        datePeremption: Date | null;
+      }[] = [];
+
+      for (const ligneSoumise of lignes) {
+        const lignePrescrite = ligneParId.get(ligneSoumise.lignePrescriptionId);
+
+        if (!lignePrescrite) {
+          return {
+            ok: false as const,
+            error: "Une des lignes soumises ne correspond pas a cette prescription.",
+          };
+        }
+
+        const dejaLivree = dejaLivreParLigne.get(ligneSoumise.lignePrescriptionId) ?? 0;
+        const restanteAvant = lignePrescrite.quantite - dejaLivree;
+
+        if (ligneSoumise.quantiteDelivree > restanteAvant) {
+          return {
+            ok: false as const,
+            error: `La quantite delivree pour ${lignePrescrite.medicament.nom} depasse la quantite restante disponible (${restanteAvant}). Une autre delivrance a peut-etre eu lieu entre-temps : rafraichissez la page et reessayez.`,
+          };
+        }
+
+        if (ligneSoumise.quantiteDelivree < restanteAvant && ligneSoumise.motifNonDelivrance.length === 0) {
+          return {
+            ok: false as const,
+            error: `Un motif est obligatoire pour ${lignePrescrite.medicament.nom} : quantite delivree nulle ou partielle.`,
+          };
+        }
+
+        let medicamentDelivreId: string | null = null;
+
+        if (
+          ligneSoumise.medicamentDelivreId.length > 0 &&
+          ligneSoumise.medicamentDelivreId !== lignePrescrite.medicamentId
+        ) {
+          // RG-PHA-12 : une ligne non substituable ne peut jamais recevoir un
+          // autre medicament que celui prescrit.
+          if (lignePrescrite.nonSubstituable) {
+            return {
+              ok: false as const,
+              error: `${lignePrescrite.medicament.nom} n'est pas substituable : impossible de delivrer un autre medicament.`,
+            };
+          }
+
+          const medicamentSubstitut = await tx.medicament.findUnique({
+            where: { id: ligneSoumise.medicamentDelivreId },
+          });
+
+          if (!medicamentSubstitut) {
+            return {
+              ok: false as const,
+              error: `Le medicament de substitution choisi pour ${lignePrescrite.medicament.nom} est introuvable au catalogue.`,
+            };
+          }
+
+          const memeDCIDosageForme =
+            medicamentSubstitut.principeActif === lignePrescrite.medicament.principeActif &&
+            medicamentSubstitut.dosage === lignePrescrite.medicament.dosage &&
+            medicamentSubstitut.forme === lignePrescrite.medicament.forme;
+
+          if (!memeDCIDosageForme) {
+            return {
+              ok: false as const,
+              error: `Le medicament de substitution choisi pour ${lignePrescrite.medicament.nom} n'a pas le meme principe actif, dosage et forme.`,
+            };
+          }
+
+          medicamentDelivreId = medicamentSubstitut.id;
+        }
+
+        lignesAEnregistrer.push({
+          lignePrescriptionId: ligneSoumise.lignePrescriptionId,
+          quantiteDelivree: ligneSoumise.quantiteDelivree,
+          medicamentDelivreId,
+          motifNonDelivrance: ligneSoumise.motifNonDelivrance.length > 0 ? ligneSoumise.motifNonDelivrance : null,
+          numeroLot: ligneSoumise.numeroLot.length > 0 ? ligneSoumise.numeroLot : null,
+          datePeremption: ligneSoumise.datePeremption.length > 0 ? new Date(ligneSoumise.datePeremption) : null,
+        });
+      }
+
+      const delivranceCreee = await tx.delivrance.create({
+        data: {
+          prescriptionId: prescriptionActuelle.id,
+          pharmacienId: professionnel.id,
+          etablissementId: professionnel.etablissementId,
+          lignes: { create: lignesAEnregistrer },
+        },
+      });
+
+      const nomsLignesIncompletes: string[] = [];
+
+      for (const lignePrescrite of prescriptionActuelle.lignes) {
+        const dejaLivreeAvant = dejaLivreParLigne.get(lignePrescrite.id) ?? 0;
+        const soumise = lignesAEnregistrer.find((ligne) => ligne.lignePrescriptionId === lignePrescrite.id);
+        const nouveauTotal = dejaLivreeAvant + (soumise?.quantiteDelivree ?? 0);
+
+        if (nouveauTotal < lignePrescrite.quantite) {
+          nomsLignesIncompletes.push(lignePrescrite.medicament.nom);
+        }
+      }
+
+      const nouveauStatut = nomsLignesIncompletes.length === 0 ? "delivree" : "delivree_partiellement";
+
+      await tx.prescription.update({
+        where: { id: prescriptionActuelle.id },
+        data: { statut: nouveauStatut },
+      });
+
+      await tx.evenementPrescription.create({
+        data: {
+          prescriptionId: prescriptionActuelle.id,
+          type: nouveauStatut === "delivree" ? "delivrance" : "delivrance_partielle",
+          utilisateurId: session.userId,
+          commentaire: null,
+        },
+      });
+
+      await tx.journalAudit.create({
         data: {
           utilisateurId: session.userId,
-          action: "delivrance",
-          donneeConcernee: `prescription:${prescriptionId}`,
+          action: "creation_delivrance",
+          donneeConcernee: `delivrance:${delivranceCreee.id}`,
           adresseTechnique,
           justification:
-            statutLivraison === "delivree"
-              ? "Prescription entierement delivree en pharmacie"
-              : "Prescription partiellement delivree en pharmacie",
+            nouveauStatut === "delivree"
+              ? `Prescription ${prescriptionActuelle.numero} entierement delivree`
+              : `Prescription ${prescriptionActuelle.numero} partiellement delivree (manquant : ${nomsLignesIncompletes.join(", ")})`,
         },
-      }),
-    ]);
+      });
+
+      return {
+        ok: true as const,
+        statut: nouveauStatut,
+        numero: prescriptionActuelle.numero,
+        patientUserId: prescriptionActuelle.patient.userId,
+        nomsLignesIncompletes,
+      };
+    });
+
+    if (!resultat.ok) {
+      return { error: resultat.error, success: false };
+    }
+
+    const etablissement = await prisma.etablissementSanitaire.findUnique({
+      where: { id: professionnel.etablissementId },
+    });
+    const nomEtablissement = etablissement?.nom ?? "la pharmacie";
+
+    const message =
+      resultat.statut === "delivree"
+        ? `Votre ordonnance ${resultat.numero} a ete delivree a ${nomEtablissement}.`
+        : `Votre ordonnance ${resultat.numero} a ete delivree en partie a ${nomEtablissement}. Encore en attente : ${resultat.nomsLignesIncompletes.join(", ")}.`;
+
+    await creerNotification(resultat.patientUserId, "delivrance", message, "/app/patient/prescriptions");
+
+    revalidatePath("/app/medecin/pharmacie");
+    revalidatePath(`/app/medecin/pharmacie/${prescriptionId}`);
+
+    return { error: null, success: true };
   } catch (erreur) {
     console.error("Erreur lors de la delivrance de la prescription :", erreur);
     return {
@@ -619,7 +1278,153 @@ export async function delivrerPrescriptionAction(
       success: false,
     };
   }
+}
 
-  revalidatePath("/app/medecin/pharmacie");
-  return { error: null, success: true };
+/**
+ * Annule une delivrance (RG-PHA-13) : la seule facon de corriger une
+ * delivrance deja enregistree (immuable, jamais modifiee sur place). Reserve
+ * a un pharmacien de la meme pharmacie (etablissement) que celle qui a
+ * enregistre la delivrance, dans les 24 heures suivant sa creation ; passe ce
+ * delai, ou pour une autre pharmacie, le refus est explicite. Restitue les
+ * quantites annulees (au niveau du calcul de la quantite restante, voir
+ * getDetailPrescriptionPourDelivrance) et fait redescendre le statut global
+ * de la prescription si necessaire (une prescription "delivree" ou
+ * "delivree_partiellement" peut ainsi redevenir "validee" si plus aucune
+ * quantite n'est effectivement delivree apres l'annulation).
+ */
+export async function annulerDelivranceAction(
+  prevState: PrescriptionActionState,
+  formData: FormData
+): Promise<PrescriptionActionState> {
+  const session = await getSession();
+
+  if (!session || !session.roles.includes("pharmacien") || !can("pharmacien", "update", "delivrance")) {
+    return { error: "Action reservee au role pharmacien.", success: false };
+  }
+
+  const validation = schemaAnnulationDelivrance.safeParse({
+    delivranceId: texte(formData, "delivranceId"),
+    motif: texte(formData, "motif"),
+  });
+
+  if (!validation.success) {
+    return {
+      error: premierMessageErreur(validation.error, "Donnees d'annulation invalides."),
+      success: false,
+    };
+  }
+
+  const { delivranceId, motif } = validation.data;
+
+  const professionnel = await professionnelDeLaSessionCourante();
+
+  if (!professionnel) {
+    return { error: "Aucun profil professionnel associe a ce compte.", success: false };
+  }
+
+  const adresseTechnique = await adresseTechniqueCourante();
+
+  try {
+    const resultat = await prisma.$transaction(async (tx) => {
+      const delivrance = await tx.delivrance.findUnique({
+        where: { id: delivranceId },
+        include: { prescription: { include: { lignes: true } } },
+      });
+
+      if (!delivrance) {
+        return { ok: false as const, error: "Cette delivrance est introuvable." };
+      }
+
+      if (delivrance.annulee) {
+        return { ok: false as const, error: "Cette delivrance a deja ete annulee." };
+      }
+
+      // RG-PHA-13 : "par la meme pharmacie", verifie sur l'etablissement,
+      // pas sur le pharmacien individuel (un collegue de la meme officine
+      // peut corriger une delivrance qu'il n'a pas lui-meme enregistree).
+      if (delivrance.etablissementId !== professionnel.etablissementId) {
+        return {
+          ok: false as const,
+          error: "Cette delivrance releve d'une autre pharmacie et ne peut pas etre annulee ici.",
+        };
+      }
+
+      if (delaiAnnulationDelivranceDepasse(delivrance.date)) {
+        return {
+          ok: false as const,
+          error: `Le delai de ${LONGUEUR_MIN_MOTIF_ANNULATION_DELIVRANCE > 0 ? "24 heures" : "24 heures"} suivant la delivrance est depasse : cette annulation n'est plus possible.`,
+        };
+      }
+
+      const maintenant = new Date();
+
+      await tx.delivrance.update({
+        where: { id: delivranceId },
+        data: { annulee: true, motifAnnulation: motif, dateAnnulation: maintenant },
+      });
+
+      // Recalcule le statut global a partir des delivrances non annulees
+      // restantes (celle-ci exclue desormais).
+      const sommesRestantes = await tx.ligneDelivrance.groupBy({
+        by: ["lignePrescriptionId"],
+        where: {
+          lignePrescriptionId: { in: delivrance.prescription.lignes.map((ligne) => ligne.id) },
+          delivrance: { annulee: false },
+        },
+        _sum: { quantiteDelivree: true },
+      });
+      const livreParLigne = new Map(
+        sommesRestantes.map((somme) => [somme.lignePrescriptionId, somme._sum.quantiteDelivree ?? 0])
+      );
+
+      const toutesCompletes = delivrance.prescription.lignes.every(
+        (ligne) => (livreParLigne.get(ligne.id) ?? 0) >= ligne.quantite
+      );
+      const aucuneLivraison = delivrance.prescription.lignes.every(
+        (ligne) => (livreParLigne.get(ligne.id) ?? 0) === 0
+      );
+      const nouveauStatut = toutesCompletes ? "delivree" : aucuneLivraison ? "validee" : "delivree_partiellement";
+
+      await tx.prescription.update({
+        where: { id: delivrance.prescriptionId },
+        data: { statut: nouveauStatut },
+      });
+
+      await tx.evenementPrescription.create({
+        data: {
+          prescriptionId: delivrance.prescriptionId,
+          type: "annulation_delivrance",
+          utilisateurId: session.userId,
+          commentaire: motif,
+        },
+      });
+
+      await tx.journalAudit.create({
+        data: {
+          utilisateurId: session.userId,
+          action: "annulation_delivrance",
+          donneeConcernee: `delivrance:${delivranceId}`,
+          adresseTechnique,
+          justification: motif,
+        },
+      });
+
+      return { ok: true as const, prescriptionId: delivrance.prescriptionId };
+    });
+
+    if (!resultat.ok) {
+      return { error: resultat.error, success: false };
+    }
+
+    revalidatePath("/app/medecin/pharmacie");
+    revalidatePath(`/app/medecin/pharmacie/${resultat.prescriptionId}`);
+
+    return { error: null, success: true };
+  } catch (erreur) {
+    console.error("Erreur lors de l'annulation de la delivrance :", erreur);
+    return {
+      error: "Une erreur est survenue lors de l'annulation. Veuillez reessayer.",
+      success: false,
+    };
+  }
 }

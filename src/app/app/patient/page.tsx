@@ -283,7 +283,7 @@ export default async function PatientPage() {
     getMonQrCode(),
   ]);
 
-  const consentementsActifs = consentements.filter((c) => c.statut === "actif");
+  const consentementsActifs = consentements.filter((c) => c.statutEffectif === "actif");
   const completude = dossier ? calculerCompletudeDossier(dossier) : null;
   const manquants = dossier ? champsManquants(dossier) : [];
   const rendezVousFuturs = rendezVousAVenir(rendezVous);
@@ -384,7 +384,7 @@ export default async function PatientPage() {
           ton="sombre"
           label="Dossier complet"
           href="/app/patient/dossier"
-          value={completude !== null ? `${completude}%` : "—"}
+          value={completude !== null ? `${completude}%` : "-"}
           sousTexte={manquants.length === 0 ? "toutes les informations" : "à compléter"}
         />
       </div>

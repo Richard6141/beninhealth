@@ -9,6 +9,15 @@ import {
   type MedicamentOption,
   type PrescriptionActionState,
 } from "@/modules/prescription/actions";
+import {
+  allergieCorrespondante,
+  LONGUEUR_MIN_JUSTIFICATION_FORCAGE,
+} from "@/modules/prescription/referentiel-allergies";
+import {
+  avertissementPourLigne,
+  libelleAvertissement,
+  type LigneComparable,
+} from "@/modules/prescription/controles-doublons";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -26,6 +35,9 @@ interface LigneFormulaire {
   posologie: string;
   quantite: string;
   dureeTraitementJours: string;
+  forcerAlerteAllergie: boolean;
+  justificationForcage: string;
+  confirmerAvertissement: boolean;
 }
 
 function ligneVide(cle: number): LigneFormulaire {
@@ -35,12 +47,30 @@ function ligneVide(cle: number): LigneFormulaire {
     posologie: "",
     quantite: "",
     dureeTraitementJours: "",
+    forcerAlerteAllergie: false,
+    justificationForcage: "",
+    confirmerAvertissement: false,
   };
+}
+
+/** Bandeau d'allergies du patient (F-CLI-04 du pack) : visible en permanence, pas seulement au clic. */
+function BandeauAllergies({ allergies }: { allergies: string[] }) {
+  if (allergies.length === 0) {
+    return null;
+  }
+
+  return (
+    <Alert level="critical" title="Allergies connues du patient">
+      {allergies.join(", ")}
+    </Alert>
+  );
 }
 
 export interface FormulairePrescriptionProps {
   consultationId: string;
   medicaments: MedicamentOption[];
+  patientAllergies: string[];
+  patientTraitementsActifs: LigneComparable[];
 }
 
 /**
@@ -54,6 +84,8 @@ export interface FormulairePrescriptionProps {
 export function FormulairePrescription({
   consultationId,
   medicaments,
+  patientAllergies,
+  patientTraitementsActifs,
 }: FormulairePrescriptionProps) {
   const [state, formAction, pending] = useActionState(
     creerPrescriptionAction,
@@ -83,13 +115,85 @@ export function FormulairePrescription({
     );
   }
 
+  function basculerForcage(cle: number, valeur: boolean) {
+    setLignes((actuelles) =>
+      actuelles.map((ligne) => (ligne.cle === cle ? { ...ligne, forcerAlerteAllergie: valeur } : ligne))
+    );
+  }
+
+  function modifierJustification(cle: number, valeur: string) {
+    setLignes((actuelles) =>
+      actuelles.map((ligne) => (ligne.cle === cle ? { ...ligne, justificationForcage: valeur } : ligne))
+    );
+  }
+
+  function basculerConfirmation(cle: number, valeur: boolean) {
+    setLignes((actuelles) =>
+      actuelles.map((ligne) => (ligne.cle === cle ? { ...ligne, confirmerAvertissement: valeur } : ligne))
+    );
+  }
+
+  /** Allergie du patient correspondant au medicament choisi pour cette ligne, ou null (F-PRE-02). */
+  function allergieDeLaLigne(medicamentId: string): string | null {
+    const medicament = medicaments.find((candidat) => candidat.id === medicamentId);
+    if (!medicament || patientAllergies.length === 0) return null;
+    return allergieCorrespondante(medicament, patientAllergies);
+  }
+
+  /**
+   * Avertissement "doublon"/"meme classe" pour la ligne identifiee par cle
+   * (F-PRE-02) : compare au traitements actifs du patient et aux autres
+   * lignes de cette meme ordonnance en cours de saisie.
+   */
+  function avertissementDeLaLigne(cle: number, medicamentId: string) {
+    const medicament = medicaments.find((candidat) => candidat.id === medicamentId);
+    if (!medicament) return null;
+
+    const autresLignes: LigneComparable[] = [
+      ...patientTraitementsActifs,
+      ...lignes
+        .filter((autre) => autre.cle !== cle)
+        .map((autre) => medicaments.find((candidat) => candidat.id === autre.medicamentId))
+        .filter((autre): autre is MedicamentOption => autre !== undefined),
+    ];
+
+    return avertissementPourLigne(medicament, autresLignes);
+  }
+
+  const blocageAllergieNonResolu = lignes.some((ligne) => {
+    const allergie = allergieDeLaLigne(ligne.medicamentId);
+    if (!allergie) return false;
+    return (
+      !ligne.forcerAlerteAllergie ||
+      ligne.justificationForcage.trim().length < LONGUEUR_MIN_JUSTIFICATION_FORCAGE
+    );
+  });
+
+  const blocageAvertissementNonResolu = lignes.some((ligne) => {
+    const avertissement = avertissementDeLaLigne(ligne.cle, ligne.medicamentId);
+    return avertissement !== null && !ligne.confirmerAvertissement;
+  });
+
   const lignesJSON = JSON.stringify(
-    lignes.map(({ medicamentId, posologie, quantite, dureeTraitementJours }) => ({
-      medicamentId,
-      posologie,
-      quantite,
-      dureeTraitementJours,
-    }))
+    lignes.map(
+      ({
+        medicamentId,
+        posologie,
+        quantite,
+        dureeTraitementJours,
+        forcerAlerteAllergie,
+        justificationForcage,
+        confirmerAvertissement,
+      }) => ({
+        medicamentId,
+        posologie,
+        quantite,
+        dureeTraitementJours,
+        forcerAlerteAllergie,
+        justificationForcage,
+        confirmerAvertissement,
+      })
+    )
   );
 
   if (state.success) {
@@ -126,6 +230,8 @@ export function FormulairePrescription({
       <form action={formAction} aria-busy={pending} className="flex flex-col gap-6">
         <input type="hidden" name="consultationId" value={consultationId} />
         <input type="hidden" name="lignesJSON" value={lignesJSON} />
+
+        <BandeauAllergies allergies={patientAllergies} />
 
         {state.error ? (
           <Alert level="critical" title="Prescription non enregistree">
@@ -196,6 +302,62 @@ export function FormulairePrescription({
                   }
                 />
               </div>
+
+              {(() => {
+                const allergie = allergieDeLaLigne(ligne.medicamentId);
+                if (!allergie) return null;
+
+                return (
+                  <div className="flex flex-col gap-3">
+                    <Alert level="critical" title="Alerte allergie bloquante">
+                      Le patient est declare allergique a « {allergie} », ce
+                      qui correspond a ce medicament. Retirez cette ligne, ou
+                      forcez la prescription ci-dessous avec une
+                      justification (trace dans le journal d&apos;audit).
+                    </Alert>
+                    <label className="flex items-center gap-2 text-[13px] font-semibold text-encre">
+                      <input
+                        type="checkbox"
+                        checked={ligne.forcerAlerteAllergie}
+                        onChange={(event) => basculerForcage(ligne.cle, event.target.checked)}
+                      />
+                      Forcer cette prescription malgre l&apos;alerte
+                    </label>
+                    {ligne.forcerAlerteAllergie ? (
+                      <TextField
+                        label="Justification du forcage"
+                        required
+                        hint={`Au moins ${LONGUEUR_MIN_JUSTIFICATION_FORCAGE} caracteres, visible dans l'audit.`}
+                        value={ligne.justificationForcage}
+                        onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                          modifierJustification(ligne.cle, event.target.value)
+                        }
+                      />
+                    ) : null}
+                  </div>
+                );
+              })()}
+
+              {(() => {
+                const avertissement = avertissementDeLaLigne(ligne.cle, ligne.medicamentId);
+                if (!avertissement) return null;
+
+                return (
+                  <div className="flex flex-col gap-3">
+                    <Alert level="warning" title="Avertissement">
+                      {libelleAvertissement(avertissement)}
+                    </Alert>
+                    <label className="flex items-center gap-2 text-[13px] font-semibold text-encre">
+                      <input
+                        type="checkbox"
+                        checked={ligne.confirmerAvertissement}
+                        onChange={(event) => basculerConfirmation(ligne.cle, event.target.checked)}
+                      />
+                      Confirmer malgre l&apos;avertissement
+                    </label>
+                  </div>
+                );
+              })()}
             </div>
           ))}
         </div>
@@ -210,7 +372,12 @@ export function FormulairePrescription({
           hint="Instructions generales pour le patient ou le pharmacien (facultatif)."
         />
 
-        <Button type="submit" variant="primary" className="w-fit" disabled={pending}>
+        <Button
+          type="submit"
+          variant="primary"
+          className="w-fit"
+          disabled={pending || blocageAllergieNonResolu || blocageAvertissementNonResolu}
+        >
           {pending ? "Enregistrement en cours..." : "Enregistrer la prescription"}
         </Button>
       </form>

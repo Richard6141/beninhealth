@@ -8,11 +8,18 @@ import { Badge } from "@/components/ui/Badge";
 import type { BadgeTone } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { cn } from "@/lib/cn";
+import { BoutonAnnonceResultat } from "./BoutonAnnonceResultat";
 
 function libelleStatut(statut: string): { texte: string; tone: BadgeTone } {
   const cle = statut.trim().toLowerCase();
   if (cle === "demande") return { texte: "Demande", tone: "info" };
-  if (cle === "en_cours") return { texte: "En cours", tone: "warning" };
+  // "resultat_saisi" et "correction_demandee" sont des etats internes au
+  // laboratoire (F-LAB-04, principe des quatre yeux) : hors du laboratoire,
+  // seul un examen "termine" a un resultat visible (RG-LAB-30), les deux
+  // etats intermediaires restent donc affiches comme "En cours".
+  if (cle === "en_cours" || cle === "resultat_saisi" || cle === "correction_demandee") {
+    return { texte: "En cours", tone: "warning" };
+  }
   if (cle === "termine") return { texte: "Termine", tone: "good" };
   if (cle === "annule") return { texte: "Annule", tone: "critical" };
   return { texte: statut, tone: "neutral" };
@@ -46,12 +53,18 @@ function LienNouvelExamen() {
 
 function CarteExamen({ examen }: { examen: ExamenResume }) {
   const statut = libelleStatut(examen.statut);
+  const estTermine = examen.statut.trim().toLowerCase() === "termine";
 
   return (
     <Card
       title={examen.patientNomComplet ?? "Patient non precise"}
       description={examen.typeExamen}
-      actions={<Badge tone={statut.tone}>{statut.texte}</Badge>}
+      actions={
+        <div className="flex flex-wrap items-center justify-end gap-1.5">
+          {examen.sensible ? <Badge tone="critical">Sensible</Badge> : null}
+          <Badge tone={statut.tone}>{statut.texte}</Badge>
+        </div>
+      }
     >
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-2">
@@ -70,7 +83,7 @@ function CarteExamen({ examen }: { examen: ExamenResume }) {
           {examen.laboratoireNom}
         </p>
 
-        {examen.statut.trim().toLowerCase() === "termine" ? (
+        {estTermine ? (
           <div className="rounded-champ border border-bordure bg-plan px-3 py-2">
             <p className="text-[13px] font-semibold text-encre-secondaire">Resultat</p>
             <p className="text-[14px] text-encre">
@@ -87,6 +100,14 @@ function CarteExamen({ examen }: { examen: ExamenResume }) {
             En attente de resultat de la part du laboratoire.
           </p>
         )}
+
+        {estTermine && examen.sensible ? (
+          examen.resultatAnnonceAuPatient ? (
+            <p className="text-[13px] font-semibold text-bon">Resultat annonce au patient.</p>
+          ) : (
+            <BoutonAnnonceResultat examenId={examen.id} />
+          )
+        ) : null}
       </div>
     </Card>
   );

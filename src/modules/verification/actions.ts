@@ -95,6 +95,18 @@ function nomComplet(utilisateur: { nom: string; prenom: string }): string {
   return `${utilisateur.prenom} ${utilisateur.nom}`;
 }
 
+/** Adresse technique d'origine de la requete courante, pour le JournalAudit. */
+async function adresseTechniqueCourante(): Promise<string> {
+  try {
+    const listeEntetes = await headers();
+    const adresse =
+      listeEntetes.get("x-forwarded-for") ?? listeEntetes.get("x-real-ip") ?? null;
+    return adresse ?? "inconnue";
+  } catch {
+    return "inconnue";
+  }
+}
+
 /**
  * Reconstruit l'URL absolue de la plateforme a partir des en-tetes de la
  * requete courante (aucune variable d'environnement d'URL publique n'est
@@ -159,9 +171,28 @@ export async function getFicheVerification(cibleUserId: string): Promise<FicheVe
         },
       });
 
-      if (!consentement || consentement.statut !== "actif") {
+      if (
+        !consentement ||
+        consentement.statut !== "actif" ||
+        (consentement.dateFin !== null && consentement.dateFin <= new Date())
+      ) {
         return null;
       }
+
+      // F-CIT-12 (cahier des charges) : le patient doit pouvoir voir qui a
+      // consulte son dossier. Seuls les acces d'un tiers sont journalises ici
+      // (jamais la propre consultation du patient de sa propre fiche, non
+      // pertinente pour cet historique). Journalise apres la verification du
+      // consentement : un acces refuse n'est pas un acces reussi a tracer ici.
+      await prisma.journalAudit.create({
+        data: {
+          utilisateurId: session.userId,
+          action: "consultation_fiche_verification",
+          donneeConcernee: `patient:${cible.patient.id}`,
+          adresseTechnique: await adresseTechniqueCourante(),
+          justification: `Fiche de verification consultee via QR ou lien direct (consentement ${consentement.typeAcces})`,
+        },
+      });
     }
 
     const patient = cible.patient;

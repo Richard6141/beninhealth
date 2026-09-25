@@ -75,7 +75,7 @@ function CarteConsentement({
   );
   const modalRef = useRef<ModalHandle>(null);
   const router = useRouter();
-  const statut = libelleStatut(consentement.statut);
+  const statut = libelleStatut(consentement.statutEffectif);
   const estActif = statut.texte === "Actif";
 
   useEffect(() => {

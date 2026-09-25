@@ -43,7 +43,7 @@ export default async function ConsentementsPage() {
     listProfessionnelsDisponibles(),
   ]);
 
-  const consentementsActifs = consentements.filter((c) => c.statut === "actif");
+  const consentementsActifs = consentements.filter((c) => c.statutEffectif === "actif");
 
   return (
     <div className="conteneur-page mx-auto flex flex-col gap-8 px-4 py-8 sm:px-6">

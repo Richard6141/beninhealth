@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import { getPatientsAvecConsentement } from "@/modules/clinical/actions";
+import { getBrouillonExistant, getPatientsAvecConsentement } from "@/modules/clinical/actions";
+import { getPriseEnChargeNonRecuperee } from "@/modules/soins/actions";
 import { Alert } from "@/components/ui/Alert";
 import { FormulaireConsultation } from "./FormulaireConsultation";
 import { SelecteurPatient } from "./SelecteurPatient";
@@ -24,7 +25,9 @@ function premiereValeur(valeur: string | string[] | undefined): string {
  * selecteur de patient (SelecteurPatient, peuple par
  * getPatientsAvecConsentement) qui navigue vers cette meme page avec
  * patientId renseigne. Une fois le patient determine, affiche le formulaire
- * de consultation (FormulaireConsultation, creerConsultationAction).
+ * de consultation (FormulaireConsultation, enregistrerConsultationAction) :
+ * un brouillon deja ouvert pour ce patient (RG-CLI-40) est detecte via
+ * getBrouillonExistant et rouvert plutot que d'en recommencer un second.
  */
 export default async function NouvelleConsultationPage({
   searchParams,
@@ -37,6 +40,14 @@ export default async function NouvelleConsultationPage({
   const patientSelectionne = patientId
     ? patients.find((patient) => patient.patientId === patientId)
     : undefined;
+  // RG-CLI-40 du pack : un seul brouillon ouvert par patient - s'il en
+  // existe deja un pour ce medecin et ce patient, l'ecran le rouvre plutot
+  // que de laisser en commencer un second.
+  const brouillonExistant = patientId ? await getBrouillonExistant(patientId) : null;
+  // F-CLI-12 : propose les constantes prises par l'infirmier uniquement pour
+  // une premiere saisie, jamais par-dessus un brouillon deja en cours.
+  const priseEnCharge =
+    patientId && !brouillonExistant ? await getPriseEnChargeNonRecuperee(patientId) : null;
 
   return (
     <div className="conteneur-page mx-auto flex flex-col gap-8 px-4 py-8 sm:px-6">
@@ -59,12 +70,29 @@ export default async function NouvelleConsultationPage({
       </header>
 
       {patientId ? (
-        <FormulaireConsultation
-          patientId={patientId}
-          patientNomComplet={patientSelectionne?.nomComplet ?? "ce patient"}
-          patientIdentifiantSante={patientSelectionne?.identifiantSante ?? ""}
-          rendezVousId={rendezVousId}
-        />
+        <>
+          {brouillonExistant ? (
+            <Alert level="info" title="Brouillon repris">
+              Un brouillon de consultation pour ce patient était déjà en
+              cours : vos saisies précédentes ont été rechargées.
+            </Alert>
+          ) : null}
+          {priseEnCharge ? (
+            <Alert level="info" title="Constantes reprises de la prise en charge infirmière">
+              Priorité {priseEnCharge.prioriteTri}. Note de soins : {priseEnCharge.noteSoins}
+            </Alert>
+          ) : null}
+          <FormulaireConsultation
+            patientId={patientId}
+            patientNomComplet={patientSelectionne?.nomComplet ?? "ce patient"}
+            patientIdentifiantSante={patientSelectionne?.identifiantSante ?? ""}
+            patientAllergies={patientSelectionne?.allergies ?? []}
+            patientDateNaissance={patientSelectionne?.dateNaissance ?? null}
+            rendezVousId={rendezVousId}
+            brouillon={brouillonExistant}
+            priseEnCharge={priseEnCharge}
+          />
+        </>
       ) : patients.length > 0 ? (
         <SelecteurPatient patients={patients} />
       ) : (
