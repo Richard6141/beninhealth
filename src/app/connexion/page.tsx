@@ -70,7 +70,7 @@ export default function ConnexionPage() {
         alt="Ministere de la Sante, Republique du Benin"
         width={225}
         height={64}
-        className="h-16 w-auto"
+        className="h-20 w-auto"
         priority
       />
       <div className="w-full max-w-md">

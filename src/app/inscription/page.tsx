@@ -22,7 +22,7 @@ export default function InscriptionPage() {
         alt="Ministere de la Sante, Republique du Benin"
         width={169}
         height={48}
-        className="h-12 w-auto"
+        className="h-16 w-auto"
         priority
       />
       <div className="w-full max-w-xl">

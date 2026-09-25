@@ -75,7 +75,7 @@ export function Sidebar({ items }: SidebarProps) {
             alt="Ministere de la Sante, Republique du Benin"
             width={141}
             height={40}
-            className="h-11 w-auto"
+            className="h-14 w-auto"
             priority
           />
         </Link>
