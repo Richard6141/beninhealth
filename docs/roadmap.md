@@ -63,10 +63,10 @@ Version détaillée et cochable de la roadmap par phases du Bénin Health Intell
 
 ## Phase 8 : module laboratoire (examens médicaux)
 
-- [ ] Modèle de données ExamenMedical (demande, réalisation, résultat)
-- [ ] Demande d'examen par un médecin depuis une consultation
-- [ ] Réception et saisie du résultat par le laboratoire
-- [ ] Consultation du résultat par le patient et le médecin prescripteur
+- [x] Modèle de données ExamenMedical (demande, réalisation, résultat)
+- [x] Demande d'examen par un médecin depuis une consultation
+- [x] Réception et saisie du résultat par le laboratoire
+- [x] Consultation du résultat par le patient et le médecin prescripteur
 
 ## Phase 9 : module pharmacie (délivrance des prescriptions)
 
