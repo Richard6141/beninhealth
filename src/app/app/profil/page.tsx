@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getMonProfil } from "@/modules/identity/actions";
+import { getMonQrCode } from "@/modules/verification/actions";
 import type { NomRole } from "@/types";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
@@ -23,7 +24,7 @@ const libellesRole: Record<NomRole, string> = {
 };
 
 export default async function ProfilPage() {
-  const profil = await getMonProfil();
+  const [profil, qrCode] = await Promise.all([getMonProfil(), getMonQrCode()]);
 
   if (!profil) {
     redirect("/connexion");
@@ -48,6 +49,36 @@ export default async function ProfilPage() {
           ))}
         </div>
       </header>
+
+      {qrCode ? (
+        <Card
+          title="Mon QR code"
+          description="À présenter pour vérification : le contenu affiché après scan dépend du type de compte (dossier médical pour un patient si vous y avez consenti, badge professionnel pour un soignant)."
+        >
+          <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start">
+            {/* eslint-disable-next-line @next/next/no-img-element -- data URL genere localement, pas une image distante */}
+            <img
+              src={qrCode.dataUrl}
+              alt="QR code de vérification de mon compte"
+              width={180}
+              height={180}
+              className="rounded-champ border border-bordure"
+            />
+            <div className="flex flex-col gap-2">
+              <p className="text-[13px] text-encre-secondaire">
+                Ce code encode un lien vers votre fiche de vérification.
+                Quiconque le scanne doit être connecté à la plateforme pour la
+                consulter.
+              </p>
+              {profil.identifiant ? (
+                <p className="text-[13px] text-encre-attenuee">
+                  Identifiant : <span className="chiffres font-semibold text-encre">{profil.identifiant}</span>
+                </p>
+              ) : null}
+            </div>
+          </div>
+        </Card>
+      ) : null}
 
       <Card
         title="Photo de profil"
