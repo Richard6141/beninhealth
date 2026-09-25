@@ -27,6 +27,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
+import { can } from "@/security/permissions";
 
 /** Etat renvoye par chaque Server Action de ce module, consomme via useActionState. */
 export interface PrescriptionActionState {
@@ -297,6 +298,13 @@ export async function creerPrescriptionAction(
 
   if (!session) {
     return { error: "Session expiree. Veuillez vous reconnecter.", success: false };
+  }
+
+  // RBAC (voir src/security/permissions.ts) : creer une prescription est
+  // reserve au role medecin. Posseder un profil ProfessionnelSante ne suffit
+  // pas, le role precis doit etre verifie.
+  if (!session.roles.some((role) => can(role, "create", "prescription"))) {
+    return { error: "Action reservee aux medecins.", success: false };
   }
 
   const lignesJSON = texte(formData, "lignesJSON");

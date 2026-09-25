@@ -19,6 +19,7 @@ import { headers } from "next/headers";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
+import { can } from "@/security/permissions";
 
 /** Etat renvoye par chaque Server Action de ce module, consomme via useActionState. */
 export interface ClinicalActionState {
@@ -241,6 +242,18 @@ export async function creerConsultationAction(
 
   if (!session) {
     return { error: "Session expiree. Veuillez vous reconnecter.", success: false };
+  }
+
+  // RBAC (voir src/security/permissions.ts) : creer une consultation est
+  // reserve au role medecin. Posseder un profil ProfessionnelSante ne suffit
+  // pas (un infirmier, un pharmacien ou un administrateur d'etablissement en
+  // ont aussi un) : le role precis de l'appelant doit etre verifie ici, pas
+  // seulement l'existence d'un profil professionnel.
+  if (!session.roles.some((role) => can(role, "create", "consultation"))) {
+    return {
+      error: "Action reservee aux medecins.",
+      success: false,
+    };
   }
 
   const validation = schemaCreationConsultation.safeParse({

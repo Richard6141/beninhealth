@@ -70,6 +70,7 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     'create:prescription',
     'update:prescription',
     'read:examen_medical',
+    'create:examen_medical',
     'read:document_medical',
     'create:document_medical',
     'read:rendez_vous',

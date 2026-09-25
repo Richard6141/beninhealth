@@ -24,6 +24,7 @@ import { headers } from "next/headers";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
+import { can } from "@/security/permissions";
 
 /** Etat renvoye par chaque Server Action de ce module, consomme via useActionState. */
 export interface LaboratoireActionState {
@@ -189,6 +190,12 @@ export async function demanderExamenAction(
 
   if (!session) {
     return { error: "Session expiree. Veuillez vous reconnecter.", success: false };
+  }
+
+  // RBAC (voir src/security/permissions.ts) : demander un examen est reserve
+  // au role medecin. Posseder un profil ProfessionnelSante ne suffit pas.
+  if (!session.roles.some((role) => can(role, "create", "examen_medical"))) {
+    return { error: "Action reservee aux medecins.", success: false };
   }
 
   const validation = schemaDemandeExamen.safeParse({
@@ -418,6 +425,15 @@ export async function saisirResultatExamenAction(
 
   if (!session) {
     return { error: "Session expiree. Veuillez vous reconnecter.", success: false };
+  }
+
+  // RBAC (voir src/security/permissions.ts) : saisir un resultat d'examen
+  // est reserve au role laboratoire. Le rattachement a l'etablissement
+  // (verifie plus bas) ne suffit pas a lui seul : un medecin ou un
+  // administrateur rattaches au meme etablissement ne doivent pas pouvoir
+  // saisir de resultat.
+  if (!session.roles.some((role) => can(role, "update", "examen_medical"))) {
+    return { error: "Action reservee au role laboratoire.", success: false };
   }
 
   const validation = schemaSaisieResultat.safeParse({
