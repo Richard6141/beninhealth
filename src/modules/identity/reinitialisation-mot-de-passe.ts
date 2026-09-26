@@ -32,6 +32,7 @@ import { randomInt } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { codeAfficheALEcran } from "@/lib/demo";
 import { getEnv } from "@/lib/env";
 import { envoyerEmail } from "@/lib/mail";
 import { journaliser } from "@/modules/audit/journaliser";
@@ -197,7 +198,7 @@ export async function demanderReinitialisationMotDePasseAction(
       return {
         message: MESSAGE_GENERIQUE_DEMANDE,
         soumis: true,
-        codeDemo: getEnv().NODE_ENV !== "production" ? codeDemo : undefined,
+        codeDemo: codeAfficheALEcran(utilisateur.email) ? codeDemo : undefined,
       };
     }
   } catch (erreur) {

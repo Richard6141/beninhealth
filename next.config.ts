@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Image autonome pour le conteneur Docker (voir Dockerfile).
+  output: "standalone",
   experimental: {
     serverActions: {
       // Le televersement de photo de profil (FormulaireAvatar.tsx) accepte

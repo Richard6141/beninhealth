@@ -23,6 +23,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/modules/audit/journaliser";
 import { createSession, getSession, destroySession } from "@/lib/session";
+import { codeAfficheALEcran } from "@/lib/demo";
 import { getEnv } from "@/lib/env";
 import { televerserImageCloudinary } from "@/lib/cloudinary";
 import { verifierCodeMfaPourConnexion } from "@/modules/identity/mfa-totp";
@@ -624,7 +625,7 @@ export async function loginAction(
     preAuthToken,
     // Jamais renvoye en production : uniquement pour tester sans acces a une
     // vraie boite mail (voir AuthActionState.codeDemo).
-    codeDemo: getEnv().NODE_ENV !== "production" ? codeDemo : undefined,
+    codeDemo: codeAfficheALEcran(email) ? codeDemo : undefined,
   };
 }
 

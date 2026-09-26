@@ -1,0 +1,78 @@
+# Serveur de démonstration de BeninHealth, copié dans /opt/beninhealth/compose.yml.
+#
+# Isolation sur un serveur partagé : projet « beninhealth », réseau et volume propres, aucun port
+# public (l'application écoute sur 127.0.0.1:3200 derrière le nginx de l'hôte, la base n'est
+# publiée nulle part), limites de mémoire et de processeur sur chaque conteneur, journaux en
+# rotation.
+#
+# Deux fichiers d'environnement, lisibles par leur seul propriétaire (chmod 600) :
+# - .env : variables du compose (utilisateur, base et mot de passe PostgreSQL) ;
+# - app.env : environnement de l'application.
+# IMAGE_TAG (SHA du commit) est fixé par deploy.sh à chaque déploiement. Pour une commande à la
+# main : export IMAGE_TAG=$(cat current.tag).
+#
+# Les tâches planifiées tournent dans le processus de l'application (instrumentation.ts) : une
+# seule instance de l'application, jamais de mise à l'échelle.
+
+name: beninhealth
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  db:
+    image: postgres:17
+    container_name: beninhealth-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER est obligatoire}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD est obligatoire}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB est obligatoire}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    shm_size: 256m
+    cpus: 2
+    mem_limit: 2g
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    logging: *logging
+
+  app:
+    image: ghcr.io/richard6141/beninhealth/app:${IMAGE_TAG:?IMAGE_TAG est obligatoire}
+    container_name: beninhealth-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: app.env
+    environment:
+      # Serveur autonome de Next : écoute sur toutes les interfaces du conteneur.
+      HOSTNAME: 0.0.0.0
+      PORT: "3000"
+    ports:
+      - "127.0.0.1:3200:3000"
+    cpus: 2
+    mem_limit: 2g
+    healthcheck:
+      # Node seulement : l'image n'a pas forcément wget ni curl.
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/sante').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging: *logging
+
+volumes:
+  db-data:

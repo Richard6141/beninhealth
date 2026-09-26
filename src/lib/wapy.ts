@@ -16,6 +16,7 @@
  * pour l'ensemble de la plateforme.
  */
 
+import { modeDemoActif } from "@/lib/demo";
 import { getEnv } from "@/lib/env";
 
 const URL_MESSAGES = "https://wapy.pro/pont/v1/messages";
@@ -56,7 +57,7 @@ export function wapyConfigure(): boolean {
 function destinataireAutorise(destinataire: string): boolean {
   const env = getEnv();
 
-  if (env.NODE_ENV === "production") {
+  if (env.NODE_ENV === "production" && !modeDemoActif()) {
     return true;
   }
 
