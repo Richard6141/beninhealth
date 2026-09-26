@@ -15,6 +15,12 @@ import path from "node:path";
 export default defineConfig({
   test: {
     environment: "node",
+    // .kilo/worktrees/** est un worktree Git isole d'un autre outil (pas ce
+    // depot principal) : ses fichiers de test importent quand meme le code
+    // source de ce depot via l'alias "@" ci-dessous, ce qui les executait en
+    // double sans jamais tester quoi que ce soit d'isole. Exclu comme
+    // node_modules le serait.
+    exclude: ["**/node_modules/**", "**/.kilo/**"],
   },
   resolve: {
     alias: {

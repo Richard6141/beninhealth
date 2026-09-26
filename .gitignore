@@ -38,6 +38,9 @@ yarn-error.log*
 /prisma/dev.db
 /prisma/dev.db-journal
 
+# contient un mot de passe reel (role analytics_reader, RG-PIL-04), jamais a committer
+/prisma/analytics-role.sql
+
 # fichiers televerses par les utilisateurs (donnees d'instance, pas de code)
 /public/uploads/*
 !/public/uploads/**/.gitkeep

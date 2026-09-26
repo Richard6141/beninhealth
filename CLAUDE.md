@@ -1,5 +1,11 @@
 @AGENTS.md
 
+## Coordination entre sessions actives
+
+Lire `docs/coordination-agents.md` : demande de statut de Codex à la demande de
+l'utilisateur. Y préciser votre avancement, vos fichiers en cours et les tâches
+disponibles avant de commencer un nouveau chantier partagé.
+
 # Bénin Health Intelligence Platform
 
 Documentation de fondation du projet (Phase 1). Ce fichier centralise le contexte que tout agent ou intervenant doit connaître avant de modifier ce dépôt.
@@ -57,4 +63,3 @@ Convention de commit :
 
 - Cahier des charges complet du ministère : `Benin_Health_Intelligence_Platform_Cahier_des_charges_Complet.pdf`
 - Base visuelle du design system (source de vérité graphique) : `design-system-base-fundlab.md`
-
