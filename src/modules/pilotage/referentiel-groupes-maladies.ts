@@ -24,7 +24,12 @@ export interface GroupeMaladie {
 }
 
 export const GROUPES_MALADIES: GroupeMaladie[] = [
-  { code: "paludisme", libelle: "Paludisme", motsCles: ["paludisme", "palu", "malaria"], sensible: false },
+  {
+    code: "paludisme",
+    libelle: "Paludisme",
+    motsCles: ["paludisme", "palustre", "paludique", "palu", "malaria"],
+    sensible: false,
+  },
   {
     code: "ira",
     libelle: "Infections respiratoires aigues",
@@ -96,17 +101,49 @@ export const GROUPES_MALADIES: GroupeMaladie[] = [
   { code: "addiction", libelle: "Addictions", motsCles: ["addiction", "alcoolisme", "toxicomanie"], sensible: true },
 ];
 
+/** Codes des groupes marques SENSITIVE (RG-PIL-05), jamais comptes par etablissement. */
+export const CODES_GROUPES_SENSIBLES: string[] = GROUPES_MALADIES.filter((groupe) => groupe.sensible).map(
+  (groupe) => groupe.code
+);
+
+export function estGroupeSensible(code: string): boolean {
+  return CODES_GROUPES_SENSIBLES.includes(code);
+}
+
+/** Minuscules et sans accents : "Dépression" et "depression" doivent se classer pareil. */
+function normaliser(texte: string): string {
+  return texte.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
+
+/** Au-dela de cette longueur, un mot-cle est cherche en DEBUT de mot ; en dessous, en mot ENTIER. */
+const LONGUEUR_MAX_MOT_CLE_ENTIER = 4;
+
+function correspond(texteNormalise: string, motCle: string): boolean {
+  const motif = normaliser(motCle).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // Mot-cle court (ist, hta, ivg, vih, sida, hiv, toux, palu) : mot entier,
+  // sinon "ist" correspondrait a "assistance" et "hiv" a "hiver". Mot-cle
+  // plus long : debut de mot, pour garder pluriels et derives ("diarrhees").
+  const suffixe = normaliser(motCle).length <= LONGUEUR_MAX_MOT_CLE_ENTIER ? "(?![a-z0-9])" : "";
+  return new RegExp(`(?<![a-z0-9])${motif}${suffixe}`).test(texteNormalise);
+}
+
 /**
  * Classe une conclusion de consultation (texte libre) dans un groupe de
- * maladies par correspondance de mots-cles, insensible a la casse. Retourne
- * null si aucun mot-cle ne correspond (conclusion non classifiable en
- * l'etat, exclue des indicateurs IND-03/IND-04 plutot que classee au
- * hasard).
+ * maladies par correspondance de mots-cles, sans tenir compte de la casse ni
+ * des accents. Retourne null si aucun mot-cle ne correspond (conclusion non
+ * classifiable en l'etat, exclue des indicateurs IND-03/IND-04 plutot que
+ * classee au hasard).
+ *
+ * Deux defauts corriges ici, tous deux critiques pour RG-PIL-05 : les
+ * conclusions accentuees ("diarrhée", "dépression") n'etaient jamais
+ * reconnues, et les mots-cles courts correspondaient a l'interieur d'autres
+ * mots (un texte contenant "assistance" etait classe en infection
+ * sexuellement transmissible, donc traite comme donnee sensible).
  */
 export function classifierGroupeMaladie(conclusion: string): GroupeMaladie | null {
-  const texte = conclusion.toLowerCase();
+  const texte = normaliser(conclusion);
   for (const groupe of GROUPES_MALADIES) {
-    if (groupe.motsCles.some((motCle) => texte.includes(motCle))) {
+    if (groupe.motsCles.some((motCle) => correspond(texte, motCle))) {
       return groupe;
     }
   }

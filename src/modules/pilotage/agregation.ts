@@ -181,8 +181,12 @@ export async function recalculerJourEtablissement(
     if (consultation.conclusion) {
       const groupe = classifierGroupeMaladie(consultation.conclusion);
       if (groupe) {
-        const cleGroupe = `${groupe.code}|${sexe}|${trancheAge}`;
-        compteursInd03.set(cleGroupe, (compteursInd03.get(cleGroupe) ?? 0) + 1);
+        // RG-PIL-05 : un groupe SENSITIVE n'est JAMAIS compte par etablissement.
+        // Il est compte au niveau departement par recalculerSensiblesDepartementJour.
+        if (!groupe.sensible) {
+          const cleGroupe = `${groupe.code}|${sexe}|${trancheAge}`;
+          compteursInd03.set(cleGroupe, (compteursInd03.get(cleGroupe) ?? 0) + 1);
+        }
 
         if (groupe.code === "paludisme") {
           const trancheBinaire = classifierTrancheAgePaludisme(dateNaissance, consultation.date);
@@ -344,6 +348,94 @@ export async function recalculerJourEtablissement(
         ]
       : []),
   ]);
+}
+
+/**
+ * RG-PIL-05 du pack : les donnees SENSITIVE (VIH, IST, troubles mentaux,
+ * interruption de grossesse, violences, addictions) ne sont comptees qu'au
+ * niveau departement ou national, jamais par etablissement ni par commune.
+ * Cette fonction recalcule, pour un jour et un departement entiers, les seuls
+ * groupes sensibles de IND-03, dans des lignes SANS etablissement
+ * (etablissementId null, departementId renseigne). Meme principe
+ * d'idempotence que recalculerJourEtablissement (RG-PIL-60) : suppression
+ * puis reinsertion dans une transaction.
+ *
+ * Minimisation volontaire : ni sexe ni tranche d'age, seulement (jour,
+ * departement, groupe). Un croisement supplementaire rendrait certaines
+ * cellules quasi identifiantes dans un petit departement, et aucun ecran
+ * n'a besoin de ce detail.
+ *
+ * Limite assumee : un etablissement sans commune ni zone sanitaire (donc sans
+ * departement resoluble, voir resoudreDepartementId) ne contribue pas a ces
+ * comptes, comme pour tous les agregats territorialises.
+ */
+export async function recalculerSensiblesDepartementJour(
+  prisma: PrismaClient,
+  jour: Date,
+  departementId: string,
+): Promise<void> {
+  const { debut, fin } = debutEtFinDuJour(jour);
+
+  // Meme priorite que resoudreDepartementId : la commune d'abord, la zone
+  // sanitaire seulement si la commune n'est pas renseignee.
+  const etablissements = await prisma.etablissementSanitaire.findMany({
+    where: {
+      OR: [{ commune: { departementId } }, { communeId: null, zoneSanitaire: { departementId } }],
+    },
+    select: { id: true },
+  });
+
+  const compteurs = new Map<string, number>();
+  if (etablissements.length > 0) {
+    const consultations = await prisma.consultation.findMany({
+      where: {
+        etablissementId: { in: etablissements.map((etablissement) => etablissement.id) },
+        statut: "terminee",
+        saisieParErreur: false,
+        date: { gte: debut, lt: fin },
+      },
+      select: { conclusion: true },
+    });
+
+    for (const consultation of consultations) {
+      if (!consultation.conclusion) continue;
+      const groupe = classifierGroupeMaladie(consultation.conclusion);
+      if (groupe?.sensible) {
+        compteurs.set(groupe.code, (compteurs.get(groupe.code) ?? 0) + 1);
+      }
+    }
+  }
+
+  await prisma.$transaction([
+    prisma.agregatQuotidien.deleteMany({
+      where: { date: debut, etablissementId: null, departementId, indicateur: "IND-03" },
+    }),
+    ...(compteurs.size > 0
+      ? [
+          prisma.agregatQuotidien.createMany({
+            data: [...compteurs].map(([dimensionLibre, valeur]) => ({
+              date: debut,
+              etablissementId: null,
+              departementId,
+              indicateur: "IND-03",
+              sexe: null,
+              trancheAge: null,
+              dimensionLibre,
+              valeur,
+            })),
+          }),
+        ]
+      : []),
+  ]);
+}
+
+/** Departement d'un etablissement, ou null s'il n'a ni commune ni zone sanitaire renseignee. */
+async function departementDeLEtablissement(prisma: PrismaClient, etablissementId: string): Promise<string | null> {
+  const etablissement = await prisma.etablissementSanitaire.findUnique({
+    where: { id: etablissementId },
+    select: { commune: { select: { departementId: true } }, zoneSanitaire: { select: { departementId: true } } },
+  });
+  return etablissement ? resoudreDepartementId(etablissement) : null;
 }
 
 interface LigneAgregatSysteme {
@@ -525,6 +617,9 @@ export async function executerTacheHoraire(prisma: PrismaClient): Promise<{ jour
   const maintenant = new Date();
   const aTraiter = await listerJoursEtablissementsATraiter(prisma);
   const joursSystemeATraiter = new Set<string>();
+  // RG-PIL-05 : un seul recalcul des groupes sensibles par (jour, departement),
+  // pas un par etablissement touche.
+  const joursDepartementsSensibles = new Map<string, { date: Date; departementId: string }>();
 
   for (const { date, etablissementId } of aTraiter) {
     // Cette iteration ne gere que les indicateurs a grille (jour, etablissement) ;
@@ -532,6 +627,15 @@ export async function executerTacheHoraire(prisma: PrismaClient): Promise<{ jour
     if (!etablissementId) continue;
     await recalculerJourEtablissement(prisma, date, etablissementId);
     joursSystemeATraiter.add(date.toISOString());
+
+    const departementId = await departementDeLEtablissement(prisma, etablissementId);
+    if (departementId) {
+      joursDepartementsSensibles.set(`${date.toISOString()}|${departementId}`, { date, departementId });
+    }
+  }
+
+  for (const { date, departementId } of joursDepartementsSensibles.values()) {
+    await recalculerSensiblesDepartementJour(prisma, date, departementId);
   }
 
   // IND-05/IND-06 ne dependent pas d'un etablissement precis : un seul
@@ -553,7 +657,20 @@ export async function executerTacheNocturne(prisma: PrismaClient): Promise<{ jou
   const aujourdHui = new Date();
   aujourdHui.setUTCHours(0, 0, 0, 0);
 
-  const etablissements = await prisma.etablissementSanitaire.findMany({ select: { id: true } });
+  const etablissements = await prisma.etablissementSanitaire.findMany({
+    select: {
+      id: true,
+      commune: { select: { departementId: true } },
+      zoneSanitaire: { select: { departementId: true } },
+    },
+  });
+  const departementIds = [
+    ...new Set(
+      etablissements
+        .map((etablissement) => resoudreDepartementId(etablissement))
+        .filter((departementId): departementId is string => departementId !== null),
+    ),
+  ];
 
   let joursTraites = 0;
   for (let decalage = 1; decalage <= 90; decalage++) {
@@ -562,6 +679,10 @@ export async function executerTacheNocturne(prisma: PrismaClient): Promise<{ jou
     for (const { id } of etablissements) {
       await recalculerJourEtablissement(prisma, jour, id);
       joursTraites++;
+    }
+    // RG-PIL-05 : groupes sensibles recalcules par departement, pas par etablissement.
+    for (const departementId of departementIds) {
+      await recalculerSensiblesDepartementJour(prisma, jour, departementId);
     }
     // Un seul recalcul par jour pour IND-05/IND-06 (pas de grain etablissement).
     await recalculerIndicateursSystemeJour(prisma, jour);

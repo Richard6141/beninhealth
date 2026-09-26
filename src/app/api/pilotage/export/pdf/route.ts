@@ -16,10 +16,9 @@ import {
   libelleMotif,
   libellePeriode,
 } from "@/modules/pilotage/exports-rendu";
-import type { MotifExport } from "@/modules/pilotage/exports-constantes";
+import { verifierJetonExport } from "@/modules/pilotage/jeton-export";
 
 const PERIODES_VALIDES: PeriodeTableauBord[] = ["aujourdhui", "7j", "30j", "mois"];
-const MOTIFS_VALIDES: MotifExport[] = ["rapport_mensuel", "reunion", "planification", "autre"];
 
 function adresseTechniqueDepuisRequete(request: Request): string {
   return request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? "inconnue";
@@ -38,8 +37,6 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const portee = url.searchParams.get("portee");
   const periodeBrute = url.searchParams.get("periode");
-  const motifBrut = url.searchParams.get("motif");
-  const motifTexte = url.searchParams.get("motifTexte") ?? undefined;
 
   if (portee !== "national" && portee !== "etablissement") {
     return NextResponse.json({ error: "Portée invalide." }, { status: 400 });
@@ -47,10 +44,22 @@ export async function GET(request: Request) {
   const periode: PeriodeTableauBord = (PERIODES_VALIDES as string[]).includes(periodeBrute ?? "")
     ? (periodeBrute as PeriodeTableauBord)
     : "7j";
-  if (!MOTIFS_VALIDES.includes(motifBrut as MotifExport)) {
-    return NextResponse.json({ error: "Motif d'export invalide." }, { status: 400 });
+
+  // RG-PIL-40 : la ré-authentification n'est plus seulement vérifiée à l'écran.
+  // Le motif vient du jeton signé émis après vérification du mot de passe,
+  // jamais de l'URL : un GET direct avec le seul cookie de session est refusé.
+  const contenuJeton = verifierJetonExport(url.searchParams.get("jeton"), {
+    utilisateurId: session.userId,
+    sessionId: session.sessionId,
+    portee,
+  });
+  if (!contenuJeton) {
+    return NextResponse.json(
+      { error: "Ré-authentification requise ou expirée. Confirmez votre mot de passe depuis l'écran d'export." },
+      { status: 403 }
+    );
   }
-  const motif = motifBrut as MotifExport;
+  const { motif, motifTexte } = contenuJeton;
 
   const document = await PDFDocument.create();
   const police = await document.embedFont(StandardFonts.Helvetica);
@@ -100,7 +109,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Droits insuffisants." }, { status: 403 });
     }
 
-    titre("Rapport de pilotage — Centre national");
+    titre("Rapport de pilotage : Centre national");
     ligne(`Généré le ${new Date().toLocaleString("fr-FR")}`);
     ligne(`Période : ${libellePeriode(periode)}`);
     ligne(`Motif de l'export : ${libelleMotif(motif, motifTexte)}`);
@@ -115,7 +124,7 @@ export async function GET(request: Request) {
     ligne(`Vaccinations (IND-10) : ${vue.vaccinations.valeur}`);
     ligneVide();
 
-    sousTitre("Graphique — Consultations, 12 dernières semaines");
+    sousTitre("Graphique : Consultations, 12 dernières semaines");
     dessinerBarres(
       page,
       vue.evolutionHebdomadaire.map((point) => ({ libelle: point.finSemaine.slice(5), valeur: point.consultations })),
@@ -125,14 +134,14 @@ export async function GET(request: Request) {
     y -= 110;
     ligneVide();
 
-    sousTitre(`Tableau — Top des diagnostics (IND-03, ${vue.topDiagnostics.length})`);
+    sousTitre(`Tableau : Top des diagnostics (IND-03, ${vue.topDiagnostics.length})`);
     if (vue.topDiagnostics.length === 0) ligne("Aucun diagnostic classifiable sur cette période.");
     vue.topDiagnostics.forEach((diagnostic) => ligne(`${diagnostic.libelle} : ${diagnostic.valeur}`));
     ligneVide();
 
     sousTitre("Définitions (RG-PIL-10)");
     definitionsPourCodes(CODES_INDICATEURS_NATIONAL).forEach((definition) =>
-      ligne(`${definition.code} — ${definition.libelle} : ${definition.definition}`)
+      ligne(`${definition.code} (${definition.libelle}) : ${definition.definition}`)
     );
   } else {
     if (!session.roles.includes("admin_etablissement")) {
@@ -143,7 +152,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Droits insuffisants." }, { status: 403 });
     }
 
-    titre(`Rapport de pilotage — ${bord.etablissementNom}`);
+    titre(`Rapport de pilotage : ${bord.etablissementNom}`);
     ligne(`Généré le ${new Date().toLocaleString("fr-FR")}`);
     ligne(`Période : ${libellePeriode(periode)}`);
     ligne(`Motif de l'export : ${libelleMotif(motif, motifTexte)}`);
@@ -160,7 +169,7 @@ export async function GET(request: Request) {
     }
     ligneVide();
 
-    sousTitre("Graphique — Consultations quotidiennes");
+    sousTitre("Graphique : Consultations quotidiennes");
     dessinerBarres(
       page,
       bord.evolutionConsultations.map((point) => ({ libelle: point.date.slice(5), valeur: point.valeur })),
@@ -170,13 +179,13 @@ export async function GET(request: Request) {
     y -= 110;
     ligneVide();
 
-    sousTitre(`Tableau — Top des diagnostics (IND-03, ${bord.topDiagnostics.length})`);
+    sousTitre(`Tableau : Top des diagnostics (IND-03, ${bord.topDiagnostics.length})`);
     if (bord.topDiagnostics.length === 0) ligne("Aucun diagnostic classifiable sur cette période.");
     bord.topDiagnostics.forEach((diagnostic) => ligne(`${diagnostic.libelle} : ${diagnostic.valeur}`));
     ligneVide();
 
     if (bord.activiteParProfessionnel.length > 0) {
-      sousTitre("Tableau — Activité par professionnel");
+      sousTitre("Tableau : Activité par professionnel");
       bord.activiteParProfessionnel.forEach((ligneActivite) =>
         ligne(`${ligneActivite.nomComplet} : ${ligneActivite.totalActes} acte(s)`)
       );
@@ -185,7 +194,7 @@ export async function GET(request: Request) {
 
     sousTitre("Définitions (RG-PIL-10)");
     definitionsPourCodes(CODES_INDICATEURS_ETABLISSEMENT).forEach((definition) =>
-      ligne(`${definition.code} — ${definition.libelle} : ${definition.definition}`)
+      ligne(`${definition.code} (${definition.libelle}) : ${definition.definition}`)
     );
   }
 

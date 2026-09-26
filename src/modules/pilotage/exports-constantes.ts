@@ -24,7 +24,10 @@ export const MOTIFS_EXPORT: OptionMotifExport[] = [
 export interface ExportPilotageActionState {
   error: string | null;
   success: boolean;
-  /** Echo du motif confirme (jamais recalcule cote client) : sert a construire les liens de telechargement une fois la re-authentification reussie. */
-  motif?: MotifExport;
-  motifTexte?: string;
+  /**
+   * Jeton signe emis apres re-authentification reussie (voir jeton-export.ts) :
+   * a joindre aux liens de telechargement. Il embarque le motif, que les
+   * routes lisent dans le jeton verifie et non dans l'URL.
+   */
+  jeton?: string;
 }

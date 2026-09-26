@@ -21,7 +21,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { journaliser } from "@/modules/audit/journaliser";
 import { masquerPetitEffectif, masquerTaux, type ValeurMasquee } from "./masquage";
-import { GROUPES_MALADIES } from "./referentiel-groupes-maladies";
+import { GROUPES_MALADIES, estGroupeSensible } from "./referentiel-groupes-maladies";
 
 export type PeriodeTableauBord = "aujourdhui" | "7j" | "30j" | "mois";
 
@@ -173,6 +173,10 @@ export async function getTableauBordEtablissement(
     } else if (ligne.indicateur === "IND-02") {
       totalPatientsVus += ligne.valeur;
     } else if (ligne.indicateur === "IND-03" && ligne.dimensionLibre) {
+      // RG-PIL-05 : jamais de groupe sensible par etablissement. L'agregateur
+      // n'en ecrit plus, ce filtre protege contre d'anciennes lignes deja
+      // stockees par etablissement avant ce correctif.
+      if (estGroupeSensible(ligne.dimensionLibre)) continue;
       totauxParDiagnostic.set(ligne.dimensionLibre, (totauxParDiagnostic.get(ligne.dimensionLibre) ?? 0) + ligne.valeur);
     } else if (ligne.indicateur === "IND-08" && ligne.dimensionLibre === "signees") {
       totalOrdonnancesSignees += ligne.valeur;

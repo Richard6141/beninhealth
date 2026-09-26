@@ -70,9 +70,13 @@ export async function verifierOrdonnancePublique(numero: string, cle: string | n
       medecinPrescripteur: {
         select: {
           user: { select: { nom: true, prenom: true } },
-          etablissement: { select: { nom: true } },
         },
       },
+      // Etablissement de l'ACTE (celui de la consultation), pas celui du profil
+      // du medecin : un professionnel affilie a plusieurs etablissements
+      // (docs/recherche-transfert/identite-professionnels.md) afficherait
+      // sinon son etablissement principal pour une ordonnance emise ailleurs.
+      consultation: { select: { etablissement: { select: { nom: true } } } },
     },
   });
 
@@ -86,7 +90,9 @@ export async function verifierOrdonnancePublique(numero: string, cle: string | n
   const expiree = new Date() > dateValidite;
 
   let statutAffiche: StatutAffichePublic;
-  if (prescription.statut === "annulee") {
+  // "arretee" (F-PRE-05, arret par le prescripteur) est distinct de "annulee"
+  // en interne, mais un tiers ne doit jamais voir une ordonnance arretee "valable".
+  if (prescription.statut === "annulee" || prescription.statut === "arretee") {
     statutAffiche = "annulee";
   } else if (prescription.statut === "delivree") {
     statutAffiche = "delivree";
@@ -100,7 +106,7 @@ export async function verifierOrdonnancePublique(numero: string, cle: string | n
     numero: prescription.numero,
     dateEmission: prescription.date.toISOString().slice(0, 10),
     prescripteurNomComplet: `${prescription.medecinPrescripteur.user.prenom} ${prescription.medecinPrescripteur.user.nom}`,
-    etablissementNom: prescription.medecinPrescripteur.etablissement.nom,
+    etablissementNom: prescription.consultation.etablissement.nom,
     statutAffiche,
     dateValidite: statutAffiche === "valable" ? dateValidite.toISOString().slice(0, 10) : undefined,
   };

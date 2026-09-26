@@ -12,10 +12,9 @@ import { getSession } from "@/lib/session";
 import { journaliser } from "@/modules/audit/journaliser";
 import { getVueNationalePilotage, getTableauBordEtablissement, type PeriodeTableauBord } from "@/modules/pilotage/lecture";
 import { construireCSVEtablissement, construireCSVNational, libelleMotif, libellePeriode } from "@/modules/pilotage/exports-rendu";
-import type { MotifExport } from "@/modules/pilotage/exports-constantes";
+import { verifierJetonExport } from "@/modules/pilotage/jeton-export";
 
 const PERIODES_VALIDES: PeriodeTableauBord[] = ["aujourdhui", "7j", "30j", "mois"];
-const MOTIFS_VALIDES: MotifExport[] = ["rapport_mensuel", "reunion", "planification", "autre"];
 
 function adresseTechniqueDepuisRequete(request: Request): string {
   return request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? "inconnue";
@@ -30,8 +29,6 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const portee = url.searchParams.get("portee");
   const periodeBrute = url.searchParams.get("periode");
-  const motifBrut = url.searchParams.get("motif");
-  const motifTexte = url.searchParams.get("motifTexte") ?? undefined;
 
   if (portee !== "national" && portee !== "etablissement") {
     return NextResponse.json({ error: "Portée invalide." }, { status: 400 });
@@ -39,10 +36,22 @@ export async function GET(request: Request) {
   const periode: PeriodeTableauBord = (PERIODES_VALIDES as string[]).includes(periodeBrute ?? "")
     ? (periodeBrute as PeriodeTableauBord)
     : "7j";
-  if (!MOTIFS_VALIDES.includes(motifBrut as MotifExport)) {
-    return NextResponse.json({ error: "Motif d'export invalide." }, { status: 400 });
+
+  // RG-PIL-40 : la ré-authentification n'est plus seulement vérifiée à l'écran.
+  // Le motif vient du jeton signé émis après vérification du mot de passe,
+  // jamais de l'URL : un GET direct avec le seul cookie de session est refusé.
+  const contenuJeton = verifierJetonExport(url.searchParams.get("jeton"), {
+    utilisateurId: session.userId,
+    sessionId: session.sessionId,
+    portee,
+  });
+  if (!contenuJeton) {
+    return NextResponse.json(
+      { error: "Ré-authentification requise ou expirée. Confirmez votre mot de passe depuis l'écran d'export." },
+      { status: 403 }
+    );
   }
-  const motif = motifBrut as MotifExport;
+  const { motif, motifTexte } = contenuJeton;
 
   let csv: string;
   let nomFichier: string;

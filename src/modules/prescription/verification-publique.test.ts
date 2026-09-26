@@ -25,8 +25,8 @@ const PRESCRIPTION_BASE = {
   statut: "validee",
   medecinPrescripteur: {
     user: { nom: "Hounkpè", prenom: "Amir" },
-    etablissement: { nom: "CS Akpakpa" },
   },
+  consultation: { etablissement: { nom: "CS Akpakpa" } },
 };
 
 describe("genererCleVerificationOrdonnance / verifierOrdonnancePublique (RG-PRE-40)", () => {
@@ -72,12 +72,40 @@ describe("genererCleVerificationOrdonnance / verifierOrdonnancePublique (RG-PRE-
     expect(Object.keys(resultat!)).toEqual(["numero", "dateEmission", "prescripteurNomComplet", "etablissementNom", "statutAffiche", "dateValidite"]);
   });
 
+  it("affiche l'etablissement de l'acte (la consultation), pas celui du profil du medecin", async () => {
+    prismaMock.prescription.findUnique.mockResolvedValue({
+      ...PRESCRIPTION_BASE,
+      // Le medecin a un autre etablissement principal : il ne doit pas apparaitre.
+      medecinPrescripteur: { user: { nom: "Hounkpè", prenom: "Amir" }, etablissement: { nom: "CHU de Parakou" } },
+      consultation: { etablissement: { nom: "Clinique du Littoral" } },
+      date: new Date("2026-08-01T00:00:00.000Z"),
+    });
+    const cle = genererCleVerificationOrdonnance("RX-2026-0001", "presc-1");
+
+    const resultat = await verifierOrdonnancePublique("RX-2026-0001", cle);
+
+    expect(resultat?.etablissementNom).toBe("Clinique du Littoral");
+    expect(prismaMock.prescription.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({ consultation: { select: { etablissement: { select: { nom: true } } } } }),
+      })
+    );
+  });
+
   it("affiche 'annulee' independamment de la date de validite", async () => {
     prismaMock.prescription.findUnique.mockResolvedValue({
       ...PRESCRIPTION_BASE,
       statut: "annulee",
       date: new Date("2020-01-01"),
     });
+    const cle = genererCleVerificationOrdonnance("RX-2026-0001", "presc-1");
+    const resultat = await verifierOrdonnancePublique("RX-2026-0001", cle);
+    expect(resultat?.statutAffiche).toBe("annulee");
+    expect(resultat?.dateValidite).toBeUndefined();
+  });
+
+  it("affiche 'annulee' pour une ordonnance arretee par son prescripteur (jamais 'valable')", async () => {
+    prismaMock.prescription.findUnique.mockResolvedValue({ ...PRESCRIPTION_BASE, statut: "arretee", date: new Date() });
     const cle = genererCleVerificationOrdonnance("RX-2026-0001", "presc-1");
     const resultat = await verifierOrdonnancePublique("RX-2026-0001", cle);
     expect(resultat?.statutAffiche).toBe("annulee");

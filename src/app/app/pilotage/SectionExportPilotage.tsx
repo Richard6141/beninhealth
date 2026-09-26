@@ -33,8 +33,8 @@ export function SectionExportPilotage({ portee, periode, action }: SectionExport
   const [motif, setMotif] = useState<MotifExport | "">("");
 
   const parametresLien =
-    state.success && state.motif
-      ? `portee=${portee}&periode=${encodeURIComponent(periode)}&motif=${state.motif}&motifTexte=${encodeURIComponent(state.motifTexte ?? "")}`
+    state.success && state.jeton
+      ? `portee=${portee}&periode=${encodeURIComponent(periode)}&jeton=${encodeURIComponent(state.jeton)}`
       : "";
 
   return (

@@ -29,6 +29,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import type { ExportPilotageActionState, MotifExport, PorteeExportPilotage } from "./exports-constantes";
+import { creerJetonExport } from "./jeton-export";
 
 const LONGUEUR_MIN_MOTIF_TEXTE = 5;
 
@@ -104,8 +105,13 @@ export async function verifierExportPilotageAction(
   return {
     error: null,
     success: true,
-    motif: validation.data.motif as MotifExport,
-    motifTexte: validation.data.motif === "autre" ? validation.data.motifTexte : undefined,
+    jeton: creerJetonExport({
+      utilisateurId: session.userId,
+      sessionId: session.sessionId,
+      portee,
+      motif: validation.data.motif as MotifExport,
+      motifTexte: validation.data.motif === "autre" ? validation.data.motifTexte : undefined,
+    }),
   };
 }
 
