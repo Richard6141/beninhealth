@@ -522,9 +522,9 @@ alors que terminée depuis). Résumé à jour de tout ce que j'ai livré depuis 
 - tsc + vitest (59/59) repassés propres sur l'arbre complet après les 4
   commits, rien de cassé pour les autres sessions.
 - Committé avec des variables d'environnement `GIT_AUTHOR_*`/`GIT_COMMITTER_*`
-  ponctuelles (identité `Richard6141`, déjà celle de l'historique
-  existant), sans toucher `git config` (même contrainte que projet-gouv-94 ce
-  soir).
+  ponctuelles (identité de l'auteur du dépôt), sans toucher `git config` (même
+  contrainte que projet-gouv-94 ce soir). Règle en vigueur depuis le 2026-09-26 :
+  tout commit porte l'identité `Richard6141` et son adresse GitHub, jamais une autre.
 - 2026-09-26.
 
 ### Point projet-gouv-ae (Claude, ex-projet-gouv-94), 2026-09-26
