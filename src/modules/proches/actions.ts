@@ -221,9 +221,11 @@ export async function creerPersonneAChargeAction(
       return { error: "Aucun dossier patient associe a ce compte.", success: false };
     }
 
+    // Seules les personnes a charge actives comptent : une tutelle retiree libere sa place (comme getMesProches).
     const nombreExistant = await prisma.consentement.count({
       where: {
         acteurAutoriseId: session.userId,
+        statut: "actif",
         patient: { user: { statut: "sans_compte" } },
       },
     });

@@ -62,6 +62,7 @@ import {
   composerPosologie,
 } from "./posologie";
 import { ageAnnees } from "@/modules/clinical/controles-constantes";
+import { MESSAGE_ORDRE_NON_VERIFIE, professionnelValide } from "@/modules/administration/validation-professionnels-controle";
 import { calculerEmpreinteOrdonnance } from "./empreinte";
 import {
   DUREE_TRAITEMENT_MAX_JOURS,
@@ -615,6 +616,11 @@ export async function creerPrescriptionAction(
   // pas, le role precis doit etre verifie.
   if (!session.roles.some((role) => can(role, "create", "prescription"))) {
     return { error: "Action reservee aux medecins.", success: false };
+  }
+
+  // F-ADM-03 : si l'interrupteur est actif, seul un numero d'Ordre verifie signe.
+  if (!(await professionnelValide(session.userId))) {
+    return { error: MESSAGE_ORDRE_NON_VERIFIE, success: false };
   }
 
   const lignesJSON = texte(formData, "lignesJSON");

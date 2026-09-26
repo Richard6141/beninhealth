@@ -28,6 +28,10 @@ vi.mock("bcryptjs", () => {
 });
 vi.mock("@/modules/audit/journaliser", () => ({ journaliser: vi.fn() }));
 vi.mock("@/modules/notification/creer", () => ({ creerNotification: vi.fn() }));
+vi.mock("@/modules/administration/validation-professionnels-controle", () => ({
+  professionnelValide: vi.fn(async () => true),
+  MESSAGE_ORDRE_NON_VERIFIE: "Votre numéro d'Ordre n'est pas encore vérifié par le ministère.",
+}));
 
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";

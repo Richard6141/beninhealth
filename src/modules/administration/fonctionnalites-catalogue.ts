@@ -17,6 +17,7 @@ export const CLES_FONCTIONNALITES = [
   "fhir.api",
   "demo.banner",
   "access.by_npi",
+  "professionnels.exige_validation_ordre",
 ] as const;
 
 export type CleFonctionnalite = (typeof CLES_FONCTIONNALITES)[number];
@@ -32,4 +33,6 @@ export const DESCRIPTIONS_FONCTIONNALITES: Record<CleFonctionnalite, string> = {
   "demo.banner": "Bandeau \"environnement de demonstration\" affiche sur toutes les pages.",
   "access.by_npi":
     "Acces au dossier d'un patient par son NPI (avec code de confirmation). A n'activer avec des donnees reelles qu'apres l'autorisation de l'APDP (art. 407 du Code du numerique).",
+  "professionnels.exige_validation_ordre":
+    "Exige que le numero d'Ordre du professionnel ait ete verifie par le ministere (moins d'un an) pour les actes sensibles : demande d'acces par code ou NPI, signature d'une prescription, validation d'une consultation. Desactive par defaut (demonstration et integration des etablissements) ; a activer en production.",
 };

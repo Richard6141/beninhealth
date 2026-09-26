@@ -30,6 +30,10 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { memeTelephoneBenin, normaliserTelephoneBenin } from "@/lib/telephone";
 import { estFonctionnaliteActive } from "@/modules/administration/parametres";
+import {
+  MESSAGE_ORDRE_NON_VERIFIE,
+  professionnelValide as ordreProfessionnelVerifie,
+} from "@/modules/administration/validation-professionnels-controle";
 import { journaliser } from "@/modules/audit/journaliser";
 import { creerNotification } from "@/modules/notification/creer";
 import { can } from "@/security/permissions";
@@ -210,6 +214,10 @@ export async function demanderAccesDossierAction(
 
   if (!professionnel) {
     return { error: "Profil professionnel non valide pour cette action.", success: false };
+  }
+
+  if (!(await ordreProfessionnelVerifie(session.userId))) {
+    return { error: MESSAGE_ORDRE_NON_VERIFIE, success: false };
   }
 
   const adresseTechnique = await adresseTechniqueCourante();
@@ -459,6 +467,10 @@ export async function confirmerCodeAccesAction(
 
   if (!professionnel) {
     return { error: "Profil professionnel non valide pour cette action.", success: false };
+  }
+
+  if (!(await ordreProfessionnelVerifie(session.userId))) {
+    return { error: MESSAGE_ORDRE_NON_VERIFIE, success: false };
   }
 
   const adresseTechnique = await adresseTechniqueCourante();

@@ -23,6 +23,7 @@ import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/modules/audit/journaliser";
 import { publierEvenementPilotage } from "@/modules/pilotage/file-taches";
 import { transitionnerRendezVous } from "@/modules/facility/rendez-vous-etats";
+import { MESSAGE_ORDRE_NON_VERIFIE, professionnelValide } from "@/modules/administration/validation-professionnels-controle";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
 import {
@@ -132,6 +133,9 @@ function fenetreAddendumRetraitDepassee(dateConsultation: Date): boolean {
 
 /** Types d'acces de consentement autorisant un professionnel a creer une consultation. */
 const TYPES_ACCES_CONSULTATION = ["dossier_complet", "consultations"] as const;
+
+/** Types de consentement qui ouvrent la lecture du resume et de l'historique du dossier (l'acces d'urgence en fait partie, sans donnee sensible). */
+const TYPES_ACCES_LECTURE_DOSSIER = ["dossier_complet", "consultations", "urgence"] as const;
 
 /** Champ numerique facultatif : une chaine vide devient undefined plutot qu'une erreur de coercion. */
 const champNumeriqueOptionnel = z.preprocess(
@@ -547,7 +551,10 @@ async function accesPatientAutorise(
     consentement.statut === "actif" &&
     (consentement.dateFin === null || consentement.dateFin > new Date());
 
-  if (consentementValide) {
+  // Moindre privilege : un consentement etroit ("prescriptions", "examens",
+  // "documents") ne donne acces qu'a son propre type de donnee, via le module
+  // concerne. Il n'ouvre ni le resume ni l'historique du dossier.
+  if (consentementValide && (TYPES_ACCES_LECTURE_DOSSIER as readonly string[]).includes(consentement.typeAcces)) {
     return { source: "consentement", typeAcces: consentement.typeAcces, dateFin: consentement.dateFin };
   }
 
@@ -1185,6 +1192,11 @@ export async function enregistrerConsultationAction(
     };
   }
 
+  // F-ADM-03 : si l'interrupteur est actif, seul un numero d'Ordre verifie valide (le brouillon reste libre).
+  if (valider && !(await professionnelValide(session.userId))) {
+    return { error: MESSAGE_ORDRE_NON_VERIFIE, success: false };
+  }
+
   try {
     const professionnel = await prisma.professionnelSante.findUnique({
       where: { userId: session.userId },
@@ -1309,7 +1321,10 @@ export async function enregistrerConsultationAction(
       if (consultationIdNettoye.length > 0) {
         const existante = await tx.consultation.findUnique({ where: { id: consultationIdNettoye } });
 
-        if (!existante || existante.professionnelId !== professionnel.id) {
+        // Le patient du formulaire est celui dont le consentement vient d'etre
+        // verifie : le brouillon doit etre le sien, sinon on signerait la
+        // consultation d'un patient A avec le consentement d'un patient B.
+        if (!existante || existante.professionnelId !== professionnel.id || existante.patientId !== patientId) {
           throw new Error("CONSULTATION_INTROUVABLE");
         }
 

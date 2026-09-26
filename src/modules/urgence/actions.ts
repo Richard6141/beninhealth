@@ -25,6 +25,7 @@ import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
 import { creerNotification } from "@/modules/notification/creer";
 import { verifierCodeMfaPourConnexion } from "@/modules/identity/mfa-totp";
+import { enregistrerEvenement, limiteAtteinte } from "@/lib/limite-debit";
 import { MOTIFS_URGENCE } from "./motifs-urgence";
 
 export interface UrgenceActionState {
@@ -36,6 +37,10 @@ export interface UrgenceActionState {
 
 const DUREE_ACCES_URGENCE_MS = 4 * 60 * 60 * 1000;
 const MAX_ACCES_URGENCE_PAR_JOUR = 5;
+// Meme regle que la connexion (F-AUTH-06) : 5 codes incorrects verrouillent 15 minutes.
+// Sans cette limite, une session volee pourrait deviner le code a 6 chiffres.
+const MAX_CODES_TOTP_INCORRECTS = 5;
+const FENETRE_CODES_TOTP_INCORRECTS_MS = 15 * 60 * 1000;
 
 const schemaDeclenchement = z.object({
   identifiantSante: z.string().trim().min(1, "L'identifiant sante du patient est obligatoire."),
@@ -109,9 +114,19 @@ export async function declencherAccesUrgenceAction(
     };
   }
 
+  const cleEchecsTotp = `urgence-totp:${session.userId}`;
+
+  if (limiteAtteinte(cleEchecsTotp, MAX_CODES_TOTP_INCORRECTS, FENETRE_CODES_TOTP_INCORRECTS_MS)) {
+    return {
+      error: "Trop de codes de double authentification incorrects. Reessayez dans 15 minutes.",
+      success: false,
+    };
+  }
+
   const codeValide = await verifierCodeMfaPourConnexion(session.userId, codeTotp);
 
   if (!codeValide) {
+    enregistrerEvenement(cleEchecsTotp, FENETRE_CODES_TOTP_INCORRECTS_MS);
     return { error: "Code de double authentification incorrect.", success: false };
   }
 

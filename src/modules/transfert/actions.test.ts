@@ -33,6 +33,10 @@ vi.mock("bcryptjs", () => {
   return { default: { compare, hash }, compare, hash };
 });
 vi.mock("@/modules/administration/parametres", () => ({ estFonctionnaliteActive: vi.fn() }));
+vi.mock("@/modules/administration/validation-professionnels-controle", () => ({
+  professionnelValide: vi.fn(async () => true),
+  MESSAGE_ORDRE_NON_VERIFIE: "Votre numéro d'Ordre n'est pas encore vérifié par le ministère.",
+}));
 vi.mock("@/modules/audit/journaliser", () => ({ journaliser: vi.fn() }));
 vi.mock("@/modules/notification/creer", () => ({ creerNotification: vi.fn() }));
 vi.mock("@/modules/transfert/envoi-code", () => ({ envoyerCodeDemande: vi.fn() }));
@@ -42,6 +46,7 @@ import { after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { estFonctionnaliteActive } from "@/modules/administration/parametres";
+import { professionnelValide as ordreVerifie } from "@/modules/administration/validation-professionnels-controle";
 import { journaliser } from "@/modules/audit/journaliser";
 import { creerNotification } from "@/modules/notification/creer";
 import {
@@ -69,6 +74,7 @@ const compareMock = bcrypt.compare as unknown as Mock;
 const journaliserMock = journaliser as unknown as Mock;
 const notifierMock = creerNotification as unknown as Mock;
 const envoyerMock = envoyerCodeDemande as unknown as Mock;
+const ordreVerifieMock = ordreVerifie as unknown as Mock;
 
 const NPI = "1234567890123";
 
@@ -93,6 +99,7 @@ function patientTrouve(surcharges: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   getSessionMock.mockResolvedValue({ userId: "pro-1", roles: ["medecin"] });
+  ordreVerifieMock.mockResolvedValue(true);
   flagMock.mockResolvedValue(true);
   p.professionnelSante.findUnique.mockResolvedValue({ id: "prof-1", etablissementId: "etab-1", statutValidation: "valide" });
   p.patient.findUnique.mockResolvedValue(null);
@@ -555,5 +562,34 @@ describe("demanderAccesDossierAction : attestation de presence et duree accordee
     expect(justification).toContain("signal de presence non");
     expect(justification).toContain("7 jours demandees");
     expect(justification).toContain("24 heures accordees");
+  });
+});
+
+describe("numero d'Ordre non verifie par le ministere (interrupteur professionnels.exige_validation_ordre)", () => {
+  it("la demande d'acces est refusee avec un message clair, avant toute recherche de patient", async () => {
+    ordreVerifieMock.mockResolvedValue(false);
+
+    const resultat = await demanderAccesDossierAction(etatInitial, formulaire(demandeNpi));
+
+    expect(resultat).toEqual({ error: "Votre numéro d'Ordre n'est pas encore vérifié par le ministère.", success: false });
+    expect(ordreVerifieMock).toHaveBeenCalledWith("pro-1");
+    expect(p.patient.findUnique).not.toHaveBeenCalled();
+    expect(p.demandeAccesDossier.create).not.toHaveBeenCalled();
+    expect(envoyerMock).not.toHaveBeenCalled();
+  });
+
+  it("la confirmation du code est refusee de la meme facon, sans accorder d'acces", async () => {
+    ordreVerifieMock.mockResolvedValue(false);
+
+    const resultat = await confirmerCodeAccesAction({ error: null, success: false }, formulaire({ demandeId: "dem-1", code: "482913" }));
+
+    expect(resultat).toEqual({ error: "Votre numéro d'Ordre n'est pas encore vérifié par le ministère.", success: false });
+    expect(p.consentement.upsert).not.toHaveBeenCalled();
+    expect(compareMock).not.toHaveBeenCalled();
+  });
+
+  it("le controle est verifie pour l'utilisateur de la session, apres la validation du profil", async () => {
+    await demanderAccesDossierAction(etatInitial, formulaire(demandeNpi));
+    expect(ordreVerifieMock).toHaveBeenCalledWith("pro-1");
   });
 });
