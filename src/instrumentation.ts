@@ -6,7 +6,8 @@
  * (F-RDV-04/05, RG-RDV-40, voir src/modules/facility/file-du-jour.ts), purge
  * des notifications (F-NOT-01, conservation 90 jours, voir
  * src/modules/notification/purge.ts) et rappels de rendez-vous (F-RDV-07,
- * voir src/modules/facility/rappels-rendez-vous.ts).
+ * voir src/modules/facility/rappels-rendez-vous.ts) et remise des SMS differes
+ * a 7h00 (F-NOT-02, RG-NOT-04, voir src/modules/notification/sms/remise-differes.ts).
  */
 export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME !== "nodejs") {
@@ -24,4 +25,7 @@ export async function register(): Promise<void> {
 
   const { demarrerRappelsRendezVous } = await import("@/modules/facility/rappels-rendez-vous");
   demarrerRappelsRendezVous();
+
+  const { demarrerRemiseSmsDifferes } = await import("@/modules/notification/sms/remise-differes");
+  demarrerRemiseSmsDifferes();
 }

@@ -12,12 +12,11 @@
  *   envoye entre 21h00 et 7h00 (heure du Benin, Africa/Porto-Novo) est
  *   differe a 7h00 plutot qu'envoye immediatement.
  *
- * Limite assumee et documentee : la remise effective d'un SMS differe
- * (statut "differe") a 7h00 n'est pas automatisee - ce depot n'a pas de
- * tache planifiee fiable a laquelle se raccrocher ce soir (meme limite que
- * partout ailleurs cette nuit). La ligne EnvoiSms reste visible avec son
- * statut et sa date programmee sur /app/ministere/sms, mais rien ne la
- * fait passer a "simule" automatiquement a l'heure dite.
+ * La remise d'un SMS differe (statut "differe") a 7h00 est assuree par la
+ * tache planifiee en process remise-differes.ts (demarree par
+ * src/instrumentation.ts) : elle passe la ligne a "simule" une fois la date
+ * programmee atteinte. Limite : tache dans le processus web, sans reprise
+ * garantie si le serveur est arrete a 7h (la remise a lieu au redemarrage).
  *
  * Module pur (pas de "use server") : appele depuis d'autres modules
  * server-side (Server Actions, routes), jamais directement depuis un
