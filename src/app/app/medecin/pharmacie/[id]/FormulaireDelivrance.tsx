@@ -58,9 +58,12 @@ const optionsMotif = MOTIFS_NON_DELIVRANCE_VALEURS.map((motif) => ({
 export function FormulaireDelivrance({
   prescriptionId,
   lignes,
+  jeton,
 }: {
   prescriptionId: string;
   lignes: LignePourDelivrance[];
+  /** Preuve de presentation de la recherche (RG-PHA-02) ; absente quand la pharmacie a deja delivre sur cette ordonnance. */
+  jeton?: string;
 }) {
   const [state, formAction, pending] = useActionState(delivrerPrescriptionAction, etatInitial);
   const [valeurs, setValeurs] = useState<LigneFormulaire[]>(() => lignes.map(ligneInitiale));
@@ -104,6 +107,7 @@ export function FormulaireDelivrance({
     >
       <form action={formAction} aria-busy={pending} className="flex flex-col gap-6">
         <input type="hidden" name="prescriptionId" value={prescriptionId} />
+        {jeton ? <input type="hidden" name="jeton" value={jeton} /> : null}
         <input type="hidden" name="lignesJSON" value={lignesJSON} />
 
         {state.error ? (

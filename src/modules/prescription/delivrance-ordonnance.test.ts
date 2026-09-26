@@ -18,6 +18,7 @@ const base = {
   mutex: Promise.resolve() as Promise<void>,
   nombreDeVerrous: 0,
   ordre: [] as string[],
+  dejaServiIci: false,
 };
 
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -29,6 +30,7 @@ function ordonnance() {
     statut: base.statut,
     date: base.date,
     patient: { userId: "user-pat" },
+    delivrances: base.dejaServiIci ? [{ id: "deliv-anterieure" }] : [],
     lignes: [
       {
         id: "l1",
@@ -100,6 +102,7 @@ vi.mock("@/lib/prisma", () => {
   };
   return { prisma };
 });
+vi.mock("@/lib/env", () => ({ getEnv: vi.fn(() => ({ NEXTAUTH_SECRET: "secret-de-test" })) }));
 vi.mock("@/lib/session", () => ({ getSession: vi.fn() }));
 vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers()) }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -113,6 +116,7 @@ vi.mock("@/modules/notification/creer", () => ({ creerNotification: vi.fn() }));
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { delivrerPrescriptionAction } from "@/modules/prescription/actions";
+import { creerJetonPresentation } from "@/modules/prescription/presentation";
 
 const p = prisma as unknown as {
   professionnelSante: { findUnique: Mock };
@@ -124,9 +128,10 @@ const etatInitial = { error: null, success: false };
 const MAINTENANT = new Date("2026-09-26T12:00:00.000Z");
 const ilYaJours = (jours: number) => new Date(MAINTENANT.getTime() - jours * 24 * 60 * 60 * 1000);
 
-function delivrance(quantite: number, motif = ""): FormData {
+function delivrance(quantite: number, motif = "", jeton: string | null = creerJetonPresentation("user-ph", "presc-1")): FormData {
   const donnees = new FormData();
   donnees.set("prescriptionId", "presc-1");
+  if (jeton !== null) donnees.set("jeton", jeton);
   donnees.set(
     "lignesJSON",
     JSON.stringify([{ lignePrescriptionId: "l1", quantiteDelivree: quantite, motifNonDelivrance: motif }])
@@ -147,6 +152,7 @@ beforeEach(() => {
   base.mutex = Promise.resolve();
   base.nombreDeVerrous = 0;
   base.ordre = [];
+  base.dejaServiIci = false;
 
   getSessionMock.mockResolvedValue({ userId: "user-ph", roles: ["pharmacien"] });
   p.professionnelSante.findUnique.mockResolvedValue({ id: "pro-ph", etablissementId: "etab-ph" });
@@ -196,6 +202,44 @@ describe("delivrerPrescriptionAction, RG-PHA-11 (CA-1 : deux delivrances totales
     await delivrerPrescriptionAction(etatInitial, delivrance(10));
 
     expect(base.ordre.slice(0, 2)).toEqual(["verrou", "lecture"]);
+  });
+});
+
+describe("delivrerPrescriptionAction, RG-PHA-02 (ordonnance presentee a la pharmacie)", () => {
+  it("refuse sans preuve de presentation quand la pharmacie n'a encore rien delivre dessus", async () => {
+    const resultat = await delivrerPrescriptionAction(etatInitial, delivrance(10, "", null));
+
+    expect(resultat.success).toBe(false);
+    expect(resultat.error).toContain("n'a pas ete presentee");
+    expect(base.totalLivre).toBe(0);
+  });
+
+  it("refuse la preuve d'un autre pharmacien", async () => {
+    const resultat = await delivrerPrescriptionAction(
+      etatInitial,
+      delivrance(10, "", creerJetonPresentation("user-autre", "presc-1"))
+    );
+
+    expect(resultat.success).toBe(false);
+    expect(base.totalLivre).toBe(0);
+  });
+
+  it("refuse la preuve d'une autre ordonnance", async () => {
+    const resultat = await delivrerPrescriptionAction(
+      etatInitial,
+      delivrance(10, "", creerJetonPresentation("user-ph", "presc-2"))
+    );
+
+    expect(resultat.success).toBe(false);
+    expect(base.totalLivre).toBe(0);
+  });
+
+  it("accepte sans preuve quand la pharmacie a deja delivre sur cette ordonnance", async () => {
+    base.dejaServiIci = true;
+
+    const resultat = await delivrerPrescriptionAction(etatInitial, delivrance(4, "rupture_stock", null));
+
+    expect(resultat).toEqual({ error: null, success: true });
   });
 });
 

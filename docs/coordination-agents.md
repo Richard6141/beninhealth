@@ -3448,3 +3448,12 @@ Suspense (le build echoue sinon) ; `creerNotification` vit dans
 - Verifie : tsc, eslint, vitest notification et laboratoire 43/43, deux controles sur la vraie base (donnees de test supprimees).
 - Reste dans ma file : F-NOT-01 (compteur non rafraichi), tests soins, vaccination et communautaire, F-LAB-04 (correction en nouvelle version).
 - 2026-09-26.
+
+### Point projet-gouv-86, pharmacie : ordonnance presentee et tableau de bord (F-PHA-01 et F-PHA-02), 2026-09-26
+
+- Livre : un pharmacien n'ouvre plus une ordonnance par son seul identifiant et ne voit plus la liste de tous les patients ni leurs motifs de consultation. La recherche par numero et annee de naissance delivre un jeton signe (`presentation.ts`, 12 h, lie au compte et a l'ordonnance) sans lequel ni le detail ni la delivrance ne s'ouvrent, sauf si la pharmacie a deja delivre dessus. Le detail affiche allergies, age, sexe, prescripteur, etablissement et validite. La page pharmacie et l'accueil du pharmacien montrent les delivrances du jour (jour civil au Benin) et les ordonnances delivrees en partie par la pharmacie et encore valables. `getPrescriptionsADelivrer` est supprimee (plus aucun appelant), remplacee par `getTableauDeBordPharmacie`.
+- Verifie : tsc, eslint (0 erreur), vitest 57 fichiers et 593 tests (28 nouveaux : jeton, acces, tableau de bord, preuve de presentation a la delivrance), et un scenario navigateur reel sur le serveur partage avec un pharmacien de test : ouverture par identifiant refusee, jeton falsifie refuse, recherche puis detail complet, rechargement avec le jeton.
+- A savoir : le seed n'a pas de pharmacien. Le compte de test `tmp.pharma.*@benin-health.test` (role pharmacien, etablissement de demo) est reste dans la base, SUSPENDU : ses connexions ont laisse des lignes de journal d'audit chainees qu'on ne supprime pas. A reutiliser ou a laisser tel quel. Rien n'a ete delivre sur les donnees de demo.
+- A verifier par l'auteur du seed ou de la demo : ajouter un pharmacien de demonstration (aujourd'hui aucun compte de demo ne peut tester la pharmacie).
+- Suite pour moi : tests des modules partage, reference et document (file de e1), puis referentiels F-ADM-04 restants.
+- 2026-09-26.

@@ -71,12 +71,19 @@ import {
   NOMBRE_LIGNES_MAX,
   debutFenetrePoids,
   poidsRecent,
+  JOURS_VALIDITE_ORDONNANCE,
   dateFinValiditeOrdonnance,
   ordonnanceExpiree,
   poidsRequisPourPatient,
   type PoidsRetenu,
 } from "./regles-ordonnance";
 import { verrouillerOrdonnance } from "./verrou";
+import {
+  creerJetonPresentation,
+  debutJourBenin,
+  debutJourSuivantBenin,
+  jetonPresentationValide,
+} from "./presentation";
 
 /** Etat renvoye par chaque Server Action de ce module, consomme via useActionState. */
 export interface PrescriptionActionState {
@@ -1681,61 +1688,142 @@ export interface DetailPrescriptionPourDelivrance {
   date: string; // ISO
   instructions: string;
   patientNomComplet: string;
-  patientIdentifiantSante: string;
+  // F-PHA-02 : ce qu'un pharmacien a besoin de verifier au comptoir, et rien de plus
+  // (RG-PHA-02 : jamais le motif ou le diagnostic, ni les autres ordonnances).
+  patientAgeAnnees: number;
+  patientSexe: string;
+  patientAllergies: string[];
+  prescripteurNomComplet: string;
+  prescripteurEtablissementNom: string;
+  dateFinValiditeISO: string;
+  expiree: boolean;
   lignes: LignePourDelivrance[];
   delivrances: DelivranceResume[];
 }
 
+/** Une ordonnance partiellement delivree par CETTE pharmacie et encore valable (F-PHA-01). */
+export interface OrdonnancePartielleResume {
+  id: string;
+  numero: string;
+  patientNomComplet: string;
+  dateFinValiditeISO: string;
+  derniereDelivranceISO: string;
+  lignesManquantes: { medicamentNom: string; quantiteRestante: number }[];
+}
+
+/** Une delivrance enregistree aujourd'hui par CETTE pharmacie (F-PHA-01). */
+export interface DelivranceDuJourResume {
+  id: string;
+  heureISO: string;
+  numeroOrdonnance: string;
+  nombreLignes: number;
+  statutOrdonnance: string;
+  annulee: boolean;
+}
+
+export interface TableauDeBordPharmacie {
+  partielles: OrdonnancePartielleResume[];
+  delivrancesDuJour: DelivranceDuJourResume[];
+}
+
 /**
- * Prescriptions en attente de delivrance (statut "validee" ou
- * "delivree_partiellement"), tous patients confondus : un pharmacien sert
- * n'importe quel patient qui se presente au comptoir avec une prescription,
- * pas seulement "ses" patients. `recherche` filtre par nom/prenom du patient
- * ou identifiant sante (comparaison insensible a la casse faite cote
- * application : SQLite ne supporte pas `mode: "insensitive"` cote Prisma).
- * Retourne un tableau vide si l'utilisateur connecte n'est pas pharmacien.
+ * Tableau de bord de la pharmacie du pharmacien connecte (F-PHA-01 du pack) :
+ * ses delivrances du jour et les ordonnances qu'elle a delivrees en partie et
+ * qui sont encore valables (patients qui reviennent). Rien d'autre : une
+ * ordonnance qui n'a pas ete presentee a cette pharmacie n'apparait jamais
+ * ici (RG-PHA-02), elle se retrouve par numero et annee de naissance
+ * (rechercherOrdonnancePresenteeAction). Ni motif de consultation ni
+ * instructions ne sont charges. L'etablissement vient toujours de la fiche
+ * professionnelle, jamais du client. null si l'appelant n'est pas pharmacien.
  */
-export async function getPrescriptionsADelivrer(recherche?: string): Promise<PrescriptionResume[]> {
+export async function getTableauDeBordPharmacie(): Promise<TableauDeBordPharmacie | null> {
   const session = await getSession();
 
-  if (!session || !session.roles.includes("pharmacien")) {
-    return [];
+  if (!session || !session.roles.includes("pharmacien") || !can("pharmacien", "read", "delivrance")) {
+    return null;
   }
 
-  const prescriptions = await prisma.prescription.findMany({
-    where: { statut: { in: [...STATUTS_EN_ATTENTE_DE_DELIVRANCE] } },
-    include: {
-      consultation: true,
-      patient: { include: { user: true } },
-      lignes: { include: { medicament: true } },
-    },
-    orderBy: { date: "asc" },
-  });
+  const professionnel = await professionnelDeLaSessionCourante();
 
-  const termeRecherche = recherche?.trim().toLowerCase();
+  if (!professionnel) {
+    return null;
+  }
 
-  const prescriptionsFiltrees = termeRecherche
-    ? prescriptions.filter((prescription) => {
-        const patient = prescription.patient;
-        const nomComplet = `${patient.user.prenom} ${patient.user.nom}`.toLowerCase();
-        return (
-          nomComplet.includes(termeRecherche) ||
-          patient.identifiantSante.toLowerCase().includes(termeRecherche)
-        );
-      })
-    : prescriptions;
+  const maintenant = new Date();
+  const premiereDatePossible = new Date(maintenant.getTime() - JOURS_VALIDITE_ORDONNANCE * 24 * 60 * 60 * 1000);
+  const etablissementId = professionnel.etablissementId;
 
-  return prescriptionsFiltrees.map((prescription) =>
-    versPrescriptionResume(prescription, {
-      medecinNomComplet: null,
+  const [partielles, delivrancesDuJour] = await Promise.all([
+    prisma.prescription.findMany({
+      where: {
+        statut: "delivree_partiellement",
+        date: { gte: premiereDatePossible },
+        delivrances: { some: { etablissementId, annulee: false } },
+      },
+      select: {
+        id: true,
+        numero: true,
+        date: true,
+        patient: { select: { user: { select: { nom: true, prenom: true } } } },
+        lignes: {
+          select: {
+            quantite: true,
+            medicament: { select: { nom: true } },
+            lignesDelivrees: {
+              where: { delivrance: { annulee: false } },
+              select: { quantiteDelivree: true },
+            },
+          },
+        },
+        delivrances: {
+          where: { etablissementId, annulee: false },
+          orderBy: { date: "desc" },
+          take: 1,
+          select: { date: true },
+        },
+      },
+      orderBy: { date: "asc" },
+    }),
+    prisma.delivrance.findMany({
+      where: {
+        etablissementId,
+        date: { gte: debutJourBenin(maintenant), lt: debutJourSuivantBenin(maintenant) },
+      },
+      select: {
+        id: true,
+        date: true,
+        annulee: true,
+        prescription: { select: { numero: true, statut: true } },
+        _count: { select: { lignes: true } },
+      },
+      orderBy: { date: "desc" },
+    }),
+  ]);
+
+  return {
+    partielles: partielles.map((prescription) => ({
+      id: prescription.id,
+      numero: prescription.numero,
       patientNomComplet: nomComplet(prescription.patient.user),
-      patientIdentifiantSante: prescription.patient.identifiantSante,
-      // F-PRE-05 : le pharmacien n'annule ni n'arrete une prescription (reserve
-      // au medecin auteur), seulement la delivrance elle-meme (voir plus bas).
-      peutEtreAnnulee: false,
-      peutEtreArretee: false,
-    })
-  );
+      dateFinValiditeISO: dateFinValiditeOrdonnance(prescription.date).toISOString(),
+      derniereDelivranceISO: (prescription.delivrances[0]?.date ?? prescription.date).toISOString(),
+      lignesManquantes: prescription.lignes
+        .map((ligne) => ({
+          medicamentNom: ligne.medicament.nom,
+          quantiteRestante:
+            ligne.quantite - ligne.lignesDelivrees.reduce((somme, livree) => somme + livree.quantiteDelivree, 0),
+        }))
+        .filter((ligne) => ligne.quantiteRestante > 0),
+    })),
+    delivrancesDuJour: delivrancesDuJour.map((delivrance) => ({
+      id: delivrance.id,
+      heureISO: delivrance.date.toISOString(),
+      numeroOrdonnance: delivrance.prescription.numero,
+      nombreLignes: delivrance._count.lignes,
+      statutOrdonnance: delivrance.prescription.statut,
+      annulee: delivrance.annulee,
+    })),
+  };
 }
 
 /** Etat renvoye par rechercherOrdonnancePresenteeAction, consomme via useActionState. */
@@ -1743,6 +1831,8 @@ export interface RechercheOrdonnanceActionState {
   error: string | null;
   success: boolean;
   prescriptionId?: string;
+  // Preuve de presentation (presentation.ts) : a transmettre a l'ecran de delivrance.
+  jeton?: string;
 }
 
 const schemaRechercheOrdonnance = z.object({
@@ -1766,13 +1856,12 @@ const MESSAGE_ORDONNANCE_INTROUVABLE =
  * 42, hors perimetre ce soir) ni l'ASSIGNMENT persistant "pharmacie <->
  * ordonnance" de 30 jours du pack (demanderait un nouveau modele Prisma, le
  * schema est deja en pleine activite concurrente ce soir, migration
- * analytics F-PIL-07). Se contente de resoudre l'identifiant de prescription,
- * le pharmacien continue ensuite sur l'ecran de delivrance existant
- * (getDetailPrescriptionPourDelivrance ci-dessous, deja ouvert a n'importe
- * quel pharmacien sans restriction d'etablissement, et qui ne charge jamais
- * la consultation ni son motif : RG-PHA-02 du pack, "jamais le diagnostic, ni
- * les autres ordonnances du patient", est deja respecte par cet ecran
- * existant, rien a y changer).
+ * analytics F-PIL-07). Resout l'identifiant de prescription et delivre un
+ * jeton de presentation signe (presentation.ts), sans lequel l'ecran de
+ * delivrance (getDetailPrescriptionPourDelivrance) et la delivrance elle-meme
+ * restent fermes a cette pharmacie tant qu'elle n'a rien delivre sur cette
+ * ordonnance. Ni la consultation ni son motif ne sont jamais charges
+ * (RG-PHA-02 du pack).
  *
  * RG-PHA-01 : 5 essais par pharmacien et par heure. Throttling par comptage
  * des echecs recents dans JournalAudit (action "recherche_ordonnance_echec")
@@ -1857,7 +1946,12 @@ export async function rechercherOrdonnancePresenteeAction(
     justification: `Ordonnance ${prescription.numero} retrouvee par numero et annee de naissance (patient presente au comptoir).`,
   });
 
-  return { error: null, success: true, prescriptionId: prescription.id };
+  return {
+    error: null,
+    success: true,
+    prescriptionId: prescription.id,
+    jeton: creerJetonPresentation(session.userId, prescription.id),
+  };
 }
 
 /**
@@ -1875,7 +1969,8 @@ export async function rechercherOrdonnancePresenteeAction(
  * l'utilisateur connecte n'est pas un pharmacien.
  */
 export async function getDetailPrescriptionPourDelivrance(
-  prescriptionId: string
+  prescriptionId: string,
+  jeton?: string
 ): Promise<DetailPrescriptionPourDelivrance | null> {
   const session = await getSession();
 
@@ -1899,6 +1994,8 @@ export async function getDetailPrescriptionPourDelivrance(
     where: { id: identifiantNettoye },
     include: {
       patient: { include: { user: true } },
+      medecinPrescripteur: { include: { user: true } },
+      consultation: { select: { etablissement: { select: { nom: true } } } },
       lignes: { include: { medicament: true } },
       delivrances: {
         include: {
@@ -1916,6 +2013,15 @@ export async function getDetailPrescriptionPourDelivrance(
   });
 
   if (!prescription) {
+    return null;
+  }
+
+  // RG-PHA-02 : ouverte seulement si l'ordonnance a ete presentee a ce pharmacien
+  // (jeton signe de la recherche) ou si sa pharmacie a deja delivre dessus.
+  const dejaServieIci = prescription.delivrances.some(
+    (delivrance) => delivrance.etablissementId === professionnel.etablissementId
+  );
+  if (!dejaServieIci && !jetonPresentationValide(jeton, session.userId, prescription.id)) {
     return null;
   }
 
@@ -2002,7 +2108,13 @@ export async function getDetailPrescriptionPourDelivrance(
     date: prescription.date.toISOString(),
     instructions: prescription.instructions,
     patientNomComplet: nomComplet(prescription.patient.user),
-    patientIdentifiantSante: prescription.patient.identifiantSante,
+    patientAgeAnnees: ageAnnees(prescription.patient.dateNaissance, new Date()),
+    patientSexe: prescription.patient.sexe,
+    patientAllergies: parseListeJSON(prescription.patient.allergies),
+    prescripteurNomComplet: nomCompletProfessionnel(prescription.medecinPrescripteur.user),
+    prescripteurEtablissementNom: prescription.consultation.etablissement.nom,
+    dateFinValiditeISO: dateFinValiditeOrdonnance(prescription.date).toISOString(),
+    expiree: ordonnanceExpiree(prescription.date, new Date()),
     lignes,
     delivrances,
   };
@@ -2092,11 +2204,25 @@ export async function delivrerPrescriptionAction(
         include: {
           patient: { include: { user: true } },
           lignes: { include: { medicament: true } },
+          delivrances: { where: { etablissementId: professionnel.etablissementId }, select: { id: true }, take: 1 },
         },
       });
 
       if (!prescriptionActuelle) {
         return { ok: false as const, error: "Cette prescription est introuvable." };
+      }
+
+      // RG-PHA-02 : pas de delivrance sur une ordonnance qui n'a pas ete presentee a
+      // cette pharmacie (jeton de la recherche) et sur laquelle elle n'a rien delivre.
+      if (
+        prescriptionActuelle.delivrances.length === 0 &&
+        !jetonPresentationValide(texte(formData, "jeton"), session.userId, prescriptionActuelle.id)
+      ) {
+        return {
+          ok: false as const,
+          error:
+            "Cette ordonnance n'a pas ete presentee a cette pharmacie : retrouvez-la avec son numero et l'annee de naissance du patient.",
+        };
       }
 
       // RG-PHA-10 : message distinct selon l'etat bloquant reel.
@@ -2569,8 +2695,8 @@ const PLAGE_INVALIDE: ResultatHistoriqueDelivrances = { acces: true, plageInvali
 /**
  * Historique des delivrances de la pharmacie du pharmacien connecte
  * (F-PHA-04 du pack), filtrable par periode et par medicament. Contrairement
- * a getPrescriptionsADelivrer/getDetailPrescriptionPourDelivrance (ouverts a
- * tout pharmacien, n'importe quelle pharmacie), cette vue est explicitement
+ * a la recherche par numero (n'importe quelle pharmacie peut retrouver une
+ * ordonnance presentee), cette vue est explicitement
  * scopee a l'etablissement du pharmacien connecte ("de SA pharmacie", texte
  * du pack) : Zero Trust, l'etablissement est toujours derive de sa fiche
  * ProfessionnelSante, jamais d'un identifiant transmis par le client.

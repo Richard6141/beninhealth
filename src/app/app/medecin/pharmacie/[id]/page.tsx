@@ -11,6 +11,7 @@ import { HistoriqueDelivrances } from "./HistoriqueDelivrances";
 
 interface DetailDelivrancePageProps {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ jeton?: string | string[] }>;
 }
 
 const STATUTS_PERMETTANT_UNE_DELIVRANCE = ["validee", "delivree_partiellement"];
@@ -40,15 +41,17 @@ function formaterDateHeure(date: string): string {
  * getDetailPrescriptionPourDelivrance fait de toute facon la meme
  * verification cote Server Action (Zero Trust).
  */
-export default async function DetailDelivrancePage({ params }: DetailDelivrancePageProps) {
+export default async function DetailDelivrancePage({ params, searchParams }: DetailDelivrancePageProps) {
   const { id } = await params;
+  const { jeton: jetonBrut } = await searchParams;
+  const jeton = Array.isArray(jetonBrut) ? jetonBrut[0] : jetonBrut;
   const session = await getSession();
 
   if (!session || !session.roles.includes("pharmacien")) {
     redirect("/app/medecin");
   }
 
-  const detail = await getDetailPrescriptionPourDelivrance(id);
+  const detail = await getDetailPrescriptionPourDelivrance(id, jeton);
 
   if (!detail) {
     return (
@@ -61,14 +64,15 @@ export default async function DetailDelivrancePage({ params }: DetailDelivranceP
           Retour aux prescriptions à délivrer
         </Link>
         <Alert level="critical" title="Prescription introuvable">
-          Cette prescription est introuvable, ou n&apos;est pas accessible depuis ce compte.
+          Cette prescription est introuvable, ou ne vous a pas été présentée : retrouvez-la avec son numéro et
+          l&apos;année de naissance du patient.
         </Alert>
       </div>
     );
   }
 
   const statut = libelleEtTonStatut(detail.statut);
-  const peutDelivrer = STATUTS_PERMETTANT_UNE_DELIVRANCE.includes(detail.statut);
+  const peutDelivrer = STATUTS_PERMETTANT_UNE_DELIVRANCE.includes(detail.statut) && !detail.expiree;
 
   return (
     <div className="mx-auto flex w-full max-w-[1100px] flex-col gap-8 px-4 py-8 sm:px-6 lg:px-8">
@@ -89,20 +93,34 @@ export default async function DetailDelivrancePage({ params }: DetailDelivranceP
           <Badge tone={statut.tone}>{statut.texte}</Badge>
         </div>
         <p className="text-[13px] text-encre-attenuee">
-          {detail.patientIdentifiantSante} · Prescrite le {formaterDateHeure(detail.date)}
+          {detail.patientAgeAnnees} ans · {detail.patientSexe === "F" ? "Femme" : detail.patientSexe === "M" ? "Homme" : detail.patientSexe}
+        </p>
+        <p className="text-[13px] text-encre-attenuee">
+          Prescrite le {formaterDateHeure(detail.date)} par {detail.prescripteurNomComplet} ({detail.prescripteurEtablissementNom}) · valable
+          jusqu&apos;au {new Date(detail.dateFinValiditeISO).toLocaleDateString("fr-FR", { dateStyle: "long" })}
         </p>
         {detail.instructions ? (
           <p className="max-w-2xl text-[14px] text-encre-secondaire">{detail.instructions}</p>
         ) : null}
       </header>
 
+      {detail.patientAllergies.length > 0 ? (
+        <Alert level="critical" title="Allergies médicamenteuses déclarées">
+          {detail.patientAllergies.join(", ")}
+        </Alert>
+      ) : null}
+
       {peutDelivrer ? (
-        <FormulaireDelivrance prescriptionId={detail.id} lignes={detail.lignes} />
+        <FormulaireDelivrance prescriptionId={detail.id} lignes={detail.lignes} jeton={jeton} />
       ) : (
         <Alert level="info" title="Aucune nouvelle délivrance possible">
-          {detail.statut === "delivree"
-            ? "Cette prescription a déjà été entièrement délivrée."
-            : "Cette prescription est annulée et ne peut pas être délivrée."}
+          {detail.expiree
+            ? "Cette ordonnance a dépassé sa durée de validité et ne peut plus être délivrée."
+            : detail.statut === "delivree"
+              ? "Cette prescription a déjà été entièrement délivrée."
+              : detail.statut === "arretee"
+                ? "Cette prescription a été arrêtée par le médecin et ne peut plus être délivrée."
+                : "Cette prescription est annulée et ne peut pas être délivrée."}
         </Alert>
       )}
 

@@ -17,6 +17,7 @@ vi.mock("@/lib/prisma", () => {
   return { prisma };
 });
 
+vi.mock("@/lib/env", () => ({ getEnv: vi.fn(() => ({ NEXTAUTH_SECRET: "secret-de-test" })) }));
 vi.mock("@/lib/session", () => ({ getSession: vi.fn() }));
 vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers()) }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -140,7 +141,11 @@ describe("statuts d'une ordonnance (F-PRE-05)", () => {
     });
 
     it("refuse de delivrer une ordonnance arretee, avec un message qui le dit", async () => {
-      p.prescription.findUnique.mockResolvedValue({ ...prescription("arretee"), lignes: [] });
+      p.prescription.findUnique.mockResolvedValue({
+        ...prescription("arretee"),
+        lignes: [],
+        delivrances: [{ id: "deliv-anterieure" }],
+      });
 
       const resultat = await delivrerPrescriptionAction(
         etatInitial,
