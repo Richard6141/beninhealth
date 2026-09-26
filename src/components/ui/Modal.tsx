@@ -68,12 +68,12 @@ export const Modal = forwardRef<ModalHandle, ModalProps>(function Modal(
       aria-labelledby={titleId}
       onClick={handleBackdropClick}
       className={cn(
-        "m-auto overflow-hidden rounded-carte border border-bordure bg-surface p-0 text-encre shadow-[var(--ombre-carte)] backdrop:bg-encre/40",
+        "m-auto overflow-hidden rounded-flottant border border-bordure bg-surface p-0 text-encre shadow-[var(--ombre-carte)] backdrop:bg-encre/40",
         width === "narrow" ? "w-full max-w-sm" : "w-full max-w-2xl",
         variant === "drawer-right" &&
-          "anim-tiroir-droite m-0 ml-auto h-dvh max-h-dvh w-full max-w-sm rounded-none rounded-l-carte",
+          "anim-tiroir-droite m-0 ml-auto h-dvh max-h-dvh w-full max-w-sm rounded-none rounded-l-flottant",
         variant === "drawer-bottom" &&
-          "anim-tiroir-bas m-0 mt-auto h-auto max-h-[80dvh] w-full max-w-none rounded-none rounded-t-carte"
+          "anim-tiroir-bas m-0 mt-auto h-auto max-h-[80dvh] w-full max-w-none rounded-none rounded-t-flottant"
       )}
     >
       <div className="flex items-center justify-between gap-4 bg-marine p-4 sm:p-6">
@@ -92,7 +92,7 @@ export const Modal = forwardRef<ModalHandle, ModalProps>(function Modal(
           aria-label="Fermer"
           onClick={() => dialogRef.current?.close()}
           className={cn(
-            "flex h-9 w-9 shrink-0 items-center justify-center rounded-champ bg-white/10 text-white transition-colors motion-reduce:transition-none hover:bg-white/20",
+            "flex h-9 w-9 shrink-0 items-center justify-center rounded-carte bg-white/10 text-white transition-colors motion-reduce:transition-none hover:bg-white/20",
             "focus-visible:outline-2 focus-visible:outline-white focus-visible:outline-offset-2"
           )}
         >

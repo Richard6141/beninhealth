@@ -79,7 +79,7 @@ export function AvatarMenu({ nom, avatarUrl, identifiant, logoutAction }: Avatar
         <div
           role="menu"
           aria-label="Menu du compte"
-          className="absolute right-0 z-20 mt-2 w-56 overflow-hidden rounded-champ border border-bordure bg-surface py-1.5 shadow-[var(--ombre-carte)]"
+          className="absolute right-0 z-20 mt-2 w-56 overflow-hidden rounded-flottant border border-bordure bg-surface py-1.5 shadow-[var(--ombre-carte)]"
         >
           <div className="border-b border-bordure px-3.5 py-2.5">
             <p className="truncate text-[14px] font-semibold text-encre">{nom}</p>

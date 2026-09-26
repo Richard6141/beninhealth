@@ -54,7 +54,7 @@ export function Alert({
     <div
       role={level === "critical" ? "alert" : "status"}
       className={cn(
-        "alerte porte-couleur rounded-champ border px-4 py-3",
+        "alerte porte-couleur rounded-carte border px-4 py-3",
         config.container,
         className
       )}
@@ -63,7 +63,7 @@ export function Alert({
       <div className="flex flex-wrap items-baseline gap-2">
         <span
           className={cn(
-            "inline-block rounded-[calc(var(--radius-champ)-4px)] border px-1.5 py-0.5 text-[12px] font-semibold tracking-[0.06em]",
+            "inline-block rounded-badge border px-1.5 py-0.5 text-[12px] font-semibold tracking-[0.06em]",
             config.tag
           )}
         >

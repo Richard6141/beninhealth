@@ -19,7 +19,7 @@ const variantClasses: Record<ButtonVariant, string> = {
   primary: "bg-marine text-white hover:bg-marine-fonce",
   secondary:
     "border border-bordure-forte bg-surface text-encre hover:bg-surface-appui",
-  ghost: "border border-transparent bg-transparent text-accent hover:bg-accent-clair",
+  ghost: "border border-transparent bg-transparent text-marine hover:bg-marine-clair",
   danger:
     "border border-critique bg-transparent text-critique hover:bg-critique-clair",
 };
@@ -45,8 +45,8 @@ export function Button({
       type="button"
       disabled={disabled}
       className={cn(
-        "inline-flex items-center justify-center rounded-champ font-semibold transition-colors motion-reduce:transition-none",
-        "focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2",
+        "inline-flex items-center justify-center rounded-carte font-semibold transition-colors motion-reduce:transition-none",
+        "focus-visible:outline-2 focus-visible:outline-marine focus-visible:outline-offset-2",
         "disabled:cursor-not-allowed disabled:opacity-50",
         variantClasses[variant],
         sizeClasses[size],

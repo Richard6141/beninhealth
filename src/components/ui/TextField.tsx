@@ -65,7 +65,7 @@ export function TextField({
           aria-invalid={Boolean(error) || undefined}
           className={cn(
             "h-11 w-full rounded-champ border bg-surface px-3 text-[16px] text-encre transition-colors motion-reduce:transition-none placeholder:text-encre-attenuee",
-            "focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2",
+            "focus-visible:outline-2 focus-visible:outline-marine focus-visible:outline-offset-2",
             unit ? "pr-12" : undefined,
             error ? "border-critique" : "border-bordure-forte",
             className

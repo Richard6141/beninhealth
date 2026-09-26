@@ -6,6 +6,7 @@ export type BadgeTone =
   | "accent"
   | "good"
   | "warning"
+  | "alert"
   | "critical"
   | "info";
 
@@ -20,6 +21,7 @@ const toneClasses: Record<BadgeTone, string> = {
   accent: "bg-accent text-white",
   good: "bg-bon text-white",
   warning: "bg-vigilance text-white",
+  alert: "bg-alerte text-white",
   critical: "bg-critique text-white",
   info: "bg-info text-white",
 };
@@ -33,7 +35,7 @@ export function Badge({
   return (
     <span
       className={cn(
-        "badge porte-couleur inline-flex items-center rounded-champ px-2.5 py-0.5 text-[12px] font-semibold leading-5",
+        "badge porte-couleur inline-flex items-center rounded-badge px-2.5 py-0.5 text-[12px] font-semibold leading-5",
         toneClasses[tone],
         className
       )}

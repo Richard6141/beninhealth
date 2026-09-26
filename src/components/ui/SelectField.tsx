@@ -80,7 +80,7 @@ export function SelectField({
           }
           className={cn(
             "h-11 w-full appearance-none rounded-champ border bg-surface px-3 pr-10 text-[16px] text-encre transition-colors motion-reduce:transition-none",
-            "focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2",
+            "focus-visible:outline-2 focus-visible:outline-marine focus-visible:outline-offset-2",
             error ? "border-critique" : "border-bordure-forte",
             className
           )}

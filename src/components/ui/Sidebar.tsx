@@ -68,26 +68,35 @@ export function Sidebar({ items }: SidebarProps) {
 
   const contenuNavigation = (
     <>
-      <div className="flex items-center justify-between px-2">
-        <Link href="/" className="flex items-center">
-          <Image
-            src="/image.png"
-            alt="Ministere de la Sante, Republique du Benin"
-            width={141}
-            height={40}
-            className="h-14 w-auto"
-            priority
-          />
-        </Link>
-        <button
-          type="button"
-          onClick={() => setOuvert(false)}
-          aria-label="Fermer le menu"
-          title="Fermer le menu"
-          className="flex h-9 w-9 items-center justify-center rounded-champ text-encre-secondaire hover:bg-surface-appui hover:text-encre focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 md:hidden"
-        >
-          <X size={20} aria-hidden="true" />
-        </button>
+      <div className="flex flex-col gap-2 px-2 pb-3">
+        <div className="flex items-center justify-between">
+          <Link href="/" className="flex items-center">
+            <Image
+              src="/image.png"
+              alt="Ministere de la Sante, Republique du Benin"
+              width={141}
+              height={40}
+              className="h-14 w-auto"
+              priority
+            />
+          </Link>
+          <button
+            type="button"
+            onClick={() => setOuvert(false)}
+            aria-label="Fermer le menu"
+            title="Fermer le menu"
+            className="flex h-9 w-9 items-center justify-center rounded-carte text-encre-secondaire hover:bg-surface-appui hover:text-encre focus-visible:outline-2 focus-visible:outline-marine focus-visible:outline-offset-2 md:hidden"
+          >
+            <X size={20} aria-hidden="true" />
+          </button>
+        </div>
+        {/* Filet tricolore du bloc d'identite du ministere : seul usage
+            autorise des couleurs du drapeau, jamais en bandeau ni accent. */}
+        <div className="flex h-[3px] w-full overflow-hidden rounded-badge">
+          <span className="flex-1 bg-drapeau-vert" />
+          <span className="flex-1 bg-drapeau-jaune" />
+          <span className="flex-1 bg-drapeau-rouge" />
+        </div>
       </div>
 
       <nav aria-label="Navigation principale" className="flex flex-col gap-1">
@@ -100,8 +109,8 @@ export function Sidebar({ items }: SidebarProps) {
               href={item.href}
               aria-current={actif ? "page" : undefined}
               className={cn(
-                "flex items-center gap-3 rounded-champ px-3 py-2.5 text-[14px] font-semibold transition-colors motion-reduce:transition-none",
-                "focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2",
+                "flex items-center gap-3 rounded-carte px-3 py-2.5 text-[12px] font-semibold uppercase tracking-[0.06em] transition-colors motion-reduce:transition-none",
+                "focus-visible:outline-2 focus-visible:outline-marine focus-visible:outline-offset-2",
                 actif
                   ? "bg-marine text-white"
                   : "text-encre-secondaire hover:bg-surface-appui hover:text-encre"
@@ -124,7 +133,7 @@ export function Sidebar({ items }: SidebarProps) {
         onClick={() => setOuvert(true)}
         aria-label="Ouvrir le menu de navigation"
         title="Ouvrir le menu de navigation"
-        className="sans-impression fixed left-4 top-3 z-30 flex h-10 w-10 items-center justify-center rounded-champ border border-bordure-forte bg-surface text-encre shadow-[var(--ombre-carte)] focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 md:hidden"
+        className="sans-impression fixed left-4 top-3 z-30 flex h-10 w-10 items-center justify-center rounded-carte border border-bordure-forte bg-surface text-encre shadow-[var(--ombre-carte)] focus-visible:outline-2 focus-visible:outline-marine focus-visible:outline-offset-2 md:hidden"
       >
         <Menu size={20} aria-hidden="true" />
       </button>

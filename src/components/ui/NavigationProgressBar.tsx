@@ -8,9 +8,10 @@ export interface NavigationProgressBarProps {
 }
 
 /**
- * Filet de 3px en haut d'écran, dégradé turquoise avec reflet animé : se
- * déclenche au clic sur un lien interne et se termine dès que la page
- * affichée a changé (branchement au routing laissé à une étape ultérieure).
+ * Filet de 3px en haut d'écran, aplat marine (aucun dégradé, voir la
+ * charte) : se déclenche au clic sur un lien interne et se termine dès que
+ * la page affichée a changé (branchement au routing laissé à une étape
+ * ultérieure).
  */
 export function NavigationProgressBar({
   progress = 70,
@@ -29,11 +30,9 @@ export function NavigationProgressBar({
       )}
     >
       <div
-        className="relative h-full overflow-hidden bg-gradient-to-r from-marque-turquoise to-marque-turquoise-fonce transition-[width] duration-[600ms] ease-[cubic-bezier(0.22,0.61,0.36,1)] motion-reduce:transition-none"
+        className="h-full bg-marine transition-[width] duration-[600ms] ease-[cubic-bezier(0.22,0.61,0.36,1)] motion-reduce:transition-none"
         style={{ width: `${clamped}%` }}
-      >
-        <div className="anim-reflet-nav absolute inset-y-0 left-0 w-1/3 bg-gradient-to-r from-transparent via-white/70 to-transparent" />
-      </div>
+      />
     </div>
   );
 }

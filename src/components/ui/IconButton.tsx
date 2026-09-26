@@ -25,8 +25,8 @@ export function IconButton({
       aria-label={label}
       disabled={disabled}
       className={cn(
-        "inline-flex h-9 w-9 items-center justify-center rounded-champ border border-bordure-forte bg-surface text-encre-secondaire transition-colors motion-reduce:transition-none",
-        "focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2",
+        "inline-flex h-9 w-9 items-center justify-center rounded-carte border border-bordure-forte bg-surface text-encre-secondaire transition-colors motion-reduce:transition-none",
+        "focus-visible:outline-2 focus-visible:outline-marine focus-visible:outline-offset-2",
         "disabled:cursor-not-allowed disabled:opacity-50",
         danger
           ? "hover:border-critique hover:bg-critique-clair hover:text-critique"

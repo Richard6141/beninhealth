@@ -57,7 +57,7 @@ export function Tabs({ items, defaultActiveId, label, className }: TabsProps) {
       <div
         role="tablist"
         aria-label={label}
-        className="inline-flex items-center gap-1 rounded-champ bg-surface-appui p-1"
+        className="flex items-center gap-6 border-b border-bordure"
       >
         {items.map((item, index) => {
           const selected = item.id === activeItem?.id;
@@ -76,11 +76,11 @@ export function Tabs({ items, defaultActiveId, label, className }: TabsProps) {
               onClick={() => setActiveId(item.id)}
               onKeyDown={(event) => handleKeyDown(event, index)}
               className={cn(
-                "rounded-[calc(var(--radius-champ)-4px)] px-3 py-1.5 text-[13px] font-semibold transition-colors motion-reduce:transition-none",
-                "focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2",
+                "-mb-px border-b-2 px-1 py-2.5 text-[12px] font-semibold uppercase tracking-[0.06em] transition-colors motion-reduce:transition-none",
+                "focus-visible:outline-2 focus-visible:outline-marine focus-visible:outline-offset-2",
                 selected
-                  ? "bg-surface text-accent shadow-[var(--ombre-carte)]"
-                  : "text-encre-attenuee hover:text-encre"
+                  ? "border-marine text-marine"
+                  : "border-transparent text-encre-attenuee hover:text-encre"
               )}
             >
               {item.label}
