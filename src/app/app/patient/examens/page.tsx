@@ -75,7 +75,7 @@ function CarteExamen({ examen }: { examen: ExamenResume }) {
 
         <div className="flex flex-col gap-1">
           <p className="text-[13px] font-semibold text-encre-secondaire">
-            Resultat
+            {examen.versionResultat > 1 ? `Resultat (version corrigee ${examen.versionResultat})` : "Resultat"}
           </p>
           {estTermine && examen.sensible && !examen.resultatAnnonceAuPatient ? (
             <p className="text-[13px] text-encre-attenuee">

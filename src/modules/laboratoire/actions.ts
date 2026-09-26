@@ -118,6 +118,21 @@ export interface ExamenResume {
   // laboratoire (rien de sensible ici, comme le prelevement ci-dessus).
   niveauUrgence: string; // "normal" | "urgent"
   aJeunRequis: boolean;
+  // F-LAB-04 / RG-ROL-31 : numero de la version courante du resultat (1 tant
+  // qu'aucune correction d'un resultat valide n'a eu lieu), visible de tous.
+  versionResultat: number;
+  // Versions validees remplacees par une correction (motif compris). Renseigne
+  // uniquement pour une lecture cote laboratoire, null ailleurs : le medecin et
+  // le patient voient la version courante, jamais l'historique interne.
+  versionsPrecedentes: VersionPrecedenteResume[] | null;
+}
+
+/** Une version validee remplacee par une correction (RG-ROL-31), lecture laboratoire. */
+export interface VersionPrecedenteResume {
+  numero: number;
+  resultat: string | null;
+  motifCorrection: string;
+  dateCorrection: string; // ISO
 }
 
 /** Types d'acces de consentement autorisant un professionnel a demander un examen. */
@@ -195,6 +210,16 @@ const schemaValidationResultat = z.object({
 const schemaCorrectionResultat = z.object({
   examenId: z.string().trim().min(1, "L'examen est obligatoire."),
   commentaire: z.string().trim().min(1, "Le motif du renvoi pour correction est obligatoire."),
+});
+
+const schemaCorrectionResultatValide = z.object({
+  examenId: z.string().trim().min(1, "L'examen est obligatoire."),
+  motif: z
+    .string()
+    .trim()
+    .min(10, "Le motif de la correction est obligatoire (10 caracteres minimum).")
+    .max(500, "Le motif ne peut pas depasser 500 caracteres."),
+  motDePasse: z.string().min(1, "Votre mot de passe est obligatoire pour confirmer."),
 });
 
 /** Adresse technique d'origine de la requete courante, pour le JournalAudit. */
@@ -323,6 +348,7 @@ function versExamenResume(
     motifRejetEchantillon: string | null;
     niveauUrgence: string;
     aJeunRequis: boolean;
+    versionResultat: number;
   },
   options: {
     patientNomComplet: string | null;
@@ -333,6 +359,7 @@ function versExamenResume(
     saisiParNomComplet?: string | null;
     valideParNomComplet?: string | null;
     commentaireValidation?: string | null;
+    versionsPrecedentes?: VersionPrecedenteResume[] | null;
   }
 ): ExamenResume {
   return {
@@ -361,6 +388,8 @@ function versExamenResume(
     motifRejetEchantillon: examen.motifRejetEchantillon,
     niveauUrgence: examen.niveauUrgence,
     aJeunRequis: examen.aJeunRequis,
+    versionResultat: examen.versionResultat,
+    versionsPrecedentes: options.versionsPrecedentes ?? null,
   };
 }
 
@@ -802,6 +831,7 @@ export async function getExamensPourLaboratoire(): Promise<ExamenResume[]> {
       laboratoire: true,
       saisiPar: { include: { user: true } },
       validePar: { include: { user: true } },
+      versionsResultat: { orderBy: { numero: "asc" } },
     },
     orderBy: { date: "asc" },
   });
@@ -826,6 +856,12 @@ export async function getExamensPourLaboratoire(): Promise<ExamenResume[]> {
       saisiParNomComplet: examen.saisiPar ? nomComplet(examen.saisiPar.user) : null,
       valideParNomComplet: examen.validePar ? nomComplet(examen.validePar.user) : null,
       commentaireValidation: examen.commentaireValidation,
+      versionsPrecedentes: examen.versionsResultat.map((version) => ({
+        numero: version.numero,
+        resultat: version.resultat,
+        motifCorrection: version.motifCorrection,
+        dateCorrection: version.dateCorrection.toISOString(),
+      })),
     })
   );
 }
@@ -1422,7 +1458,9 @@ export async function validerResultatExamenAction(
       creerNotification(
         examenValide.demandeur.userId,
         "resultat_examen_disponible",
-        "Le resultat d'un examen que vous avez demande est disponible.",
+        examenValide.versionResultat > 1
+          ? `La version corrigee (version ${examenValide.versionResultat}) du resultat d'un examen que vous avez demande est disponible.`
+          : "Le resultat d'un examen que vous avez demande est disponible.",
         "/app/medecin/examens",
         { codeCatalogue: "N-LAB-RESULT-PRO" }
       ),
@@ -1563,6 +1601,150 @@ export async function renvoyerPourCorrectionAction(
     console.error("Erreur lors du renvoi pour correction de l'examen medical :", erreur);
     return {
       error: "Une erreur est survenue lors du renvoi pour correction. Veuillez reessayer.",
+      success: false,
+    };
+  }
+}
+
+/**
+ * Corrige un resultat DEJA VALIDE (F-LAB-04, RG-ROL-31 du pack) : un resultat
+ * valide n'est jamais modifie sur place. La version validee est archivee,
+ * figee, dans VersionResultatExamen (valeurs, empreinte, validateur, motif de
+ * la correction, auteur), puis l'examen repasse a "correction_demandee" avec le
+ * numero de version incremente : le flux habituel de resaisie puis de
+ * validation par un AUTRE professionnel (quatre yeux) produit la nouvelle
+ * version. Pendant la correction le resultat n'est plus visible hors du
+ * laboratoire (RG-LAB-30) ; le prescripteur en est averti tout de suite pour
+ * ne plus s'y fier, et une deuxieme fois quand la version corrigee est
+ * validee. Un examen sensible perd son statut "annonce" : le medecin doit
+ * annoncer de nouveau la version corrigee. Mot de passe exige, comme pour la
+ * validation.
+ */
+export async function corrigerResultatValideAction(
+  prevState: LaboratoireActionState,
+  formData: FormData
+): Promise<LaboratoireActionState> {
+  const session = await getSession();
+
+  if (!session) {
+    return { error: "Session expiree. Veuillez vous reconnecter.", success: false };
+  }
+
+  if (!session.roles.some((role) => can(role, "create", "validation_examen"))) {
+    return { error: "Action reservee au role laboratoire.", success: false };
+  }
+
+  const validation = schemaCorrectionResultatValide.safeParse({
+    examenId: texte(formData, "examenId"),
+    motif: texte(formData, "motif"),
+    motDePasse: texte(formData, "motDePasse"),
+  });
+
+  if (!validation.success) {
+    return {
+      error: premierMessageErreur(validation.error, "Donnees de correction invalides."),
+      success: false,
+    };
+  }
+
+  const { examenId, motif, motDePasse } = validation.data;
+
+  try {
+    const utilisateur = await prisma.user.findUnique({ where: { id: session.userId } });
+
+    if (!utilisateur) {
+      return { error: "Compte introuvable.", success: false };
+    }
+
+    if (!(await bcrypt.compare(motDePasse, utilisateur.motDePasseHash))) {
+      return { error: "Mot de passe incorrect.", success: false };
+    }
+
+    const professionnel = await prisma.professionnelSante.findUnique({
+      where: { userId: session.userId },
+    });
+
+    if (!professionnel) {
+      return { error: "Aucun profil professionnel associe a ce compte.", success: false };
+    }
+
+    const adresseTechnique = await adresseTechniqueCourante();
+
+    const resultatTransaction = await prisma.$transaction(async (tx) => {
+      const examen = await tx.examenMedical.findUnique({
+        where: { id: examenId },
+        include: { demandeur: true },
+      });
+
+      if (!examen || examen.laboratoireId !== professionnel.etablissementId) {
+        return { error: "Cet examen est introuvable.", examen: null };
+      }
+
+      if (examen.statut !== "termine") {
+        return { error: "Seul un resultat deja valide peut etre corrige de cette facon.", examen: null };
+      }
+
+      await tx.versionResultatExamen.create({
+        data: {
+          examenId: examen.id,
+          numero: examen.versionResultat,
+          resultat: examen.resultat,
+          resultatsParametres: (examen.resultatsParametres as unknown as Prisma.InputJsonValue | null) ?? undefined,
+          empreinteResultat: examen.empreinteResultat,
+          saisiParId: examen.saisiParId,
+          valideParId: examen.valideParId,
+          dateValidation: examen.dateValidation,
+          motifCorrection: motif,
+          corrigeParId: professionnel.id,
+        },
+      });
+
+      await tx.examenMedical.update({
+        where: { id: examen.id },
+        data: {
+          statut: "correction_demandee",
+          versionResultat: examen.versionResultat + 1,
+          valideParId: null,
+          dateValidation: null,
+          empreinteResultat: null,
+          commentaireValidation: `Correction d'un resultat valide : ${motif}`,
+          ...(examen.sensible ? { resultatAnnonceAuPatient: false } : {}),
+        },
+      });
+
+      await journaliser(
+        {
+          utilisateurId: session.userId,
+          action: "correction_resultat_valide",
+          donneeConcernee: `examen_medical:${examen.id}`,
+          adresseTechnique,
+          justification: `Resultat valide (version ${examen.versionResultat}) archive pour correction. Motif : ${motif}`,
+        },
+        tx
+      );
+
+      return { error: null, examen };
+    });
+
+    if (resultatTransaction.error || !resultatTransaction.examen) {
+      return { error: resultatTransaction.error ?? "Correction impossible.", success: false };
+    }
+
+    // Hors transaction : une notification manquee ne defait pas la correction.
+    // Le message ne nomme jamais l'examen ni sa valeur (un examen sensible ne
+    // doit rien reveler dans une notification).
+    await creerNotification(
+      resultatTransaction.examen.demandeur.userId,
+      "resultat_examen_corrige",
+      `Un resultat d'examen que vous aviez recu est en cours de correction, ne vous y fiez plus. Motif : ${motif}`,
+      "/app/medecin/examens"
+    );
+
+    return { error: null, success: true };
+  } catch (erreur) {
+    console.error("Erreur lors de la correction du resultat valide :", erreur);
+    return {
+      error: "Une erreur est survenue lors de la correction. Veuillez reessayer.",
       success: false,
     };
   }

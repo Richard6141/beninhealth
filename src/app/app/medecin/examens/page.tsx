@@ -88,7 +88,9 @@ function CarteExamen({ examen }: { examen: ExamenResume }) {
 
         {estTermine ? (
           <div className="rounded-champ border border-bordure bg-plan px-3 py-2">
-            <p className="text-[13px] font-semibold text-encre-secondaire">Resultat</p>
+            <p className="text-[13px] font-semibold text-encre-secondaire">
+              {examen.versionResultat > 1 ? `Resultat (version corrigee ${examen.versionResultat})` : "Resultat"}
+            </p>
             <p className="text-[14px] text-encre">
               {examen.resultat || "Resultat transmis sans detail."}
             </p>

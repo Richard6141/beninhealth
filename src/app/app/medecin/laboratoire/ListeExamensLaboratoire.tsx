@@ -12,6 +12,7 @@ import { cn } from "@/lib/cn";
 import { Modal, type ModalHandle } from "@/components/ui/Modal";
 import { FormulairePrelevement } from "./FormulairePrelevement";
 import { FormulaireResultat } from "./FormulaireResultat";
+import { SectionCorrectionValide } from "./FormulaireCorrectionValide";
 import { SectionValidation } from "./FormulaireValidation";
 
 function libelleStatut(statut: string): { texte: string; tone: BadgeTone } {
@@ -351,14 +352,14 @@ function LigneExamen({
                 </TuileDetail>
                 <TuileDetail label="Prélevé le">
                   <span className="text-[14px] text-encre">
-                    {examen.datePrelevement ? formaterDateHeure(examen.datePrelevement) : "—"}
+                    {examen.datePrelevement ? formaterDateHeure(examen.datePrelevement) : "Non renseigné"}
                   </span>
                 </TuileDetail>
               </div>
             ) : null}
 
             {examen.resultat ? (
-              <TuileDetail label="Résultat">
+              <TuileDetail label={examen.versionResultat > 1 ? `Résultat (version ${examen.versionResultat})` : "Résultat"}>
                 <span className="whitespace-pre-wrap text-[14px] text-encre">{examen.resultat}</span>
                 {examen.saisiParNomComplet ? (
                   <span className="mt-1 text-[12px] text-encre-attenuee">
@@ -372,6 +373,26 @@ function LigneExamen({
                   </span>
                 ) : null}
               </TuileDetail>
+            ) : null}
+
+            {examen.versionsPrecedentes && examen.versionsPrecedentes.length > 0 ? (
+              <TuileDetail label="Versions précédentes (archivées)">
+                <ul className="flex flex-col gap-2">
+                  {examen.versionsPrecedentes.map((version) => (
+                    <li key={version.numero} className="text-[13px] text-encre-secondaire">
+                      <span className="font-semibold text-encre">Version {version.numero}</span>
+                      {` (corrigée le ${formaterDateHeure(version.dateCorrection)}) : ${version.motifCorrection}`}
+                      {version.resultat ? <span className="block whitespace-pre-wrap text-encre-attenuee">{version.resultat}</span> : null}
+                    </li>
+                  ))}
+                </ul>
+              </TuileDetail>
+            ) : null}
+
+            {examen.statut === "termine" ? (
+              <div className="border-t border-bordure pt-4">
+                <SectionCorrectionValide examenId={examen.id} />
+              </div>
             ) : null}
 
             {enValidation ? (

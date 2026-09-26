@@ -536,6 +536,37 @@ model ExamenMedical {
   niveauUrgence   String  @default("normal")
   aJeunRequis     Boolean @default(false)
 
+  // F-LAB-04 / RG-ROL-31 du pack : numero de la version courante du resultat
+  // (1 a la premiere validation). Une correction d'un resultat deja valide
+  // archive l'ancienne version dans VersionResultatExamen puis incremente ce
+  // numero ; la version archivee n'est jamais modifiee.
+  versionResultat Int @default(1)
+  versionsResultat VersionResultatExamen[]
+
+  @@schema("public")
+}
+
+// F-LAB-04 / RG-ROL-31 du pack : un resultat valide NE DOIT PAS etre modifie,
+// une correction cree une nouvelle version avec motif. Cette table conserve,
+// figee, chaque version VALIDEE remplacee (valeurs, empreinte, validateur), le
+// motif de la correction et son auteur ; ExamenMedical porte toujours la
+// version courante. Jamais mise a jour ni supprimee par le code.
+model VersionResultatExamen {
+  id                  String   @id @default(cuid())
+  examenId            String
+  examen              ExamenMedical @relation(fields: [examenId], references: [id], onDelete: Cascade)
+  numero              Int
+  resultat            String?
+  resultatsParametres Json?
+  empreinteResultat   String?
+  saisiParId          String?
+  valideParId         String?
+  dateValidation      DateTime?
+  motifCorrection     String
+  corrigeParId        String
+  dateCorrection      DateTime @default(now())
+
+  @@unique([examenId, numero])
   @@schema("public")
 }
 
