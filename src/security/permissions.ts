@@ -82,6 +82,12 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     'create:vaccination',
     'read:prise_en_charge_infirmiere',
     'create:acces_urgence',
+    // F-CLI-14 : le medecin peut envoyer une reference vers un autre
+    // etablissement, et repondre (contre-reference) a une reference recue
+    // par son propre etablissement.
+    'read:reference_patient',
+    'create:reference_patient',
+    'update:reference_patient',
   ]),
 
   infirmier: new Set<Permission>([

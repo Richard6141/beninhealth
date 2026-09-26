@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft, FlaskConical, Phone, Pill, ShieldAlert, Stethoscope, Syringe, UserRound } from "lucide-react";
+import { ArrowLeft, ArrowRightLeft, FlaskConical, Phone, Pill, ShieldAlert, Stethoscope, Syringe, UserRound } from "lucide-react";
 import { getResumePatient } from "@/modules/clinical/actions";
 import { getVaccinationsDuPatient } from "@/modules/vaccination/actions";
 import { ListeDocuments } from "../../documents/ListeDocuments";
@@ -94,6 +94,14 @@ export default async function PatientDetailPage({ params }: PatientDetailPagePro
             minute: "2-digit",
           })}
           .
+        </div>
+      ) : null}
+
+      {resume.accesReferenceExpirationLe ? (
+        <div className="flex items-center gap-2 rounded-champ bg-info px-4 py-3 text-[14px] font-semibold text-white">
+          <ArrowRightLeft size={18} aria-hidden="true" />
+          Accès accordé via une référence médicale, expire le{" "}
+          {new Date(resume.accesReferenceExpirationLe).toLocaleDateString("fr-FR", { dateStyle: "long" })}.
         </div>
       ) : null}
 

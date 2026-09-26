@@ -400,6 +400,12 @@ export function FormulaireConsultation({
               >
                 Prescrire
               </Link>
+              <Link
+                href={`/app/medecin/references/nouvelle?consultationId=${encodeURIComponent(consultationIdActuel)}`}
+                className="text-[13px] font-semibold text-accent hover:underline"
+              >
+                Creer une reference
+              </Link>
             </div>
           </div>
         ) : null}

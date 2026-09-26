@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import {
+  ArrowRightLeft,
   Building2,
   CalendarClock,
   ClipboardList,
@@ -118,6 +119,11 @@ const navigationMedecin: ElementNavigation[] = [
     label: "Examens",
     href: "/app/medecin/examens",
     icon: <FlaskConical size={tailleIconeNav} aria-hidden="true" />,
+  },
+  {
+    label: "Références",
+    href: "/app/medecin/references",
+    icon: <ArrowRightLeft size={tailleIconeNav} aria-hidden="true" />,
   },
   {
     label: "Accès d'urgence",

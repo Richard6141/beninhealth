@@ -484,6 +484,11 @@ export interface ResumePatient {
   // d'urgence "bris de glace" (RG-CLI-91), pour afficher le bandeau rouge et
   // son expiration cote ecran.
   accesUrgenceExpirationLe: string | null;
+  // F-CLI-14 : present uniquement quand l'acces courant vient d'une
+  // reference ouverte vers l'etablissement du professionnel connecte (pas
+  // d'un consentement individuel), pour afficher un bandeau informatif et
+  // son expiration cote ecran.
+  accesReferenceExpirationLe: string | null;
 }
 
 function parseContactsUrgenceResume(valeur: string): ContactUrgenceResume[] {
@@ -504,13 +509,71 @@ function parseContactsUrgenceResume(valeur: string): ContactUrgenceResume[] {
 
 const NOMBRE_DERNIERS_EVENEMENTS = 5;
 
+/** Base d'acces effective au dossier d'un patient, quelle que soit son origine. */
+type AccesPatient =
+  | { source: "consentement"; typeAcces: string; dateFin: Date | null }
+  | { source: "reference"; referenceId: string; dateFinAcces: Date };
+
+/**
+ * Verifie l'acces d'un professionnel au dossier d'un patient : Consentement
+ * individuel actif (cas normal, Zero Trust RG-CLI-30), ou a defaut une base
+ * d'acces temporaire via une reference ouverte adressee a son etablissement
+ * (F-CLI-14, RG-CLI-14x) tant qu'elle n'est pas expiree (30 jours a partir de
+ * la creation, voir prisma/schema.prisma ReferencePatient.dateFinAcces).
+ * Volontairement limite a la lecture (getResumePatient, getHistoriquePatient) :
+ * comme l'acces d'urgence "bris de glace" (dont le typeAcces "urgence" est
+ * deja exclu de TYPES_ACCES_CONSULTATION ci-dessus), une reference ne donne
+ * jamais le droit de creer une nouvelle Consultation pour ce patient, qui
+ * reste soumis a un Consentement explicite du patient.
+ */
+async function accesPatientAutorise(
+  patientId: string,
+  professionnel: { etablissementId: string },
+  userId: string
+): Promise<AccesPatient | null> {
+  const consentement = await prisma.consentement.findUnique({
+    where: {
+      patientId_acteurAutoriseId: {
+        patientId,
+        acteurAutoriseId: userId,
+      },
+    },
+  });
+
+  const consentementValide =
+    consentement !== null &&
+    consentement.statut === "actif" &&
+    (consentement.dateFin === null || consentement.dateFin > new Date());
+
+  if (consentementValide) {
+    return { source: "consentement", typeAcces: consentement.typeAcces, dateFin: consentement.dateFin };
+  }
+
+  const reference = await prisma.referencePatient.findFirst({
+    where: {
+      patientId,
+      etablissementDestinationId: professionnel.etablissementId,
+      dateFinAcces: { gt: new Date() },
+    },
+    orderBy: { dateFinAcces: "desc" },
+  });
+
+  if (reference) {
+    return { source: "reference", referenceId: reference.id, dateFinAcces: reference.dateFinAcces };
+  }
+
+  return null;
+}
+
 /**
  * Resume d'un patient (F-CLI-04 du pack), reserve au professionnel connecte
- * s'il detient un Consentement actif pour ce patient (Zero Trust, RG-CLI-30 :
- * jamais de donnee envoyee sans base d'acces valide - retourne null plutot
- * que de filtrer partiellement, ce depot n'ayant qu'un seul niveau d'acces
- * "dossier_complet"/"consultations", pas les niveaux SUMMARY/FULL du pack).
- * Journalise la consultation du resume (RG-CLI-31).
+ * s'il detient un Consentement actif pour ce patient, ou une base d'acces
+ * temporaire via reference (F-CLI-14, voir accesPatientAutorise ci-dessus)
+ * (Zero Trust, RG-CLI-30 : jamais de donnee envoyee sans base d'acces valide
+ * - retourne null plutot que de filtrer partiellement, ce depot n'ayant
+ * qu'un seul niveau d'acces "dossier_complet"/"consultations", pas les
+ * niveaux SUMMARY/FULL du pack). Journalise la consultation du resume
+ * (RG-CLI-31).
  */
 export async function getResumePatient(patientId: string): Promise<ResumePatient | null> {
   const session = await getSession();
@@ -525,21 +588,9 @@ export async function getResumePatient(patientId: string): Promise<ResumePatient
     return null;
   }
 
-  const consentement = await prisma.consentement.findUnique({
-    where: {
-      patientId_acteurAutoriseId: {
-        patientId,
-        acteurAutoriseId: session.userId,
-      },
-    },
-  });
+  const acces = await accesPatientAutorise(patientId, professionnel, session.userId);
 
-  const consentementValide =
-    consentement !== null &&
-    consentement.statut === "actif" &&
-    (consentement.dateFin === null || consentement.dateFin > new Date());
-
-  if (!consentementValide) {
+  if (!acces) {
     return null;
   }
 
@@ -576,7 +627,10 @@ export async function getResumePatient(patientId: string): Promise<ResumePatient
     action: "consultation_resume_patient",
     donneeConcernee: `patient:${patientId}`,
     adresseTechnique,
-    justification: `Resume patient consulte (consentement ${consentement.typeAcces})`,
+    justification:
+      acces.source === "consentement"
+        ? `Resume patient consulte (consentement ${acces.typeAcces})`
+        : `Resume patient consulte (reference ${acces.referenceId}, base d'acces etablissement)`,
   });
 
   return {
@@ -610,7 +664,10 @@ export async function getResumePatient(patientId: string): Promise<ResumePatient
       conclusion: consultation.conclusion,
     })),
     accesUrgenceExpirationLe:
-      consentement.typeAcces === "urgence" && consentement.dateFin ? consentement.dateFin.toISOString() : null,
+      acces.source === "consentement" && acces.typeAcces === "urgence" && acces.dateFin
+        ? acces.dateFin.toISOString()
+        : null,
+    accesReferenceExpirationLe: acces.source === "reference" ? acces.dateFinAcces.toISOString() : null,
   };
 }
 
@@ -681,21 +738,9 @@ export async function getHistoriquePatient(
     return null;
   }
 
-  const consentement = await prisma.consentement.findUnique({
-    where: {
-      patientId_acteurAutoriseId: {
-        patientId,
-        acteurAutoriseId: session.userId,
-      },
-    },
-  });
+  const acces = await accesPatientAutorise(patientId, professionnel, session.userId);
 
-  const consentementValide =
-    consentement !== null &&
-    consentement.statut === "actif" &&
-    (consentement.dateFin === null || consentement.dateFin > new Date());
-
-  if (!consentementValide) {
+  if (!acces) {
     return null;
   }
 
@@ -724,9 +769,11 @@ export async function getHistoriquePatient(
 
   // RG-CLI-91 : un acces d'urgence "bris de glace" (F-CLI-10) ne donne jamais
   // acces aux examens sensibles (ex. serologie VIH), exclus entierement de la
-  // chronologie plutot que masques partiellement.
-  const examensAccessibles =
-    consentement.typeAcces === "urgence" ? examens.filter((e) => !e.sensible) : examens;
+  // chronologie plutot que masques partiellement. Meme restriction pour un
+  // acces via reference (F-CLI-14) : ni l'un ni l'autre n'est un consentement
+  // explicite et specifique du patient.
+  const accesRestreint = acces.source === "reference" || acces.typeAcces === "urgence";
+  const examensAccessibles = accesRestreint ? examens.filter((e) => !e.sensible) : examens;
 
   const tousLesEvenements: EvenementHistorique[] = [
     ...consultations.map((c): EvenementHistorique => ({
