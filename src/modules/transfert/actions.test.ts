@@ -34,7 +34,7 @@ vi.mock("bcryptjs", () => {
 });
 vi.mock("@/modules/administration/parametres", () => ({ estFonctionnaliteActive: vi.fn() }));
 vi.mock("@/modules/audit/journaliser", () => ({ journaliser: vi.fn() }));
-vi.mock("@/modules/notification/actions", () => ({ creerNotification: vi.fn() }));
+vi.mock("@/modules/notification/creer", () => ({ creerNotification: vi.fn() }));
 vi.mock("@/modules/transfert/envoi-code", () => ({ envoyerCodeDemande: vi.fn() }));
 
 import bcrypt from "bcryptjs";
@@ -43,7 +43,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { estFonctionnaliteActive } from "@/modules/administration/parametres";
 import { journaliser } from "@/modules/audit/journaliser";
-import { creerNotification } from "@/modules/notification/actions";
+import { creerNotification } from "@/modules/notification/creer";
 import {
   confirmerCodeAccesAction,
   demanderAccesDossierAction,

@@ -12,7 +12,7 @@ import { getEnv } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
 import { normaliserTelephoneBenin } from "@/lib/telephone";
 import { envoyerMessageWapy, wapyConfigure } from "@/lib/wapy";
-import { creerNotification } from "@/modules/notification/actions";
+import { creerNotification } from "@/modules/notification/creer";
 import { envoyerSms } from "@/modules/notification/sms/envoyer";
 import {
   DUREE_VALIDITE_CODE_MINUTES,

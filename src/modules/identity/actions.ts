@@ -25,7 +25,15 @@ import { journaliser } from "@/modules/audit/journaliser";
 import { createSession, getSession, destroySession } from "@/lib/session";
 import { getEnv } from "@/lib/env";
 import { televerserImageCloudinary } from "@/lib/cloudinary";
-import { verifierCodeMfaPourConnexion } from "@/modules/identity/mfa";
+import { verifierCodeMfaPourConnexion } from "@/modules/identity/mfa-totp";
+import {
+  MESSAGE_TROP_DE_TENTATIVES,
+  adresseDeLaRequete,
+  connexionBloquee,
+  enregistrerEchecConnexion,
+  enregistrerEchecMfa,
+  mfaBloquee,
+} from "@/modules/identity/limitation-connexion";
 import {
   creerEtEnvoyerCodeVerificationEmail,
   verifierEtConsommerCodeVerificationEmail,
@@ -515,6 +523,26 @@ export async function creerPatientParProfessionnelAction(
   }
 }
 
+/** Trace un echec d'authentification d'un compte existant (jamais pour un compte inconnu : JournalAudit exige un utilisateur). Ne leve jamais. */
+async function journaliserEchecAuthentification(
+  utilisateurId: string,
+  action: "connexion_echec" | "mfa_echec",
+  adresse: string | null,
+  justification: string
+): Promise<void> {
+  try {
+    await journaliser({
+      utilisateurId,
+      action,
+      donneeConcernee: `utilisateur:${utilisateurId}`,
+      adresseTechnique: adresse ?? "inconnue",
+      justification,
+    });
+  } catch {
+    // La trace est un plus : un echec d'ecriture ne doit jamais changer la reponse.
+  }
+}
+
 /**
  * Connexion par email et mot de passe. Message d'erreur volontairement
  * generique dans tous les cas d'echec (email inconnu, mot de passe errone,
@@ -537,6 +565,15 @@ export async function loginAction(
 
   const { email, motDePasse } = validation.data;
 
+  // Verrouillage apres 5 echecs en 15 minutes (par compte, et par adresse pour
+  // repartir les essais sur plusieurs comptes) : meme reponse que le compte
+  // existe ou non, voir limitation-connexion.ts.
+  const adresse = await adresseDeLaRequete();
+
+  if (connexionBloquee(email, adresse)) {
+    return { error: MESSAGE_TROP_DE_TENTATIVES };
+  }
+
   let userId: string;
   let codeDemo: string;
 
@@ -547,12 +584,15 @@ export async function loginAction(
     });
 
     if (!utilisateur || utilisateur.statut !== "actif") {
+      enregistrerEchecConnexion(email, adresse);
       return { error: MESSAGE_ERREUR_GENERIQUE };
     }
 
     const motDePasseValide = await bcrypt.compare(motDePasse, utilisateur.motDePasseHash);
 
     if (!motDePasseValide) {
+      enregistrerEchecConnexion(email, adresse);
+      await journaliserEchecAuthentification(utilisateur.id, "connexion_echec", adresse, "Mot de passe incorrect.");
       return { error: MESSAGE_ERREUR_GENERIQUE };
     }
 
@@ -698,9 +738,17 @@ export async function verifierMfaEtConnecterAction(
     return { error: MESSAGE_ERREUR_GENERIQUE };
   }
 
+  // Le jeton de pre-authentification vit 5 minutes : sans plafond, ce laps de
+  // temps suffirait a essayer des milliers de codes a 6 chiffres.
+  if (mfaBloquee(userId)) {
+    return { error: MESSAGE_TROP_DE_TENTATIVES };
+  }
+
   const codeValide = await verifierCodeMfaPourConnexion(userId, code);
 
   if (!codeValide) {
+    enregistrerEchecMfa(userId);
+    await journaliserEchecAuthentification(userId, "mfa_echec", await adresseDeLaRequete(), "Code TOTP incorrect.");
     return { error: MESSAGE_ERREUR_GENERIQUE };
   }
 

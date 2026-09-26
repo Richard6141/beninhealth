@@ -16,7 +16,7 @@ export async function register(): Promise<void> {
   const { demarrerPlanificateurPilotage } = await import("@/modules/pilotage/planificateur");
   demarrerPlanificateurPilotage();
 
-  const { demarrerMarquageAbsences } = await import("@/modules/facility/file-du-jour");
+  const { demarrerMarquageAbsences } = await import("@/modules/facility/marquage-absences");
   demarrerMarquageAbsences();
 
   const { demarrerPurgeNotifications } = await import("@/modules/notification/purge");

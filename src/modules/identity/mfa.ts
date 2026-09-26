@@ -20,9 +20,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
-
-const EMETTEUR_TOTP = "Benin Health Intelligence Platform";
-const FENETRE_VALIDATION = 1; // tolere 1 periode de 30s avant/apres (horloge du telephone)
+import { FENETRE_VALIDATION, creerTotp, schemaCode } from "./mfa-totp";
 
 export interface MfaActionState {
   error: string | null;
@@ -34,22 +32,6 @@ export interface EnrolementMfa {
   secretBase32: string;
   qrCodeDataUrl: string;
 }
-
-function creerTotp(email: string, secretBase32: string): OTPAuth.TOTP {
-  return new OTPAuth.TOTP({
-    issuer: EMETTEUR_TOTP,
-    label: email,
-    algorithm: "SHA1",
-    digits: 6,
-    period: 30,
-    secret: OTPAuth.Secret.fromBase32(secretBase32),
-  });
-}
-
-const schemaCode = z
-  .string()
-  .trim()
-  .regex(/^\d{6}$/, "Le code doit contenir exactement 6 chiffres.");
 
 /**
  * Genere un nouveau secret TOTP pour l'utilisateur connecte et le QR code
@@ -217,32 +199,4 @@ export async function getStatutMfa(): Promise<{ actif: boolean } | null> {
   });
 
   return utilisateur ? { actif: utilisateur.mfaActif } : null;
-}
-
-/**
- * Verifie un code TOTP pour un utilisateur donne par id (utilise UNIQUEMENT
- * par loginAction pendant l'etape de connexion, avant qu'une session existe :
- * c'est le seul endroit ou ce module accepte un id transmis autrement que
- * via getSession(), parce qu'a ce stade precis du flux de connexion il n'y a
- * justement pas encore de session). loginAction a deja verifie le mot de
- * passe avant d'appeler cette fonction.
- */
-export async function verifierCodeMfaPourConnexion(
-  userId: string,
-  code: string
-): Promise<boolean> {
-  const validation = schemaCode.safeParse(code);
-
-  if (!validation.success) {
-    return false;
-  }
-
-  const utilisateur = await prisma.user.findUnique({ where: { id: userId } });
-
-  if (!utilisateur || !utilisateur.mfaActif || !utilisateur.mfaSecret) {
-    return false;
-  }
-
-  const totp = creerTotp(utilisateur.email, utilisateur.mfaSecret);
-  return totp.validate({ token: validation.data, window: FENETRE_VALIDATION }) !== null;
 }

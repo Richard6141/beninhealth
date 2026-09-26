@@ -50,7 +50,7 @@ import {
   type Indicateur,
 } from "./referentiel-parametres-examens";
 import { journaliser } from "@/modules/audit/journaliser";
-import { creerNotification } from "@/modules/notification/actions";
+import { creerNotification } from "@/modules/notification/creer";
 
 /** Une valeur de parametre structure saisie et son indicateur calcule (F-LAB-03). Snapshot autonome, stocke tel quel dans ExamenMedical.resultatsParametres : jamais recalcule depuis le referentiel a l'affichage, pour rester stable si le referentiel change. */
 export interface ResultatParametre {
@@ -1018,6 +1018,7 @@ export async function saisirResultatExamenAction(
   const validation = schemaSaisieResultat.safeParse({
     examenId: texte(formData, "examenId"),
     resultat: texte(formData, "resultat"),
+    parametresJson: texte(formData, "parametresJson"),
   });
 
   if (!validation.success) {
@@ -1323,7 +1324,7 @@ export async function validerResultatExamenAction(
     // disponible (RG-LAB-30). Hors transaction : une notification manquee ne
     // doit jamais faire echouer la validation elle-meme (deja actee en base).
     const examenValide = resultatTransaction.examen;
-    const { creerNotification } = await import("@/modules/notification/actions");
+    const { creerNotification } = await import("@/modules/notification/creer");
     await Promise.all([
       creerNotification(
         examenValide.patient.userId,
@@ -1563,7 +1564,7 @@ export async function annoncerResultatExamenAction(
       );
     });
 
-    const { creerNotification } = await import("@/modules/notification/actions");
+    const { creerNotification } = await import("@/modules/notification/creer");
     await creerNotification(
       examen.patient.userId,
       "resultat_examen_disponible",

@@ -7,12 +7,10 @@
  * affichees dans la plateforme. L'envoi de SMS/email reste hors perimetre,
  * documente comme evolution future.
  *
- * `creerNotification` est le seul point d'ecriture, appele depuis d'autres
- * modules au moment d'un evenement pertinent (ex : rendez-vous confirme,
- * resultat d'examen disponible). Elle ne fait aucune verification de
- * session : c'est a l'appelant (deja dans un contexte Zero Trust verifie)
- * de fournir le bon utilisateurId destinataire, jamais un id transmis tel
- * quel par un formulaire sans verification prealable.
+ * L'ecriture d'une notification (`creerNotification`) vit dans creer.ts, hors
+ * de ce fichier "use server" : elle n'a aucun controle de session et ne doit
+ * jamais etre atteignable comme point d'entree. Ce fichier ne porte que les
+ * lectures et actions du destinataire connecte.
  */
 
 import { prisma } from "@/lib/prisma";
@@ -30,23 +28,6 @@ export interface NotificationResume {
 export interface NotificationActionState {
   error: string | null;
   success: boolean;
-}
-
-/**
- * Cree une notification interne pour un utilisateur. A appeler depuis un
- * autre module juste apres un evenement pertinent (le destinataire doit
- * avoir ete determine par l'appelant a partir de donnees deja verifiees,
- * ex : le patient d'un rendez-vous que l'on vient de confirmer).
- */
-export async function creerNotification(
-  utilisateurId: string,
-  type: string,
-  message: string,
-  lien?: string
-): Promise<void> {
-  await prisma.notification.create({
-    data: { utilisateurId, type, message, lien: lien ?? null },
-  });
 }
 
 /** Notifications de l'utilisateur connecte, les plus recentes en premier. */

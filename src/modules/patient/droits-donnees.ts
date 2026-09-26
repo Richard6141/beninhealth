@@ -233,6 +233,7 @@ export async function fermerMonCompteAction(
 
   await prisma.$transaction(async (tx) => {
     await tx.user.update({ where: { id: session.userId }, data: { statut: "ferme" } });
+    await tx.sessionActive.deleteMany({ where: { userId: session.userId } });
 
     await journaliser(
       {

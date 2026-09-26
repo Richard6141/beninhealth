@@ -12,7 +12,7 @@ import { createHash } from "node:crypto";
 
 vi.mock("@/lib/session", () => ({ getSession: vi.fn() }));
 vi.mock("@/security/permissions", () => ({ can: vi.fn(() => true) }));
-vi.mock("@/modules/notification/actions", () => ({ creerNotification: vi.fn() }));
+vi.mock("@/modules/notification/creer", () => ({ creerNotification: vi.fn() }));
 vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Map()) }));
 
 vi.mock("@/lib/prisma", () => ({

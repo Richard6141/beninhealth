@@ -50,7 +50,7 @@ import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
-import { creerNotification } from "@/modules/notification/actions";
+import { creerNotification } from "@/modules/notification/creer";
 import { journaliser } from "./journaliser";
 import type { NomRole } from "@/types";
 

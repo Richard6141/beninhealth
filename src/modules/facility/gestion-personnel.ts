@@ -103,6 +103,7 @@ export async function suspendrePersonnelAction(
 
     await prisma.$transaction(async (tx) => {
       await tx.user.update({ where: { id: validation.data.userId }, data: { statut: "suspendu" } });
+      await tx.sessionActive.deleteMany({ where: { userId: validation.data.userId } });
 
       await journaliser(
         {
@@ -229,6 +230,7 @@ export async function terminerAffiliationAction(
 
     await prisma.$transaction(async (tx) => {
       await tx.user.update({ where: { id: validation.data.userId }, data: { statut: "termine" } });
+      await tx.sessionActive.deleteMany({ where: { userId: validation.data.userId } });
 
       await journaliser(
         {

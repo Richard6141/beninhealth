@@ -1607,7 +1607,7 @@ export async function retirerConsultationAction(
     });
 
     if (responsable) {
-      const { creerNotification } = await import("@/modules/notification/actions");
+      const { creerNotification } = await import("@/modules/notification/creer");
       await creerNotification(
         responsable.userId,
         "consultation_retiree",

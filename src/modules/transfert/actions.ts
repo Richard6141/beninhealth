@@ -31,7 +31,7 @@ import { getSession } from "@/lib/session";
 import { memeTelephoneBenin, normaliserTelephoneBenin } from "@/lib/telephone";
 import { estFonctionnaliteActive } from "@/modules/administration/parametres";
 import { journaliser } from "@/modules/audit/journaliser";
-import { creerNotification } from "@/modules/notification/actions";
+import { creerNotification } from "@/modules/notification/creer";
 import { can } from "@/security/permissions";
 import {
   CODES_MAX_PAR_PATIENT_PAR_24H,

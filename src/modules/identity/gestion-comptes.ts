@@ -702,6 +702,10 @@ export async function changerMotDePasseAction(
         where: { id: session.userId },
         data: { motDePasseHash: nouveauMotDePasseHash },
       }),
+      // Toutes les autres sessions (autres appareils, poste vole) sont fermees.
+      prisma.sessionActive.deleteMany({
+        where: { userId: session.userId, id: { not: session.sessionId } },
+      }),
       journaliser({
         utilisateurId: session.userId,
         action: "modification",

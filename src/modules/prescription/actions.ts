@@ -32,7 +32,7 @@ import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
-import { creerNotification } from "@/modules/notification/actions";
+import { creerNotification } from "@/modules/notification/creer";
 import {
   allergieCorrespondante,
   LONGUEUR_MIN_JUSTIFICATION_FORCAGE,

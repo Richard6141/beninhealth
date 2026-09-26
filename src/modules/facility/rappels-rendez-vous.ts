@@ -30,7 +30,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
-import { creerNotification } from "@/modules/notification/actions";
+import { creerNotification } from "@/modules/notification/creer";
 import { veilleA18hBenin } from "@/lib/fuseau-horaire";
 
 const FUSEAU_BENIN = "Africa/Porto-Novo";

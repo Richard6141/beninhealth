@@ -62,6 +62,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 import { prisma } from "@/lib/prisma";
+import { viderCompteursDebit } from "@/lib/limite-debit";
 import { createSession } from "@/lib/session";
 import { envoyerEmail } from "@/lib/mail";
 import bcrypt from "bcryptjs";
@@ -184,6 +185,7 @@ describe("loginAction", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    viderCompteursDebit();
   });
 
   function formulaireConnexion(email: string, motDePasse: string): FormData {

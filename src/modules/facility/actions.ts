@@ -544,7 +544,7 @@ export async function confirmerRendezVousAction(
     // Notification interne (Phase 10) : hors de la transaction ci-dessus,
     // une notification manquee ne doit jamais faire echouer la confirmation
     // du rendez-vous elle-meme (deja actee en base a ce stade).
-    const { creerNotification } = await import("@/modules/notification/actions");
+    const { creerNotification } = await import("@/modules/notification/creer");
     const dateLisible = rendezVous.date.toLocaleDateString("fr-FR", {
       day: "numeric",
       month: "long",

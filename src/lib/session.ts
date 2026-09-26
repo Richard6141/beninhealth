@@ -155,16 +155,32 @@ export const getSession = cache(async (): Promise<SessionPayload | null> => {
 
     const sessionId = typeof payload.sessionId === "string" ? payload.sessionId : "";
 
+    // Un compte qui n'est plus "actif" (suspendu, fin d'affiliation, ferme,
+    // fusionne) perd son acces a la requete suivante, sans attendre
+    // l'expiration du JWT : la signature seule ne dit rien de l'etat du compte.
+    let statutCompte: string | undefined;
+
     if (sessionId) {
-      const sessionActive = await prisma.sessionActive.findUnique({ where: { id: sessionId } });
-      if (!sessionActive) {
+      const sessionActive = await prisma.sessionActive.findUnique({
+        where: { id: sessionId },
+        include: { user: { select: { statut: true } } },
+      });
+      if (!sessionActive || sessionActive.userId !== payload.userId) {
         return null;
       }
+      statutCompte = sessionActive.user.statut;
       if (Date.now() - sessionActive.derniereActivite.getTime() > INTERVALLE_MISE_A_JOUR_ACTIVITE_MS) {
         await prisma.sessionActive
           .update({ where: { id: sessionId }, data: { derniereActivite: new Date() } })
           .catch(() => {});
       }
+    } else {
+      const utilisateur = await prisma.user.findUnique({ where: { id: payload.userId }, select: { statut: true } });
+      statutCompte = utilisateur?.statut;
+    }
+
+    if (statutCompte !== "actif") {
+      return null;
     }
 
     return { userId: payload.userId, roles, sessionId };

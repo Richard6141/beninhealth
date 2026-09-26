@@ -55,3 +55,37 @@ export function verifierEtIncrementerDebit(
   compteur.compte += 1;
   return { autorise: true, restant: limiteParFenetre - compteur.compte };
 }
+
+function compteurDansLaFenetre(cle: string, dureeFenetreMs: number): CompteurFenetre | undefined {
+  const compteur = compteursParCle.get(cle);
+  if (!compteur || Date.now() - compteur.debutFenetre > dureeFenetreMs) {
+    return undefined;
+  }
+  return compteur;
+}
+
+/**
+ * Vrai si `cle` a deja atteint `limiteParFenetre` evenements dans la fenetre
+ * courante. Ne compte rien : a utiliser AVANT une action, avec
+ * enregistrerEvenement() APRES un echec (ex. mot de passe incorrect), pour
+ * ne limiter que les echecs et jamais les utilisateurs qui reussissent.
+ */
+export function limiteAtteinte(cle: string, limiteParFenetre: number, dureeFenetreMs: number): boolean {
+  const compteur = compteurDansLaFenetre(cle, dureeFenetreMs);
+  return compteur !== undefined && compteur.compte >= limiteParFenetre;
+}
+
+/** Enregistre un evenement pour `cle` (la fenetre s'ouvre au premier). */
+export function enregistrerEvenement(cle: string, dureeFenetreMs: number): void {
+  const compteur = compteurDansLaFenetre(cle, dureeFenetreMs);
+  if (compteur) {
+    compteur.compte += 1;
+    return;
+  }
+  compteursParCle.set(cle, { debutFenetre: Date.now(), compte: 1 });
+}
+
+/** Vide tous les compteurs. Reserve aux tests : les compteurs vivent dans le processus. */
+export function viderCompteursDebit(): void {
+  compteursParCle.clear();
+}

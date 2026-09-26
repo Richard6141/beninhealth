@@ -23,8 +23,8 @@ import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
-import { creerNotification } from "@/modules/notification/actions";
-import { verifierCodeMfaPourConnexion } from "@/modules/identity/mfa";
+import { creerNotification } from "@/modules/notification/creer";
+import { verifierCodeMfaPourConnexion } from "@/modules/identity/mfa-totp";
 import { MOTIFS_URGENCE } from "./motifs-urgence";
 
 export interface UrgenceActionState {
