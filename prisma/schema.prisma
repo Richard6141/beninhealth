@@ -150,6 +150,30 @@ model EtablissementSanitaire {
   zoneSanitaireId String?
   zoneSanitaire   ZoneSanitaire? @relation(fields: [zoneSanitaireId], references: [id])
 
+  // Champs F-ADM-02 du pack ("Gerer le referentiel des etablissements"),
+  // tous facultatifs pour ne pas casser les etablissements deja crees avant
+  // cet enrichissement (meme principe que communeId/zoneSanitaireId
+  // ci-dessus). RG-ADM-01/02 : statut de cycle de vie, jamais de suppression
+  // (voir fermerEtablissementAction, src/modules/administration/etablissements.ts).
+  sigle                    String?
+  // central | intermediaire | peripherique
+  niveauPyramide           String?
+  // public | prive_lucratif | prive_confessionnel | associatif
+  secteur                  String?
+  arrondissement           String?
+  quartierVillage          String?
+  adresse                  String?
+  telephoneEtablissement   String?
+  emailEtablissement       String?
+  // Code de l'etablissement dans DHIS2, facultatif (aucune integration
+  // DHIS2 reelle dans ce depot, uniquement le champ de reference).
+  identifiantExterneDhis2  String?
+  // brouillon | actif | suspendu | ferme (traduction de DRAFT/ACTIVE/SUSPENDED/CLOSED)
+  statut                   String   @default("brouillon")
+  etablissementParentId    String?
+  etablissementParent      EtablissementSanitaire?  @relation("HierarchieEtablissement", fields: [etablissementParentId], references: [id])
+  etablissementsEnfants    EtablissementSanitaire[] @relation("HierarchieEtablissement")
+
   professionnels ProfessionnelSante[]
   rendezVous     RendezVous[]
   consultations  Consultation[]
@@ -197,6 +221,7 @@ model ProfessionnelSante {
   // F-LAB-04 : examens dont ce professionnel a saisi le resultat / qu'il a valides (role laboratoire).
   examensSaisis  ExamenMedical[] @relation("ExamenSaisiPar")
   examensValides ExamenMedical[] @relation("ExamenValidePar")
+  examensPreleves ExamenMedical[] @relation("ExamenPreleve")
   // Visites de suivi communautaire menees par ce professionnel (role agent_communautaire).
   suivisCommunautaires SuiviCommunautaire[]
   personnesEnregistrees PersonneCommunautaire[]
@@ -223,6 +248,13 @@ model Patient {
   allergies                   String   @default("[]")
   antecedents                 String   @default("[]")
   maladiesChroniques          String   @default("[]")
+  // Declaratif, sans distinction DECLARED/CONFIRMED (meme simplification que
+  // les champs ci-dessus) : utilise par le controle de securite "grossesse"
+  // de la prescription (F-PRE-02, src/modules/prescription/controles-securite.ts).
+  // Pas le modele "pregnancies" complet du pack (dates, historique) : un
+  // booleen suffit pour ce controle, a etendre si un vrai suivi de grossesse
+  // est un jour construit.
+  grossesseEnCours            Boolean  @default(false)
 
   consentements Consentement[]
   rendezVous    RendezVous[]
@@ -280,6 +312,13 @@ model RendezVous {
   motif           String
   statut          String    @default("demande")
   dateCreation    DateTime  @default(now())
+  // F-RDV-07 du pack (RG-RDV-50/52) : horodatage d'envoi de chaque rappel,
+  // null tant qu'il n'a pas ete envoye. Empeche un double envoi (le
+  // planificateur ne renvoie jamais un rappel deja marque), et un rendez-vous
+  // annule (statut "annule") est simplement exclu de la recherche des
+  // rappels dus, sans mecanisme d'annulation dedie.
+  rappelVeilleEnvoyeLe      DateTime?
+  rappelDeuxHeuresEnvoyeLe  DateTime?
   // F-RDV-04/05 du pack (RG-RDV-33/40) : horodatage de l'arrivee, null tant
   // que le patient n'est pas arrive. Distingue confirme-pas-arrive
   // d'arrive-en-attente sans nouveau modele "Visite" (perimetre reduit
@@ -420,6 +459,35 @@ model ExamenMedical {
   // src/modules/laboratoire/referentiel-examens-sensibles.ts.
   sensible                  Boolean @default(false)
   resultatAnnonceAuPatient  Boolean @default(false)
+
+  // F-LAB-02 du pack ("Recevoir la demande et enregistrer le prelevement").
+  // Etape ajoutee entre la demande et la saisie de resultat : le technicien
+  // verifie l'identite du patient puis enregistre le prelevement, ce qui
+  // fait passer le statut de "demande" a "en_cours" (valeur deja prevue dans
+  // le commentaire ci-dessus mais jamais ecrite par aucun code avant ce
+  // chantier). Voir enregistrerPrelevementAction/rejeterEchantillonAction,
+  // src/modules/laboratoire/actions.ts.
+  identiteVerifiee       Boolean   @default(false)
+  datePrelevement        DateTime?
+  // sang_veineux | sang_capillaire | urine | selles | autre
+  typeEchantillon        String?
+  identifiantEchantillon String?
+  preleveurId            String?
+  preleveur              ProfessionnelSante? @relation("ExamenPreleve", fields: [preleveurId], references: [id])
+  // Rejet d'echantillon (hemolyse, quantite insuffisante, mauvais tube,
+  // delai depasse, etiquetage incorrect) : remet le statut a "demande" pour
+  // un nouveau prelevement, sans jamais effacer la trace du rejet precedent
+  // (conserve ici, l'historique complet vit dans JournalAudit).
+  motifRejetEchantillon  String?
+
+  // F-LAB-01 du pack : renseignes a la demande par le medecin prescripteur.
+  // "normal" | "urgent" (RG-LAB-40, priorite affichee au laboratoire, pas de
+  // delai de traitement automatise dans ce MVP). aJeunRequis est affiche au
+  // patient (pour se presenter a jeun) et au laboratoire (pour verifier avant
+  // le prelevement), jamais impose techniquement (aucun controle bloquant).
+  niveauUrgence   String  @default("normal")
+  aJeunRequis     Boolean @default(false)
+
   @@schema("public")
 }
 
@@ -500,6 +568,16 @@ model Medicament {
   // MVP plutot qu'une table de classes ATC dediee.
   classeTherapeutique           String @default("")
   informationsComplementaires   String @default("")
+  // Controles de securite F-PRE-02 / RG-PRE-02 du pack. Null = aucune
+  // restriction connue pour ce medicament (pas "sans risque", juste "non
+  // renseigne" : meme convention que classeTherapeutique vide plus haut).
+  ageMinimumMois                Int?
+  contreIndiqueGrossesse        Boolean @default(false)
+  // F-ADM-04 (referentiel medicaments administrable) : RG-ADM-20, on
+  // desactive une entree, on ne la supprime jamais (deja utilisee par de
+  // vraies LignePrescription). Actif par defaut pour ne jamais masquer les
+  // medicaments de demo deja seedes ce soir.
+  actif                          Boolean @default(true)
 
   lignesPrescription LignePrescription[]
   // Generique par lequel ce medicament a ete substitue lors d'une delivrance (F-PHA-03).
@@ -990,6 +1068,50 @@ model CodePartageDossier {
   consommeLe    DateTime?
   consommeParId String?
   consommePar   ProfessionnelSante? @relation(fields: [consommeParId], references: [id])
+
+  @@schema("public")
+}
+
+// Correspond a F-ADM-07 du pack ("Parametres et fonctionnalites activables").
+// Un nombre parametrable du document (duree de validite, limite, seuil),
+// avec ses bornes et sa valeur par defaut : la valeur effective utilisee par
+// l'application, jamais seulement la valeur par defaut. RG-ADM-50 : chaque
+// modification prend effet sans redemarrage (lue en base a chaque appel,
+// jamais mise en cache en memoire) et est journalisee (voir
+// modifierParametreAction, src/modules/administration/parametres.ts).
+//
+// Perimetre honnete de ce depot : l'infrastructure (table, ecran, RBAC,
+// journalisation) est complete, mais aucune constante existante du code
+// (ex. DUREE_VALIDITE_MINUTES dans verification-email.ts, ROUNDS_BCRYPT,
+// duree d'acces de ReferencePatient) n'a ete migree pour LIRE sa valeur
+// depuis cette table : ce sont encore des constantes fixes ailleurs dans le
+// code. Reste a faire, fichier par fichier, si ce systeme doit vraiment
+// piloter le comportement de l'application plutot que d'exister a cote.
+model Parametre {
+  id               String   @id @default(cuid())
+  cle              String   @unique
+  valeur           Float
+  valeurDefaut     Float
+  borneMin         Float
+  borneMax         Float
+  description      String
+  dateModification DateTime @default(now())
+
+  @@schema("public")
+}
+
+// Fonctionnalite activable (feature flag). RG-IA-02 : toute fonctionnalite
+// d'IA doit se trouver derriere l'une de ces entrees, desactivee par defaut
+// en production. Les cles du catalogue MVP (section 15 du pack) sont semees
+// par provisionnerFonctionnalitesParDefaut() a la premiere lecture plutot
+// que par un script de seed distinct (voir src/modules/administration/parametres.ts) :
+// evite de dependre de prisma/seed.ts, deja modifie par ailleurs ce soir.
+model FonctionnaliteActivable {
+  id               String   @id @default(cuid())
+  cle              String   @unique
+  actif            Boolean  @default(false)
+  description      String
+  dateModification DateTime @default(now())
 
   @@schema("public")
 }
