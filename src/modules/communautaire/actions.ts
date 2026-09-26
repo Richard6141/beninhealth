@@ -24,6 +24,11 @@ import type { TypeVisiteCommunautaire } from "@/types";
 export interface SuiviCommunautaireActionState {
   error: string | null;
   success: boolean;
+  // F-COM-02 (docs/audit-cote-agent-communautaire.md) : version reduite, sans
+  // fiche beneficiaire ni modele Prisma dedie. Rempli quand un nom proche a
+  // deja ete enregistre par ce meme agent ; purement informatif, la visite
+  // est tout de meme creee (avertissement, jamais un blocage).
+  avertissementDoublonBeneficiaire?: string | null;
 }
 
 /** Resume d'une visite de suivi communautaire, pret a afficher. */
@@ -73,6 +78,15 @@ function texte(formData: FormData, cle: string): string {
 
 function premierMessageErreur(erreur: z.ZodError, messageParDefaut: string): string {
   return erreur.issues[0]?.message ?? messageParDefaut;
+}
+
+/** Meme normalisation que normaliserPourComparaison dans src/modules/identity/actions.ts (non exportee, "use server" oblige). */
+function normaliserPourComparaison(texte: string): string {
+  return texte
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .trim()
+    .toLowerCase();
 }
 
 /** Recupere le profil ProfessionnelSante du titulaire de la session courante, ou null si absent. */
@@ -133,6 +147,19 @@ export async function creerSuiviCommunautaireAction(
 
     const adresseTechnique = await adresseTechniqueCourante();
 
+    // F-COM-02, version reduite (voir SuiviCommunautaireActionState) : simple
+    // rapprochement de nom normalise parmi les visites deja enregistrees par
+    // ce meme agent, jamais un vrai enregistrement de personne (pas de fiche
+    // beneficiaire, pas de village/menage, voir docs/audit-cote-agent-communautaire.md).
+    const beneficiaireNomNormalise = normaliserPourComparaison(beneficiaireNom);
+    const visitesExistantes = await prisma.suiviCommunautaire.findMany({
+      where: { agentId: agent.id },
+      select: { beneficiaireNom: true },
+    });
+    const doublonProbable = visitesExistantes.some(
+      (visite) => normaliserPourComparaison(visite.beneficiaireNom) === beneficiaireNomNormalise
+    );
+
     const suiviCree = await prisma.$transaction(async (tx) => {
       const cree = await tx.suiviCommunautaire.create({
         data: {
@@ -159,7 +186,13 @@ export async function creerSuiviCommunautaireAction(
       return cree;
     });
 
-    return { error: null, success: suiviCree !== null };
+    return {
+      error: null,
+      success: suiviCree !== null,
+      avertissementDoublonBeneficiaire: doublonProbable
+        ? `Une visite au nom de "${beneficiaireNom}" existe déjà dans votre historique. Vérifiez qu'il ne s'agit pas de la même personne.`
+        : null,
+    };
   } catch (erreur) {
     console.error("Erreur lors de l'enregistrement de la visite communautaire :", erreur);
     return {

@@ -74,6 +74,11 @@ function ContenuFormulaire({ onNouvelleVisite }: { onNouvelleVisite: () => void 
         <Alert level="success" title="Visite enregistrée">
           La visite a bien été ajoutée à votre historique de suivi communautaire.
         </Alert>
+        {state.avertissementDoublonBeneficiaire ? (
+          <Alert level="warning" title="Bénéficiaire peut-être déjà connu">
+            {state.avertissementDoublonBeneficiaire}
+          </Alert>
+        ) : null}
         <Button type="button" variant="secondary" className="w-fit" onClick={onNouvelleVisite}>
           Enregistrer une nouvelle visite
         </Button>
