@@ -1,0 +1,644 @@
+# Reste à faire : tout ce qui n'est pas encore intégré, vérifié dans le code
+
+Dernière vérification : 2026-09-26, sur le dépôt au commit `3173a9e` (les commits suivants n'ont touché que le README et le layout racine). Tous les statuts viennent de la lecture du code, pas des anciens audits `docs/audit-cote-*.md`, dont plusieurs sont en retard (voir 3.6). Ce fichier remplace `docs/roadmap.md` comme liste de référence de ce qui reste ; les fiches et règles citées (F-XXX-NN, RG-XXX-NN) sont celles du cahier des charges, dans `docs/pack claude/specs/`.
+
+Légende : **FAIT** (flux principal, règles strictes et critères d'acceptation couverts, écarts mineurs signalés), **PARTIEL** (flux principal présent, des étapes ou des règles manquent), **ABSENT** (aucun code). "non verifie" : impossible à prouver dans le code.
+
+## À lire en premier
+
+**En une phrase.** Sur les 100 fiches du cahier des charges : 9 faites, 75 partielles, 16 absentes. Les parcours principaux existent presque tous ; ce qui manque, c'est le socle sur lequel le cahier des charges les fait reposer (une autorisation d'accès unique, l'espace actif, l'exploitation) et la sécurité de base d'une mise en production.
+
+**Ce qui empêche d'utiliser de vraies données de santé** (à traiter avant toute donnée réelle, dans cet ordre) :
+
+1. **Cadre légal.** Autorisation de l'APDP (art. 407 du Code du numérique pour le NPI, art. 394 pour les données de santé), questions écrites à l'ANIP, relecture par un juriste de l'accès sans relation préalable, CGU et politique de confidentialité avec preuve d'acceptation, registre des traitements. Décision déjà prise : ne rien activer côté NPI avant l'autorisation (`access.by_npi` reste désactivé).
+2. **Hébergement.** Les documents médicaux et les avatars sont chez Cloudinary (hors du Bénin, art. 391), le numéro de téléphone et l'identifiant santé partent chez Wapy, la base de développement est sur un serveur distant. À trancher par le produit : hébergement au Bénin ou cadre autorisé, stockage objet chiffré.
+3. **Sécurité de base (vague 1 ci-dessous).** Cache du service worker qui conserve des pages de santé après déconnexion, aucune limite d'essais sur la connexion et le second facteur, suspension d'un compte sans effet immédiat, lecture des consultations d'un établissement sans consentement ni trace, actions serveur exposées sans contrôle de session.
+4. **Exploitation.** Aucune intégration continue, sauvegarde, supervision, en-têtes de sécurité ; des tâches planifiées qui vivent dans le processus web. Le branchement de la CI/CD est fait sur un autre poste : voir le README (section "Déploiement") pour l'ordre des commandes et les points qui cassent.
+5. **Secrets.** La clé Wapy et le jeton GitHub ont circulé en clair dans des conversations : les remplacer avant tout déploiement. Un fichier local `prisma/analytics-role.sql` contient un mot de passe réel (ignoré par git).
+
+**Quatre défauts bloquants relevés dans le code** (détail dans les fiches) : la saisie structurée des résultats de laboratoire échoue (F-LAB-03), les alertes épidémiologiques ne peuvent jamais se déclencher (F-PIL-06), l'empreinte d'une ordonnance ignore les lignes (F-PRE-04), la délivrance n'a aucun verrou (F-PHA-03). Deux écrans P0 sont injoignables faute de lien : la carte santé QR et la fiche de l'établissement.
+
+**Décisions du produit attendues** : hébergement des documents et de la base ; fournisseur SMS réel et volume Wapy ; calendrier APDP et ANIP ; consentement lié à la personne ou à l'affiliation ; création (ou non) des rôles accueil et auditeur au lieu de les fusionner dans les rôles existants ; relecture juridique.
+
+**Comment lire la suite.** Section 0 : chiffres par chapitre. Section 1 : les 100 fiches, une par une, avec les preuves et ce qui manque. Section 2 : chapitres 18 à 29 (règles transverses, design, architecture, modèle de données table par table, API, sécurité, exigences non fonctionnelles, plan de construction, tests, déploiement, démonstration, risques). Section 3 : dette technique et fonctions qui existent sans être reliées. Section 4 : idées ajoutables. Section 5 : les 15 risques les plus graves et l'ordre de priorité en 5 vagues.
+
+Écart de structure à garder en tête pour tout le document : le dépôt n'a que 8 rôles (`patient`, `medecin`, `infirmier`, `agent_communautaire`, `pharmacien`, `laboratoire`, `admin_etablissement`, `admin_national`) là où le pack en a 12 (pas de `RECEPTIONIST`, `LAB_SUPERVISOR`, `AUDITOR`, `PLATFORM_ADMIN`, `HEALTH_AUTHORITY` distincts), pas de `authorize()` unique, pas de bases d'accès B1 à B7 (un `Consentement` plat par couple patient/acteur), pas de contexte de soins ni de visite, pas d'espace actif, et une API quasi inexistante (logique dans des Server Actions). Les URL du pack (`/citoyen`, `/pro`, `/labo`...) correspondent à `/app/patient`, `/app/medecin` (qui sert aussi pharmacie, labo, terrain), `/app/etablissement`, `/app/ministere`, `/app/pilotage`.
+
+## 0. Synthèse chiffrée
+
+Méthode : lecture du code (schéma, sécurité, session, service worker, notifications, audit, pilotage, chapitres 18 à 29) et trois relectures fiche par fiche (comptes, citoyen et notifications ; établissements, clinique, administration et audit ; prescription, laboratoire, communautaire, pilotage et IA). Les constats les plus graves ont été revérifiés à la main dans le code (service worker, session, empreinte d'ordonnance, saisie de résultat de laboratoire, alertes épidémiologiques, lecture des consultations par l'infirmier, réservation de rendez-vous, chaînage d'audit, actions serveur sans contrôle, fichiers orphelins, seed). Volume au moment de la lecture : 141 commits, 57 800 lignes de TypeScript hors tests, 79 pages, 48 modèles Prisma, 29 migrations, 20 fichiers de tests (environ 205 cas).
+
+| Chapitre du pack | Fiches | FAIT | PARTIEL | ABSENT |
+|---|---|---|---|---|
+| 7, comptes et identité | 9 | 0 | 8 | 1 |
+| 8, espace citoyen | 13 | 1 | 12 | 0 |
+| 9, établissements, agendas, rendez-vous | 12 | 0 | 12 | 0 |
+| 10, consultation et dossier clinique | 14 | 3 | 11 | 0 |
+| 11, prescription et pharmacie | 11 | 3 | 7 | 1 |
+| 12, laboratoire | 6 | 0 | 6 | 0 |
+| 13, communautaire et hors ligne | 8 | 0 | 2 | 6 |
+| 14, pilotage | 7 | 1 | 5 | 1 |
+| 15, administration et audit | 11 | 1 | 8 | 2 |
+| 16, intelligence artificielle | 5 | 0 | 0 | 5 |
+| 17, notifications | 4 | 0 | 4 | 0 |
+| **Total** | **100** | **9** | **75** | **16** |
+
+Par priorité du pack : 51 fiches P0 (2 FAIT, 45 PARTIEL, 4 ABSENT : F-AUTH-07, F-PIL-03, F-ADM-03, F-ADM-05), 40 fiches P1 (5 FAIT, 30 PARTIEL, 5 ABSENT), 9 fiches P2 (2 FAIT livrées d'avance, 7 ABSENT). Aucune fiche P0 sur les accès (F-AUTH-06, F-CIT-10, F-CLI-02 à 05) n'est FAIT.
+
+Ce que ces chiffres cachent :
+
+- Le pack repose sur `authorize()`, sept bases d'accès, un contexte de soins ouvert à l'arrivée du patient et un espace actif. Le dépôt a un consentement plat par acteur, sans niveaux ni contexte de soins, et les 75 fiches PARTIELLES portent presque toutes cet écart de fond plutôt qu'un détail.
+- Quatre défauts bloquants relevés dans le code (pas dans les audits) : saisie structurée des résultats de laboratoire impossible, alertes épidémiologiques jamais déclenchables, empreinte d'ordonnance qui ignore les lignes, délivrance sans verrou. Deux écrans P0 sont injoignables (carte santé QR, fiche de l'établissement).
+- Le socle d'exploitation du pack (CI, Docker, sauvegardes, supervision, en-têtes de sécurité, recette, données de démonstration) n'existe pas.
+
+## 1. Fiches fonctionnelles, chapitre par chapitre (100 fiches)
+
+Priorité = colonne P0/P1/P2 du chapitre 3 du pack. Les chemins sont relatifs à la racine du dépôt. Les statuts viennent du code, pas des `docs/audit-cote-*.md` (plusieurs de ces audits sont en retard ou contredits par le code : voir section 3.6).
+
+### Chapitre 7, comptes, identité et accès (9 fiches)
+
+| ID | Titre | P | Statut | Preuves | Ce qui manque |
+|---|---|---|---|---|---|
+| F-AUTH-01 | Créer un compte citoyen | P0 | PARTIEL | `src/modules/identity/actions.ts:222`, `src/app/inscription/page.tsx`, `identity/actions.test.ts` | Compte créé aussitôt avec e-mail obligatoire : ni téléphone, ni inscription en attente, ni OTP SMS (RG-AUTH-03, 04). Pas de normalisation `+22901` (RG-AUTH-01). Mot de passe 8 caractères, sans plafond 128 ni liste des 10 000 (RG-AUTH-02). Âge 15 à 120 ans et date future non contrôlés (RG-AUTH-05, CA-4). Conditions et version non enregistrées (RG-AUTH-07). E-mail déjà pris signalé en clair (CA-3). Pas de rattachement d'un dossier existant. Identifiant santé séquentiel (RG-AUTH-06). CA-5 non testé. |
+| F-AUTH-02 | Connexion et déconnexion | P0 | PARTIEL | `identity/actions.ts:523-753`, `src/lib/session.ts`, `src/app/connexion/page.tsx` | Aucun verrouillage 5 échecs/15 min ni 10/24 h (CA-3) ; identifiant e-mail seul, pas d'"Appareil partagé" (RG-AUTH-12) ; pas de N-NEW-DEVICE ; second facteur non imposé aux professionnels (CA-2) ; JWT de 7 jours au lieu de 12 h/8 h/30 j ; cookie JWT et non jeton opaque (RG-AUTH-11 partiel) ; la déconnexion ne purge pas le cache du service worker (CA-4). Conformes : message générique (RG-AUTH-10), nouvelle session à chaque connexion (RG-AUTH-13). |
+| F-AUTH-03 | Réclamer un dossier existant | P1 | PARTIEL | `identity/reclamation.ts:136-357`, `src/app/inscription/reclamer/page.tsx` | SMS N-CLAIM-CODE non envoyé à la création du dossier (génération manuelle depuis un écran sans lien) ; téléphone non vérifié par OTP (RG-AUTH-21) ; les 5 essais ne comptent que si le code est bon (RG-AUTH-20) ; un nouveau code n'annule pas les anciens ; niveaux N1/N2 absents ; le code est renvoyé en clair au professionnel et stocké en clair dans `EnvoiSms.texte`. Aucun test. |
+| F-AUTH-04 | Mot de passe oublié | P0 | PARTIEL | `identity/reinitialisation-mot-de-passe.ts:174-326`, `reinitialisation-mot-de-passe.test.ts` | E-mail seul (pas de SMS) ; aucune limite 60 s / 5 par heure / par IP (RG-AUTH-03) ; réponse plus lente pour un compte existant (CA-2) ; pas de liste noire. Conformes : message toujours identique, sessions fermées (CA-1), RG-AUTH-30 et 31, MFA conservée. |
+| F-AUTH-05 | Activer un compte pro sur invitation | P0 | PARTIEL | `identity/gestion-comptes.ts:509-647`, `identity/identite-professionnelle.ts`, `gestion-comptes.identite.test.ts` | Ni `/activer`, ni jeton, ni expiration 7 jours (RG-AUTH-40), ni SMS/e-mail d'invitation : l'administrateur crée le compte avec un mot de passe temporaire affiché à l'écran. Pas d'OTP, de carte professionnelle ni de 2FA imposée. Mot de passe 8 caractères au lieu de 12 (RG-AUTH-43). Profil directement `valide` (CA-2). Type d'établissement non contrôlé (RG-AUTH-41). Conformes : RG-AUTH-42 et périmètre limité à son établissement. |
+| F-AUTH-06 | Double authentification | P0 | PARTIEL | `identity/mfa.ts:61-204`, `src/app/app/securite/GestionMfa.tsx` | TOTP facultatif (CA-1) ; pas de codes de secours (CA-2) ; secret en clair (RG-AUTH-51) ; désactivable par le titulaire avec son seul mot de passe (RG-AUTH-52), sans réinitialisation par un administrateur ni N-2FA-RESET ; pas de blocage après 5 échecs ; ré-authentification par mot de passe sans fenêtre de 5 min (RG-AUTH-53), TOTP seulement pour l'accès d'urgence. Aucun test. |
+| F-AUTH-07 | Choisir son espace actif | P0 | ABSENT | `src/lib/session.ts:36` (payload `userId, roles, sessionId`), `src/app/app/layout.tsx:341` (menu par `roles[0]`), `prisma/schema.prisma:1146` (`AffiliationProfessionnelle`, jamais lue) | Tout : sélecteur, `/espaces`, trace `CONTEXT_SWITCH`, espace lu en session serveur (RG-AUTH-60, 61, CA-1, CA-2). |
+| F-AUTH-08 | Verrouillage d'écran | P1 | PARTIEL | `src/components/VerrouillageInactivite.tsx`, `identity/verrouillage.ts` | 10 min pour 5 rôles, contenu retiré du DOM (RG-AUTH-70), 3 échecs puis déconnexion : conformes. Manquent : brouillons non conservés, comptage des échecs uniquement côté client (contournable), rôles établissement/pilotage/admin (15 min) et appareil partagé non traités. Aucun test. |
+| F-AUTH-09 | Appareils et sessions | P1 | PARTIEL | `identity/sessions.ts:40-129`, `src/app/app/securite/GestionSessions.tsx`, `sessions.test.ts` | Liste et fermeture (CA-1) faites. Pas de ville (assumé). Le changement de mot de passe (`gestion-comptes.ts:653`) ne ferme pas les autres sessions. |
+
+### Chapitre 8, espace citoyen (13 fiches)
+
+| ID | Titre | P | Statut | Preuves | Ce qui manque |
+|---|---|---|---|---|---|
+| F-CIT-01 | Assistant de première utilisation | P0 | PARTIEL | `src/app/app/patient/bienvenue/AssistantPremiereUtilisation.tsx`, `patient/actions.ts:443` | Un seul enregistrement final, saisie en texte libre (pas de suggestions ni de réaction par allergie) ; VIH non marqué sensible (CA-3) ; un seul contact d'urgence (RG-CIT-03 : 3) ; aucune étiquette "déclaré par le patient" nulle part (RG-CIT-01, CA-2) ; pas de bandeau "Complétez votre profil" (RG-CIT-02). |
+| F-CIT-02 | Tableau de bord citoyen | P0 | PARTIEL | `src/app/app/patient/page.tsx` | Pas de sélecteur de personne, de section "Alertes importantes", de "Derniers documents", de tuile "Partager mon dossier", d'itinéraire ; pas de "Hors connexion, données du..." (RG-CIT-10) ; RG-CIT-12 non mesuré. |
+| F-CIT-03 | Consulter son dossier | P0 | PARTIEL | `app/patient/dossier/page.tsx`, `clinical/actions.ts:298` | Pas de chronologie unifiée, de filtres type/année/établissement, de pagination 20, de page de détail, de libellé CIM-10 simplifié ; vaccinations affichées nulle part ; pas d'étiquettes déclaré/confirmé. Conformes : observations réservées vidées (CA-2), résultat sensible masqué (RG-CIT-20), éléments retirés barrés (RG-CIT-22). |
+| F-CIT-04 | Gérer ses informations déclarées | P0 | PARTIEL | `patient/actions.ts:443`, `patient/dossier/FormulaireDossier.tsx`, `patient/actions.test.ts` | Allergies, antécédents, maladies en tableaux JSON réécrits d'un bloc : pas de DECLARED/CONFIRMED, de versions (ancienne valeur perdue), de statut `RETIRED` (RG-CIT-31), de "Signaler une erreur" par élément (RG-CIT-30). |
+| F-CIT-05 | Carte santé numérique (QR) | P0 | PARTIEL | `patient/carte-sante.ts`, `app/patient/carte/CarteSanteQr.tsx`, `app/carte-sante/verifier/page.tsx` | L'écran `/app/patient/carte` n'a aucun lien (ni menu ni tableau de bord : injoignable) ; jeton UUID en mémoire de processus, non signé HMAC (RG-CIT-40) ; QR hors ligne (RG-CIT-41) et impression absents ; le tableau de bord montre l'ancien QR permanent contenant l'identifiant interne. Aucun test. |
+| F-CIT-06 | Ordonnances, résultats, documents | P0/P1 | PARTIEL | `app/patient/prescriptions/page.tsx`, `prescription/jetons-telechargement.ts`, `api/patient/prescriptions/[id]/telecharger/route.ts`, `api/documents/[id]/route.ts` | PDF d'ordonnance par jeton de 60 s à usage unique (en mémoire) : conforme. Manquent : QR d'ordonnance à l'écran ; résultat en texte seul (pas de valeur/unité/normes/indicateur ni "Discutez...") ; pas d'écran documents, pas d'URL de 60 s pour les documents (RG-CIT-50). |
+| F-CIT-07 | Ajouter une personne à charge | P1 | PARTIEL | `proches/actions.ts:168`, `src/app/app/patient/proches/*` | Mineurs de moins de 18 ans seulement (pack : 15) ; cas "majeur" refusé ; pas de recherche de dossier existant ; pas de DECLARED/VERIFIED : le tuteur a `dossier_complet` d'emblée (contre RG-CIT-60) ; pas de limite de 2 tuteurs ni de N-GUARDIAN-CONFLICT (RG-CIT-62) ; le plafond de 10 compte les tutelles retirées. |
+| F-CIT-08 | Agir pour une personne à charge | P1 | PARTIEL | `app/patient/proches/[id]/page.tsx`, `proches/actions.ts:350` | Écran dédié seulement : pas de sélecteur d'en-tête ni de bandeau permanent (RG-CIT-70) ; le rendez-vous d'un proche ne contrôle ni disponibilité ni doublon ; rappels et confirmations partent vers un faux compte "sans_compte". |
+| F-CIT-09 | Fin de tutelle à la majorité | P2 | FAIT (MVP manuel prévu par le pack) | `administration/tutelles.ts`, `app/ministere/tutelles/page.tsx` | Tâche automatique à 18 ans, notification du tuteur, code de réclamation (P2). Détection heuristique (tout `dossier_complet` sur un compte `sans_compte`, y compris celui d'un médecin). Aucun test. |
+| F-CIT-10 | Autorisations de partage | P0 | PARTIEL | `patient/actions.ts:530-686`, `patient/consentement-durees.ts`, `transfert/demandes-patient.ts`, `demandes-patient.test.ts` | Niveaux `SUMMARY/FULL/FULL_SENSITIVE` absents (RG-ACC-11, 13, CA-2) ; pas de partage à un établissement ; liste de tous les professionnels au lieu d'une recherche ; pas d'écran de confirmation ; N-CONSENT-GRANTED et REVOKED non émis ; pas de listes séparées ni de fenêtre de 90 jours (RG-CIT-80) ; pas d'accès de contexte de soins (RG-CIT-81) ; `/app/patient/demandes-acces` sans menu ; octroi et retrait non testés. |
+| F-CIT-11 | Partage par code temporaire | P0 | PARTIEL | `partage/actions.ts:118-361`, `patient/consentements/GenerateurCodePartage.tsx` | Conformes : 8 caractères sans ambigus, haché, 10 min, 5 essais/h, médecin et infirmier seulement (CA-1). Manquent : niveau et durée imposés (`consultations`, 24 h), pas de QR ; usage unique non atomique (mise à jour sans condition `consommeLe: null`). Aucun test. |
+| F-CIT-12 | Qui a consulté mon dossier | P0 | PARTIEL | `patient/actions.ts:304-401`, `patient/acces/ListeAccesDossier.tsx` | Regroupement par personne et jour, urgences en rouge, signalement (RG-CIT-101) faits. Manquent : les clés d'audit `document_medical:`, `vaccination:`, `prise_en_charge_infirmiere:`, `reference_patient:` ne sont pas résolues, ces accès sont invisibles (RG-CIT-100) ; filtre de période ; pagination ; "raison". Aucun test. |
+| F-CIT-13 | Exercer ses droits sur ses données | P1 | PARTIEL | `patient/droits-donnees.ts:100-293`, `app/patient/droits/GestionDroitsDonnees.tsx`, `api/patient/export/json/route.ts` | Ré-authentification seulement dans l'interface : un GET direct avec le cookie télécharge toute l'archive ; archive régénérée (pas de disponibilité 7 jours) ; rectification non transmise au professionnel auteur, pas d'escalade à 30 jours ; fermeture au statut `ferme` (dossier non réclamable, e-mail verrouillé), autres sessions non fermées. |
+
+### Chapitre 9, établissements, agendas et rendez-vous (12 fiches)
+
+RG-RDV-00 (fonction unique `transitionAppointment`, erreur `APPT_INVALID_TRANSITION`) est ABSENTE : `RendezVous.statut` est une chaîne libre écrite à 7 endroits (`facility/actions.ts:383, 534, 617`, `facility/file-du-jour.ts:208, 237`, `clinical/actions.ts:1339`, `administration/etablissements.ts:366`).
+
+| ID | Titre | P | Statut | Preuves | Ce qui manque |
+|---|---|---|---|---|---|
+| F-ETA-01 | Rechercher un établissement | P0 | PARTIEL | `src/app/etablissements/page.tsx`, `modules/facility/annuaire-public.ts:83` | Recherche texte nom/localisation seulement (établissements `actif`, lien depuis `connexion/page.tsx:204` uniquement). RG-ETA-02 non tenue : `mode: "insensitive"` est un `ILIKE` sans accents, aucune extension `unaccent`/`pg_trgm`. Pas de carte, de filtres type/service/commune/"ouvert", de géolocalisation, de pagination 20 ni de plafond 500 (RG-ETA-03). API `GET /api/v1/facilities` absente. Aucun test. |
+| F-ETA-02 | Fiche publique | P0 | PARTIEL | `src/app/etablissements/[id]/page.tsx`, `annuaire-public.ts:108` | Nom, type, secteur, adresse, téléphone, services, itinéraire ; RG-ETA-10 respectée. Manquent : niveau (lu, non affiché), zone sanitaire, horaires, "RDV en ligne" par service, équipements, carte ; "Prendre rendez-vous" renvoie à `/connexion` sans service. |
+| F-ETA-03 | Gérer la fiche de son établissement | P0 | PARTIEL | `facility/gestion-fiche.ts:150`, `app/etablissement/fiche/page.tsx` | **Écran injoignable** (aucun lien, ni menu `layout.tsx:218` ni tableau de bord). Édite sigle, adresse, téléphone, e-mail, capacité, services en texte libre ; journalisé sans versionnement (RG-ETA-21). Manquent : horaires multi-plages, confirmation auto/manuelle, fermetures, RG-ETA-20 (aucun modèle `Service`), description, équipements. Aucun test. |
+| F-ETA-04 | Gérer le personnel | P0 | PARTIEL | `facility/gestion-personnel.ts:76`, `identity/gestion-comptes.ts:509`, `app/etablissement/page.tsx:166`, `gestion-comptes.identite.test.ts` | Création directe avec mot de passe temporaire (ni invitation ni renvoi), suspension motivée, réactivation, fin d'affiliation, RG-ETA-30 et 31 (refus sans réaffectation). CA-1 non tenue : la suspension change `User.statut` mais ne ferme aucune session et `getSession()` ne relit pas le statut. Table d'affiliation jamais mise à jour ; pas de colonnes services/début/dernière connexion ni de filtres ; rôles non filtrés par type d'établissement (18.5). Test : création seulement. |
+| F-ETA-05 | Définir les agendas | P0 | PARTIEL | `facility/disponibilites.ts:135`, `app/etablissement/disponibilites/[userId]/`, `disponibilites.test.ts`, `lib/fuseau-horaire.test.ts` | Plages hebdomadaires par professionnel, RG-ETA-40 (chevauchement) et RG-ETA-43 (fuseau). Manquent : service, durée et capacité de créneau, génération à 60 jours et tâche nocturne, aperçu, fermetures, RG-ETA-42 (jours fériés), rôle accueil ; aucun contrôle sans praticien choisi ou sans agenda (`:246`) ; la voie "proche" ignore l'agenda. |
+| F-RDV-01 | Prendre un rendez-vous | P0 | PARTIEL | `facility/actions.ts:214-337`, `app/patient/rendez-vous/FormulaireNouveauRendezVous.tsx`, `proches/actions.ts:390` | Crée un rendez-vous `demande` à date et heure libres. Manquent : sélecteur de créneaux, RG-RDV-01 (seulement "futur"), RG-RDV-02 (3 rendez-vous), règle du même jour, **RG-RDV-03 non tenue** (lecture puis insertion `:293-319`, aucune contrainte unique, CA-1 non tenu, aucun test de concurrence), RG-RDV-05, confirmation automatique, SMS, `.ics`, motif en liste. Établissement non actif réservable ; voie proche sans contrôle de futur, d'agenda ni de fuseau. |
+| F-RDV-02 | Annuler ou déplacer | P0 | PARTIEL | `facility/actions.ts:344`, `app/patient/rendez-vous/ListeRendezVous.tsx:276` | Annulation avec modale. Manquent : RG-RDV-10 (2 h), garde de statut (un rendez-vous terminé ou absent est annulable), information de l'établissement, déplacement et RG-RDV-11. |
+| F-RDV-03 | Confirmer ou refuser | P0 | PARTIEL | `facility/actions.ts:490-635`, `app/medecin/rendez-vous/ListeRendezVousProfessionnel.tsx` | Confirmer et annuler par le professionnel assigné, notification interne de confirmation. Manquent : rôle accueil (un rendez-vous sans praticien n'est confirmable par personne), REJECTED avec motif, EXPIRED et RG-RDV-20 (aucun job), garde de statut (un rendez-vous annulé peut être reconfirmé), patient non prévenu à l'annulation. |
+| F-RDV-04 | File du jour et arrivée | P0 | PARTIEL | `facility/file-du-jour.ts:114`, `app/etablissement/file-du-jour/SectionFileDuJour.tsx`, menu `layout.tsx:221` | Colonnes Attendus/Arrivés/Terminés/Absents, compteurs, arrivée = `heureArrivee`. Manquent : visite, contexte de soins B4, RG-RDV-30/31, preuve par QR/SMS/pièce (RG-ACC-20, 21), choix FULL/SUMMARY, arrivée sans rendez-vous, fenêtre RG-RDV-33, colonne "En consultation", rafraîchissement 30 s ; jour calculé en heure serveur ; le QR de carte n'est relié à aucune arrivée. RG-RDV-32 respectée. |
+| F-RDV-05 | Absences et clôture | P0 | PARTIEL | `file-du-jour.ts:234`, `instrumentation.ts`, `clinical/actions.ts:1338` | Tâche horaire `absent` démarrée (fenêtre de 3 jours) ; la validation d'une consultation passe le rendez-vous à `termine`. Manquent : IN_CARE, LEFT_WITHOUT_CARE, tâche de 23 h, clôture des visites de plus de 24 h, RG-RDV-41, journalisation de la tâche. |
+| F-RDV-06 | Rendez-vous au guichet | P1 | PARTIEL | `facility/rendez-vous-guichet.ts:146`, lien `file-du-jour/page.tsx:35` | Recherche exacte journalisée (RG-ACC-40), rendez-vous directement `confirme`. Manquent : création de dossier, SMS/notification au patient, RG-RDV-02/03 ; identifiant santé journalisé en clair ; recherche par identifiant sans plafond. |
+| F-RDV-07 | Rappels automatiques | P0 | PARTIEL | `facility/rappels-rendez-vous.ts:64`, `instrumentation.ts`, `lib/fuseau-horaire.ts` | Veille 18 h (heure de Porto-Novo) et 2 h avant si pris plus de 3 h à l'avance, notification interne, job toutes les 20 min ; RG-RDV-52 respectée. Manquent : SMS et lien court (RG-RDV-51), préférences (RG-RDV-53), exclusion des rendez-vous `demande`, trace du dernier passage. |
+
+### Chapitre 10, consultation et dossier clinique (14 fiches)
+
+Constat transverse : il n'existe pas de `authorize()` unique ; la vérification du consentement est recopiée dans une dizaine de fichiers (clinical, soins, vaccination, document et sa route, reference, laboratoire, proches, urgence, verification, tutelles). `can(role, "read", "patient")` n'est appelé nulle part, et le `typeAcces` choisi par le patient n'est pas appliqué en lecture (hors "urgence" et "référence").
+
+| ID | Titre | P | Statut | Preuves | Ce qui manque |
+|---|---|---|---|---|---|
+| F-CLI-01 | Tableau de bord professionnel | P0 | PARTIEL | `app/medecin/DashboardMedecin.tsx:254`, `DashboardInfirmier.tsx` | "Patients du jour" = rendez-vous confirmés du médecin ; brouillons, résultats sensibles à annoncer, raccourcis. Manquent : heure d'arrivée et attente (orange au-delà de 60 min), statuts, âge des brouillons, résultats non lus, demandes acceptées, renouvellements, références OPEN, recherche rapide, scan QR ; RG-CLI-01 non appliquée ; jour en heure serveur. |
+| F-CLI-02 | Rechercher un patient | P0 | PARTIEL | `app/medecin/patients/page.tsx`, `transfert/actions.ts:141-560`, `partage/actions.ts:224`, `transfert/code-acces.ts`, 4 fichiers de tests `transfert` | Téléphone + naissance (NPI sous drapeau) avec code envoyé au patient, code de partage, filtre local nom/identifiant ; RG-CLI-10 (réponse uniforme), RG-CLI-11 (HMAC du critère), CA-1 testés. Manquent : identifiant santé exact, QR, les 3 actions du cas "aucun résultat" ; RG-CLI-12 : blocage à 10 sans résultat/h, pas d'alerte à 30. |
+| F-CLI-03 | Créer un dossier (doublons) | P0 | PARTIEL | `identity/actions.ts:342-516`, `app/medecin/patients/ModalNouveauPatient.tsx` | Réservé au médecin ; doublon = égalité exacte nom+prénom+naissance, candidat masqué, forçage motivé (10 caractères). Manquent : infirmier/accueil, score 18.3 et seuils, RG-CLI-20 (jeton de 10 min : `confirmerMalgreDoublon` saute tout contrôle), RG-CLI-21 (file de revue), RG-CLI-22, commune, niveaux N0/N2, SMS de réclamation, carte papier. Le créateur s'octroie un consentement de 12 mois (`:471`). Aucun test. |
+| F-CLI-04 | Résumé patient | P0 | PARTIEL | `clinical/actions.ts:579-673`, `app/medecin/patients/[id]/page.tsx` | Bandeau, allergies en rouge, chroniques, antécédents, contacts, traitements, 5 dernières consultations, vaccinations, documents ; RG-CLI-31 journalisé. Manquent : niveau de vérification (RG-ACC-50), grossesse, résultats anormaux, constantes, RG-CLI-30 (aucun SUMMARY/FULL : CA-1 non tenu, pas de mention "non partagées"), sources (RG-CLI-32), résumé IA. |
+| F-CLI-05 | Démarrer une consultation | P0 | PARTIEL | `clinical/actions.ts:1053-1373`, `app/medecin/consultations/nouvelle/page.tsx` | Brouillon unique repris (RG-CLI-40), invisible du patient (RG-CLI-41). Manquent : base B4 ou B3 + rendez-vous (RG-ACC-15 : un simple consentement autorise l'écriture, `:1188`), visite IN_CARE, écran en 3 zones, RG-CLI-42 (aucun enregistrement automatique à 10 s ni stockage local), RG-CLI-43 (aucun ABANDONED, ni rappel J+3). |
+| F-CLI-06 | Saisie clinique | P0 | PARTIEL | `clinical/controles-constantes.ts`, `actions.ts:1153`, `FormulaireConsultation.tsx:296` | Plages acceptées et d'alerte, confirmation (RG-CLI-50), tables pédiatriques 18.7, IMC, contrôle serveur, `observations` jamais renvoyées au citoyen (RG-CLI-54, `getMesConsultations:332`). Manquent : **CIM-10** (aucune table ni liste : `conclusion` en texte libre tient lieu de diagnostic ; RG-CLI-52 et 53 non tenues, aucune consultation `SENSITIVE`), certitude, diagnostics secondaires, histoire de la maladie, examen clinique séparé, étiquettes de symptômes, limite 200 caractères, grossesse, variation de poids ; seuils stricts ">" au lieu de "≥" (38,5 ; 140/90). |
+| F-CLI-07 | Valider (signer) | P0 | PARTIEL | `clinical/actions.ts:1122, 1317` | Statut `terminee`, horodatage séparé (RG-CLI-61), SHA-256, rendez-vous `termine`, événement de pilotage, blocage des modifications. Manquent : diagnostic principal exigé (CA-1 : seulement motif et conclusion), liste des sections manquantes, contrôle des ordonnances orphelines, récapitulatif, notification au patient, "Terminer la visite", RG-CLI-62. |
+| F-CLI-08 | Addendum et retrait | P1 | FAIT (écarts mineurs) | `clinical/actions.ts:1382-1627`, `FormulaireAddendum.tsx`, `FormulaireRetrait.tsx` | Écarts : plus aucun addendum après 12 mois (le pack autorise l'auteur ou le responsable médical), pas de "diagnostic corrigé", ré-authentification par mot de passe et non TOTP. |
+| F-CLI-09 | Historique complet | P0 | PARTIEL | `clinical/actions.ts:726-925`, `historique/ListeHistorique.tsx` | Consultations, prescriptions, examens, visites communautaires ; filtres, 25 par page, détail, RG-CLI-80. Manquent : vaccinations, documents, délivrances ; filtrage en SQL (tout est chargé puis filtré et paginé en mémoire : RG-ACC-05) ; curseur ; exclusion des données sensibles pour l'infirmier. |
+| F-CLI-10 | Accès d'urgence | P1 | PARTIEL | `urgence/actions.ts:75-246`, `app/medecin/urgence/*`, `permissions.test.ts:117` | 4 h, 5 par 24 h, motif + justification 20 à 500, TOTP (MFA active exigée), notifications internes, pas de prolongation, revue F-AUD-02 : CA-1 à 3 tenus. Manquent : droit d'écriture B5 (ni consultation ni ordonnance), SMS, tuteur, auditeur, alerte au dépassement (simple trace `acces_urgence_refuse_quota`), RG-CLI-91 (seuls les examens sensibles sont filtrés), bandeau rouge sur la seule fiche résumé, identification par identifiant santé seulement, TOTP sans compteur d'échecs. |
+| F-CLI-11 | Enregistrer une vaccination | P1 | FAIT (écarts mineurs) | `vaccination/actions.ts:164`, `vaccination/referentiel.ts`, `app/medecin/vaccinations/nouvelle` | Écarts : lieu (établissement/campagne) absent, pas d'alerte BCG après 1 an, agent communautaire exclu, tout consentement suffit y compris "urgence" (`:141`). |
+| F-CLI-12 | Prise en charge infirmière | P1 | PARTIEL | `soins/actions.ts:154-459`, `app/medecin/soins/*` | Rendez-vous confirmés du jour sans prise, constantes contrôlées, priorité, note obligatoire, préremplissage médecin. Manquent : statut "constantes prises" dans la file, note de soins autonome immuable avec addendum, base d'accès par visite ; les prises `en_attente` sont reprises sans borne de jour ni d'établissement. |
+| F-CLI-13 | Ajouter un document médical | P1 | PARTIEL | `document/actions.ts:154`, `document/stockage-fichiers.ts`, `app/api/documents/[id]/route.ts` | Signature binaire PDF/JPEG/PNG, nom UUID, retrait motivé, journal. Manquent : limite effective de 4 Mo (`next.config.ts:9`, `bodySizeLimit: "4mb"`, contre 10 Mo annoncés dans le formulaire), EXIF non purgé par le code, confidentialité "sensible" jamais appliquée au téléchargement, infirmier et laboratoire exclus, dépôt en une étape, stockage Cloudinary sans chiffrement applicatif. |
+| F-CLI-14 | Référence vers un autre établissement | P2 | FAIT (écarts) | `reference/actions.ts:228`, `app/medecin/references/*` | Livré alors que le pack le classe P2. Écarts : "niveau supérieur" = type hôpital ; accès conservé après clôture (à vérifier) ; détail non journalisé ; aucun contrôle de rôle. |
+
+### Chapitre 11, prescription électronique et pharmacie (11 fiches)
+
+| ID | Titre | P | Statut | Preuves | Ce qui manque |
+|---|---|---|---|---|---|
+| F-PRE-01 | Créer une ordonnance | P0 | PARTIEL | `src/modules/prescription/actions.ts:565`, `app/medecin/prescriptions/nouvelle/FormulairePrescription.tsx` | Pas d'état DRAFT (création = signature, statut `validee`) ; pas de maximum de 10 lignes (RG-PRE-01) ; pas de poids obligatoire sous 12 ans (RG-PRE-02) ; posologie réduite (`posologie.ts` : 4 unités, 5 voies, 3 fréquences), sans "si besoin", moments, traitement de fond ni quantité calculée ; durée non bornée à 90 jours ; "non substituable" jamais saisissable. |
+| F-PRE-02 | Contrôles de sécurité | P0 | FAIT | `prescription/actions.ts:670-836`, `referentiel-allergies.ts`, `controles-securite.ts` | Correspondance allergie sur 11 mots-clés en dur (pas la table 18.4) ; refus par message texte et non 422 `PRE_BLOCKING_ALERT` ; CA-1 non testé. |
+| F-PRE-03 | Référentiel et recherche | P0 | PARTIEL | `actions.ts:329`, `prisma/schema.prisma:582`, `/app/ministere/referentiels/medicaments` | Pas de recherche à 3 caractères sans accents (un `select` charge tout le catalogue), pas de noms commerciaux ni ATC. RG-PRE-20 respectée. |
+| F-PRE-04 | Signer l'ordonnance | P0 | PARTIEL | `actions.ts:237-252, 607-624, 844-876`, `verification-publique.ts`, `api/patient/prescriptions/[id]/telecharger/route.ts` | Numéro `RX-AAAA-NNNN` par `count()` ; validité 90 jours calculée à l'affichage, non stockée ; **empreinte SHA-256 erronée** : `JSON.stringify(champs, Object.keys(champs).sort())` supprime les clés imbriquées (vérifié : `lignes` devient `[{}]`), patient, prescripteur, établissement et date n'y figurent pas ; pas de test d'intégrité (CA-2) ; jeton = HMAC déterministe de `NEXTAUTH_SECRET`, non stocké, non révocable ; ré-authentification par mot de passe sans TOTP, fenêtre de 5 min ni compteur de 3 échecs (RG-PRE-30) ; patient non notifié à la signature ; PDF sans coordonnées de l'établissement, spécialité, n° d'inscription, âge, sexe, poids, validité, 8 caractères d'empreinte, ni mention RG-PRE-32 (RG-PRE-31 respectée). |
+| F-PRE-05 | Annuler, arrêter, renouveler | P1 | PARTIEL | `actions.ts:1002, 1114, 1240`, `ActionsPrescription.tsx` | "Arrêtée" stockée `annulee` (pas de STOPPED) ; le renouvellement crée directement une ordonnance active (pas de DRAFT, lignes non éditables, refus sec si un contrôle se déclenche). |
+| F-PRE-06 | Vérifier une ordonnance (QR) | P0 | FAIT | `app/v/o/[numero]/page.tsx`, `app/api/v1/public/prescriptions/[number]/verify/route.ts`, `verification-publique.test.ts` | Limiteur 30/min en mémoire par processus, IP lue dans `x-forwarded-for` ; statut "expirée" calculé, jamais stocké ; établissement affiché = celui du profil du médecin et non celui de l'acte ; RG-PRE-42 : redirection sans reporter le numéro. |
+| F-PHA-01 | Tableau de bord pharmacie | P1 | PARTIEL | `app/medecin/pharmacie/page.tsx`, `DashboardPharmacien.tsx` | Pas de "Scanner une ordonnance" (aucun code caméra/QR dans le dépôt), pas de délivrances du jour ni de partielles valables de la pharmacie ; à la place, liste de toutes les prescriptions en attente de tous les patients. |
+| F-PHA-02 | Retrouver une ordonnance présentée | P1 | PARTIEL | `actions.ts:1715`, `RechercheOrdonnance.tsx` | RG-PHA-01 (5 essais/h) et CA-1 respectés. Pas de scan QR ni de jeton, pas de base ASSIGNMENT de 30 jours ; le détail n'affiche ni allergies, ni âge et sexe, ni prescripteur, ni validité ; `getDetailPrescriptionPourDelivrance` s'ouvre par simple identifiant. |
+| F-PHA-03 | Enregistrer une délivrance | P1 | PARTIEL | `actions.ts:1958-2248`, `FormulaireDelivrance.tsx` | RG-PHA-11 sans verrou : `$transaction` par défaut (READ COMMITTED), lecture puis écriture, commentaire fondé sur SQLite ; CA-1 non testé ; pas d'état EXPIRED, validité non contrôlée (RG-PHA-10) ; RG-PHA-12 inopérante (`nonSubstituable` jamais posé à la création) ; une délivrance à 0 partout est acceptée. RG-PHA-13 (24 h) respectée. |
+| F-PHA-04 | Historique des délivrances | P1 | FAIT | `actions.ts:2471`, `app/medecin/pharmacie/historique/page.tsx` | Export CSV (P2). |
+| F-PHA-05 | Suivi des stocks | P2 | ABSENT | seul le motif `rupture_stock` alimente IND-09 (lu par aucun écran) | Stock, seuils. |
+
+### Chapitre 12, examens et laboratoire (6 fiches)
+
+| ID | Titre | P | Statut | Preuves | Ce qui manque |
+|---|---|---|---|---|---|
+| F-LAB-01 | Demander un examen | P1 | PARTIEL | `src/modules/laboratoire/actions.ts:399`, `app/medecin/examens/nouvelle`, `referentiel-examens.ts` | Pas de numéro `LB-`, de QR, de signature, de renseignements cliniques ; pas de laboratoire "au choix du patient" (`laboratoireId` obligatoire) ; consultation optionnelle (RG-LAB-01) ; ni notification du laboratoire ni du patient ; pas d'EXPIRED à 30 jours (RG-LAB-03). Présents : famille, urgence, à jeun manuel, sensible par mots-clés. |
+| F-LAB-02 | Prélèvement et rejet | P1 | PARTIEL | `actions.ts:781, 877` | Pas de recherche numéro + année ni de QR, de base ASSIGNMENT, de libération motivée (RG-LAB-10). Prélèvement, rejet (5 motifs) et notifications sans nom d'examen présents. |
+| F-LAB-03 | Saisir un résultat | P1 | PARTIEL | `actions.ts:999`, `referentiel-parametres-examens.ts`, `app/medecin/laboratoire/FormulaireResultat.tsx:37` | **Bug bloquant vérifié** : l'appel `schemaSaisieResultat.safeParse` ne transmet pas `parametresJson`, donc `JSON.parse("")` échoue ("Format des valeurs saisies invalide") : la saisie structurée des 4 examens couverts est impossible et RG-LAB-20/21 inatteignables. Référentiel limité à 4 examens et 5 paramètres, valeurs de référence par sexe sans âge ; pas de résultat qualitatif, de commentaire ni de PDF. |
+| F-LAB-04 | Valider un résultat | P1 | PARTIEL | `actions.ts:1194, 1380` | Quatre yeux entre pairs (auto-validation refusée sans code 403 dédié), empreinte SHA-256, renvoi motivé : faits. Manquent : correction d'un résultat validé en nouvelle version (RG-ROL-31), antériorités, écran `/labo/validation`. |
+| F-LAB-05 | Mise à disposition et annonce | P1 | PARTIEL | `actions.ts:1320-1359, 1490`, `app/patient/examens/page.tsx` | Le patient reçoit "résultat disponible" dès la validation même pour un examen sensible (RG-LAB-41, RG-CIT-20 contredites) ; la notification critique cite paramètre et valeur (RG-LAB-42) ; pas d'escalade à 2 h ni de niveau prioritaire (RG-LAB-21) ; pas d'alerte à 30 jours. |
+| F-LAB-06 | Annuler une demande | P1 | PARTIEL | `actions.ts:539`, `BoutonAnnulerExamen.tsx` | Pas de motif, aucune notification du patient ni du laboratoire, pas de libération par le laboratoire. |
+
+### Chapitre 13, santé communautaire et hors ligne (8 fiches)
+
+| ID | Titre | P | Statut | Preuves | Ce qui manque |
+|---|---|---|---|---|---|
+| F-COM-01 | Préparer l'appareil | P1 | ABSENT | seulement `public/manifest.webmanifest`, `public/service-worker.js`, `src/app/RegistreServiceWorker.tsx` | Écran de préparation, PIN, instantané d'aire, IndexedDB, Web Crypto (RG-COM-01, 02, 03, RG-OFF-01). |
+| F-COM-02 | Enregistrer une personne | P1 | PARTIEL | `communautaire/actions.ts:320`, `ModalNouvellePersonne.tsx` | En ligne seulement ; village en texte libre ; doublon par égalité exacte dans l'établissement, pas de score ni de statut REVIEW ni de contrôle à la synchronisation. |
+| F-COM-03 | Visite à domicile | P1 | PARTIEL | `actions.ts:159`, `FormulaireSuiviCommunautaire.tsx` | Types de visite différents du pack, notes libres ; pas de questionnaire versionné, de signes de danger ni de référence communautaire (RG-COM-10). |
+| F-COM-04 | Vaccination de terrain | P1 | ABSENT | seul le type de visite "vaccination" | Vaccin, dose, campagne ; l'agent n'a pas `create:vaccination`. |
+| F-COM-05 | Suivi de grossesse | P2 | ABSENT | traces : type "suivi_grossesse", `Patient.grossesseEnCours` | Fiche complète (P2, normal). |
+| F-COM-06 | Suivi de l'enfant | P2 | ABSENT | aucune | (P2, normal). |
+| F-COM-07 | Campagnes | P2 | ABSENT | aucune | (P2, normal). |
+| F-COM-08 | Synchroniser | P1 | ABSENT | le service worker ne rejoue aucune écriture (`public/service-worker.js:11`) | Route `/sync`, UUID v7, lots de 50, idempotence, indicateur En ligne/Hors ligne (RG-OFF-02, 04, RG-COM-20, 21, 22). |
+
+### Chapitre 14, pilotage (7 fiches)
+
+| ID | Titre | P | Statut | Preuves | Ce qui manque |
+|---|---|---|---|---|---|
+| F-PIL-01 | Tableau de bord d'établissement | P0 | PARTIEL | `app/etablissement/page.tsx`, `SectionPilotage.tsx`, `pilotage/lecture.ts:129` | Pas de période personnalisée ; top 10 incluant les groupes sensibles (RG-PIL-05) ; activité par professionnel lue directement dans `Consultation` ; pas de taux d'absence ni de IND-11 alors que `RendezVous.heureArrivee` et le statut "absent" existent ; pas d'activité par service ; les statistiques historiques (`analytics/actions.ts:248`) restent non masquées ; pas d'API. |
+| F-PIL-02 | Centre national de pilotage | P0 | PARTIEL | `app/pilotage/page.tsx`, `pilotage/lecture.ts:335` | Seul filtre : la période (pas de territoire, type, sexe, âge) ; carte absente ; RG-PIL-20 sans objet ; CA-1 (test de schéma sans identifiant patient) absent. Présents : 6 cartes avec variation, top diagnostics, 12 semaines, alertes, mention de pied de page, RG-PIL-21. |
+| F-PIL-03 | Carte sanitaire interactive | P0 | ABSENT | placeholder "Module non activé" (`app/pilotage/page.tsx:128`) | GeoJSON, choroplèthe, 34 zones (le seed a des zones "à affiner"). |
+| F-PIL-04 | Tendances et comparaisons | P1 | FAIT | `pilotage/tendances.ts:140`, `app/pilotage/tendances/` | 6 indicateurs comparables, territoires = départements ; le CSV n'exige ni motif, ni ré-authentification, ni journal `EXPORT`. |
+| F-PIL-05 | Exports et rapports | P1 | PARTIEL | `pilotage/exports.ts:70`, `app/api/pilotage/export/{csv,pdf}/route.ts` | Ré-authentification vérifiée seulement à l'écran : les routes GET acceptent n'importe quel motif sans preuve ; l'ancien export `exporterRepartitionCSV` (`analytics/actions.ts:356`) est non masqué, sans motif ni audit. |
+| F-PIL-06 | Alertes épidémiologiques | P1 | PARTIEL | `pilotage/alertes.ts:41`, `app/pilotage/alertes/` | **Détection inopérante (vérifié)** : `alertes.ts:96` ne lit que les agrégats avec `zoneSanitaireId` non nul, or `agregation.ts` n'écrit jamais ce champ (ni les lignes IND-03) ; aucune alerte ne peut naître. La détection s'exécute au chargement de la page (écriture pendant une lecture), pas en tâche horaire. Liste "déclaration immédiate" en dur. |
+| F-PIL-07 | Calcul des agrégats | P0 | PARTIEL | `pilotage/agregation.ts:137`, `planificateur.ts`, `file-taches.ts`, `src/instrumentation.ts`, `agregation.test.ts` | Seuls `consultation_validee` et `consultation_retiree` publient un événement (5 autres types déclarés jamais publiés) ; grain zone jamais écrit ; pas de rattrapage si le serveur est éteint à 2 h ; RG-PIL-04 : rôle défini et testé mais aucune connexion applicative ne l'utilise. RG-PIL-60 et 61 respectées. |
+
+Catalogue IND-01 à IND-13 (`src/modules/pilotage/agregation.ts`) : calculés IND-01, 02, 03 (mots-clés), 05, 08, 09, 10 ; partiels IND-04 (pas de sous-compte "confirmés par test"), IND-06 (médecin et infirmier seulement), IND-07 (pas d'absences ni de service), IND-12 (moitié "sur pièce" absente), IND-13 (national) ; IND-11 non calculé alors que la donnée existe. `lecture.ts` ne lit que IND-01, 02, 03, 04, 05, 07, 08, 10 : IND-06, 09, 12, 13 sont calculés sans qu'aucun écran ni export ne les affiche.
+
+### Chapitre 15, administration et audit (11 fiches)
+
+Rôles : `admin_etablissement` cumule accueil et responsable, `admin_national` cumule administrateur plateforme, autorité sanitaire et auditeur ; le principe des quatre yeux (RG-ADM-30) est donc impossible en l'état.
+
+| ID | Titre | P | Statut | Preuves | Ce qui manque |
+|---|---|---|---|---|---|
+| F-ADM-01 | Tableau de bord administrateur | P0 | PARTIEL | `administration/tableau-bord-admin.ts:73`, `app/ministere/page.tsx` | 3 files (doublons, établissements en brouillon, demandes de personnes) + file du pilotage. Manquent : professionnels à valider, réinitialisations 2FA, file de SMS, erreurs 24 h, dernière exécution des rappels et absences, comptes par rôle. La file "brouillon" est toujours à 0 (création directement active). |
+| F-ADM-02 | Référentiel des établissements | P0 | PARTIEL | `administration/etablissements.ts:197`, `identity/gestion-comptes.ts:319`, `app/ministere/etablissements/*` | Création avec compte responsable, champs enrichis, transitions de statut, aucune suppression (RG-ADM-02), fermeture qui annule les rendez-vous futurs et notifie. Manquent : nom, type, GPS, capacité et services non modifiables après création ; cycle DRAFT court-circuité ; fin des affiliations à la fermeture (RG-ADM-01) ; contrôle GPS/commune ; import CSV ; invitation ; 4 types seulement. |
+| F-ADM-03 | Valider un professionnel | P0 | ABSENT | `identity/gestion-comptes.ts:602` (création directement `valide`) | Écran, approbation, refus, complément, indicateur de 72 h, RG-ADM-10 et 11. Décision produit du 2026-09-26 (soir) : validation par l'administrateur national, non construite (`docs/conception-transfert-dossier.md` section 12). |
+| F-ADM-04 | Gérer les référentiels | P1 | PARTIEL | `administration/referentiel-{vaccinal,medicaments,examens,notifications}.ts`, `app/ministere/referentiels/*` | 4 référentiels sur 15 : création, désactivation seule (RG-ADM-20), réordonnancement. Manquent : géographie, types, services, spécialités, CIM-10 et codes sensibles, classes d'allergie, motifs de rendez-vous, questionnaires, jours fériés ; RG-ADM-21 (aucune version) ; catalogue de notifications lu par aucun émetteur. |
+| F-ADM-05 | Gérer les comptes | P0 | ABSENT (volet plateforme) | seuls existent le volet établissement (F-ETA-04) et l'auto-service (`identity/sessions.ts`, `mfa.ts`) | Recherche de compte, suspension nationale, réinitialisation du second facteur, invitation d'un auditeur ou administrateur, quatre yeux (RG-ADM-30). |
+| F-ADM-06 | Fusionner des doublons | P1 | PARTIEL | `patient/fusion-doublons.ts:83`, `app/ministere/doublons/*` | Détection par égalité exacte, fusion motivée (20 caractères) déplaçant 10 tables en transaction, compte doublon `fusionne`. Manquent : pointeur `MERGED` et redirection de l'identifiant, **réversibilité** (RG-ADM-40 : pas de table de correspondance), RG-ADM-41 (sexe non comparé, pas de seconde approbation), "ce ne sont pas les mêmes personnes", notifications, comptes liés ; le `consentement.updateMany` (`:243`) peut violer l'unicité (patient, acteur) ; codes de partage, de réclamation et demandes non déplacés. |
+| F-ADM-07 | Paramètres et drapeaux | P1 | PARTIEL | `administration/parametres.ts:119`, `app/ministere/parametres/*` | Table avec bornes et défaut, bascule des drapeaux, journalisation, lecture en base à chaque appel (RG-ADM-50). Les 4 paramètres semés ne sont lus par aucun code ; 1 drapeau sur 9 consommé. |
+| F-AUD-01 | Journal d'audit | P0 | PARTIEL | `audit/actions.ts:157, 580`, migration `20260926080821_ajout_chainage_journal_audit`, `app/ministere/audit/integrite/page.tsx`, `audit/integrite.test.ts` | Période obligatoire ≤ 31 jours, filtres acteur/patient/action/établissement, 50 par page, RG-AUD-01, chaînage SHA-256 par déclencheur, page d'intégrité. Manquent : filtres base d'accès et résultat (champs absents), détail 5.7, export CSV avec motif et ré-authentification, curseur ; pas d'append-only en base (RG-ACC-60) ; déclencheur sans verrou ; vérification exécutée à chaque affichage ; ouvert aussi à `admin_etablissement` (portée de son établissement). |
+| F-AUD-02 | Revoir les accès d'urgence | P1 | FAIT (écarts mineurs) | `audit/actions.ts:330`, `app/ministere/audit/urgences`, `app/etablissement/audit/urgences`, `permissions.test.ts:94` | Non revus d'abord, rouge après 7 jours, éléments consultés déduits du journal, décision conforme/non conforme motivée, notifications. Écarts : durée figée à 4 h ; éléments consultés incomplets (vaccinations non journalisées) ; indicateur "consultation créée" toujours faux ; pas de rappel J+7 ni de trace dans le dossier de l'agent. |
+| F-AUD-03 | Anomalies d'accès | P1 | PARTIEL | `audit/anomalies.ts:73`, `app/ministere/audit/anomalies/page.tsx` | 4 règles sur 7 (urgences, IP multiples, dossiers distincts, même nom de famille), clôture commentée. Manquent : recherches sans résultat, accès refusés, arrivées sur pièce (rien n'est tracé pour ces trois), exécution horaire (détection à l'ouverture de l'écran, écriture dans un GET), seuils paramétrables, notification de l'auditeur. |
+| F-AUD-04 | Traiter les demandes des personnes | P1 | PARTIEL | `audit/demandes.ts:93`, `app/ministere/audit/demandes/*` | Rectifications et signalements d'accès suspect, jours restants sur 30, réponse unique notifiée. Manquent : contact et échanges, traces liées, transfert au responsable d'établissement. |
+
+### Chapitre 16, intelligence artificielle (5 fiches)
+
+| ID | Titre | P | Statut | Preuves | Ce qui manque |
+|---|---|---|---|---|---|
+| F-IA-01 | Résumé de dossier pour le médecin | P1 | ABSENT | seule la clé `ai.summary` (`src/modules/administration/fonctionnalites-catalogue.ts:14`), sans consommateur | Module `ai`, adaptateur, `FakeProvider`, `ai_requests`, validation des sources, bandeau "Données fictives". |
+| F-IA-02 | Assistant citoyen d'orientation | P2 | ABSENT | seule la clé `ai.citizen_assistant` | (P2, normal). |
+| F-IA-03 | Aide à la saisie | P2 | ABSENT | aucune | (P2, normal). |
+| F-IA-04 | Analyses pour le ministère | P2 | ABSENT | aucune | (P2, normal). |
+| F-IA-05 | Gouvernance de l'IA | P1 | ABSENT | l'interrupteur générique de F-ADM-07 n'a aucun consommateur IA | Fiches de fonctionnalité, suivi, jeu de 20 dossiers, test CI (RG-IA-20). |
+
+### Chapitre 17, notifications (4 fiches)
+
+| ID | Titre | P | Statut | Preuves | Ce qui manque |
+|---|---|---|---|---|---|
+| F-NOT-01 | Centre de notifications | P0 | PARTIEL | `notification/actions.ts:53`, `app/app/notifications/`, `components/ui/ClocheNotifications.tsx`, `notification/purge.ts` | Cloche, groupement par jour, "tout marquer comme lu", liens, purge à 90 jours faits. Manquent : `take: 50` sans curseur, compteur figé au rendu du layout (pas de rafraîchissement à 60 s), pas de notion d'espace. Aucun test. |
+| F-NOT-02 | Envoi de SMS (adaptateur) | P0 | PARTIEL | `notification/sms/provider.ts`, `sms/envoyer.ts`, `sms/dev.ts`, `prisma/schema.prisma:877` | Seul `OutboxSmsProvider` existe. RG-NOT-04 marque `differe` mais aucune tâche ne remet à 7 h (les quatre planificateurs en processus existent, la remise est réalisable). Pas de tentatives ni de statut FAILED (RG-NOT-03). Les OTP passent par e-mail, jamais par SMS. Le code est en clair dans le texte stocké, `/app/ministere/sms` est hors menu. Deux appelants seulement (`identity/reclamation.ts:207`, `transfert/envoi-code.ts:117`, ce dernier hors production). |
+| F-NOT-03 | Préférences de notification | P1 | PARTIEL | `notification/preferences.ts`, `notification/categories.ts`, `app/notifications/preferences/page.tsx` | RG-NOT-10 tenue à l'écran. Les préférences sont enregistrées mais aucun émetteur ne lit `PreferenceNotification` : effet nul ; pas de canal e-mail de notification. |
+| F-NOT-04 | Catalogue des notifications | P0 | PARTIEL | `notification/catalogue-defaut.ts`, `administration/referentiel-notifications.ts` | Le référentiel sème 24 des 38 codes N-* du pack et ne s'applique à aucun envoi. Bilan des 38 : 8 émis en interne seulement, 8 partiels, 22 jamais émis (N-APPT-REQUEST, N-CONSULT-AVAILABLE, N-CONSENT-GRANTED, N-NEW-DEVICE, N-INVITE, N-PRACTITIONER-DECISION, N-SYNC-REVIEW, N-HEALTH-ALERT, N-DRAFT-REMINDER, N-APPT-REJECTED, N-APPT-EXPIRED, N-LAB-CANCELLED, N-LAB-CRITICAL-ESCALATION, N-LAB-ANNOUNCE-OVERDUE, N-CONSENT-REVOKED, N-GUARDIAN-CONFLICT, N-GUARDIAN-REQUEST, N-ACCOUNT-LOCKED, N-EMERGENCY-LIMIT, N-MERGE, N-2FA-RESET, N-COMMUNITY-REFERRAL). RG-NOT-01 respectée dans les 2 SMS émis, RG-NOT-03 absente. |
+
+## 2. Chapitres 18 à 29 : exigences du pack et état réel
+
+### 2.1 Chapitre 18, règles transverses
+
+| Exigence | État | Constat et preuve |
+|---|---|---|
+| 18.1 Téléphone E.164 `+22901XXXXXXXX` normalisé | PARTIEL | `src/lib/telephone.ts` (testé) n'est utilisé que par `src/modules/transfert/*`. Inscription, profil, guichet, ajout de personnel, réclamation acceptent du texte libre (`registerPatientAction`, `mettreAJourProfilAction`). RG-AUTH-01 non appliquée. |
+| 18.1 Fuseau Africa/Porto-Novo, stockage UTC | PARTIEL | `src/lib/fuseau-horaire.ts` + test, utilisé par créneaux, rappels, SMS. Le planificateur nocturne du pilotage utilise `getHours()` (heure du serveur). |
+| 18.1 Nom en MAJUSCULES, prénoms capitalisés, e-mail en minuscules | ABSENT | Saisie stockée telle quelle ; `z.email()` sans normalisation, connexion sensible à la casse (deux comptes possibles pour la même adresse). |
+| 18.1 Recherche sans accents (`unaccent`, `pg_trgm`) | ABSENT côté base | Aucun `$queryRaw` dans `src/`, seule extension activée : `pgcrypto` (migration du chaînage d'audit). Comparaisons normalisées en JavaScript (`normaliserPourComparaison`). |
+| 18.2 Identifiant santé `BJ-XXXXX-XXXXX-C` aléatoire avec caractère de contrôle | ABSENT | Format réel `BJ-SANTE-PAT-0001`, calculé par `count()` (`src/modules/identity/identifiants.ts`) : séquentiel donc énumérable, sans contrôle, collision possible en concurrence (l'erreur d'unicité est alors présentée comme "Un compte existe déjà avec cet email"). RG-AUTH-06, RG-GEN-01, RG-GEN-02 non couvertes. |
+| 18.2 Ordonnance `RX-XXXX-XXXX`, examen `LB-`, rendez-vous `AP-` | PARTIEL | Ordonnance `RX-2026-0001` par `count()` (`genererNumeroOrdonnance`, prédictible ; la clé HMAC du QR compense pour la vérification publique). `LB-` et `AP-` n'existent pas. |
+| 18.2 Code de partage `XXXX-XXXX` sans 0/O/1/I/L | FAIT | `src/modules/partage/actions.ts` (alphabet dédié, `randomInt`, haché bcrypt). Code de réclamation : 8 caractères (pack : 6 chiffres), écart mineur. |
+| 18.3 Score de doublons (Jaro-Winkler, points, seuils 60/80) | ABSENT | Correspondance exacte nom+prénom+date normalisés (`creerPatientParProfessionnelAction`, `src/modules/patient/fusion-doublons.ts`). Pas de score, pas de file de revue alimentée par les créations forcées (seulement une justification dans `JournalAudit`). |
+| 18.4 Référentiels de départ (géographie, 30 établissements, 15 services, CIM-10, ~150 médicaments, allergies, ~40 examens, vaccins PEV, jours fériés) | PARTIEL | Géographie : `Departement`, `Commune`, `ZoneSanitaire` (zones "placeholder" une par établissement de démo, pas 34, pas d'arrondissements). Établissements : 3 dans le seed. Services : JSON libre. CIM-10 : ABSENT. Médicaments : `Medicament` + écran admin. Classes/allergies : mots-clés (`referentiel-allergies.ts`). Examens : tableau TS + `ExamenReferentielAdmin`. Vaccins : `VaccinReferentiel` + règles d'âge (`vaccination/referentiel.ts`). Jours fériés : ABSENT. Aucun dossier `seed/*.csv`. |
+| 18.5 Types d'établissements et rôles affiliables | PARTIEL | 4 types seulement (`centre_sante`, `hopital`, `laboratoire`, `pharmacie`) ; aucune contrainte type/rôle (RG-AUTH-41) : `ROLES_CREABLES_PAR_ETABLISSEMENT` s'applique à tous. |
+| 18.6 Groupes de maladies et codes sensibles (paramètre de référentiel) | PARTIEL | `src/modules/pilotage/referentiel-groupes-maladies.ts` : 20 groupes par mots-clés sur `Consultation.conclusion` (texte libre). Sous-chaîne courte `"ist"` classe en IST sensible tout texte contenant "existe" ou "assistance". Liste en constante de code, pas en référentiel administrable. |
+| 18.7 Plages pédiatriques | FAIT | `src/modules/clinical/controles-constantes.ts` (âge en mois, pouls, FR, tension), valeurs à valider par un médecin comme le pack le dit. |
+| 18.8 Catalogue d'erreurs à codes stables | ABSENT | Server Actions renvoient des chaînes libres (`{ error: string }`), messages serveur souvent sans accents ("Session expiree. Veuillez vous reconnecter."). |
+| 18.9 Pagination par curseur (20/100), tri par défaut, état vide | ABSENT | 133 `findMany` pour 9 `take:` ; pas de curseur. Deux listes paginées par page : historique clinique (25), journal d'audit (50). |
+| 18.10 Textes dans `messages/fr.json` (next-intl), style citoyen | ABSENT | Aucun fichier de traduction, textes en dur dans JSX et actions. |
+
+### 2.2 Chapitre 19, UX et design system
+
+| Exigence | État | Constat |
+|---|---|---|
+| Jetons et couleurs par espace (citoyen vert, pro bleu, labo, pharmacie...) | ABSENT | Une seule charte institutionnelle marine (`src/app/globals.css`, issue de `design-system-base-fundlab.md`). Décision de design différente du pack, à acter dans un document de décisions. |
+| Police Inter, 17 px citoyen | ÉCART | Montserrat + JetBrains Mono (`src/app/layout.tsx`). Taille citoyenne 17 px : non verifie. |
+| Bibliothèque `src/components/ui` | PARTIEL | 17 composants (Alert, Avatar, AvatarMenu, Badge, Button, Card, ClocheNotifications, EtatVide, IconButton, Modal, NavigationProgressBar, SelectField, Sidebar, Skeleton, Tabs, TextField, Tooltip). Manquent : tableau (tri, curseur, version cartes), toast, recherche à suggestions, champ téléphone +229 masqué, date approximative, stepper générique, lecteur QR (aucun `getUserMedia`), carte Leaflet, bandeau patient réutilisable, bandeaux "Hors connexion", "Données fictives", "Vous agissez pour". `NavigationProgressBar` n'est branché qu'à `/style-guide`. |
+| `/dev/styleguide` réservé dev/staging | ÉCART | `/style-guide` est une page publique (`src/app/style-guide/page.tsx`), aucune garde d'environnement. |
+| 4 états par écran (chargement, vide, erreur, hors connexion) | PARTIEL | Aucun `loading.tsx`, `error.tsx`, `not-found.tsx` ni `global-error.tsx` sous `src/app` (vérifié). `EtatVide` et `Skeleton` existent. |
+| Mobile d'abord, barre de navigation basse citoyen | ABSENT | Layout unique à barre latérale (`src/app/app/layout.tsx`, `Sidebar`). Rendu 360 px : non verifie. |
+| WCAG 2.1 AA, Lighthouse ≥ 95, axe | non verifie | 99 `aria-label`, `prefers-reduced-motion` géré (`globals.css`) ; aucun audit outillé, aucun rapport. |
+| RG-UI-01 couleur jamais seule | non verifie | Badges à texte présents ; pas de contrôle systématique. |
+| Tests utilisateurs (5 personnes, 19.7) | ABSENT | Aucun protocole ni résultat dans le dépôt. |
+
+### 2.3 Chapitre 20, architecture
+
+| Exigence | État | Constat |
+|---|---|---|
+| Monolithe modulaire | FAIT | 21 dossiers `src/modules/*`, 52 fichiers `"use server"` exportant 212 fonctions. |
+| Pile : Better Auth, pg-boss, S3/MinIO, Serwist+Dexie, Leaflet, Recharts, @react-pdf, next-intl, pino, OpenAPI/Scalar, React Hook Form, shadcn, pnpm | ABSENT (toutes) | Remplacements maison : JWT `jose` + `bcryptjs` (`src/lib/session.ts`), `setInterval` en processus (`src/instrumentation.ts`), Cloudinary, service worker manuel (`public/service-worker.js`), SVG maison, `pdf-lib`, `console.error` (107 occurrences), `npm`. |
+| Playwright, Husky, commitlint, Prettier, Docker, GitHub Actions | ABSENT | Playwright est en `devDependencies` mais `src/tests/` est vide et aucun dossier `tests/e2e` n'existe. Aucun `.github`, `Dockerfile`, `docker-compose`, `CHANGELOG`. |
+| RG-ARC-01 `docs/decisions.md` | ABSENT | Seul le modèle du pack existe (`docs/pack claude/docs/decisions.md`). Dépendances non justifiées : cloudinary, nodemailer, pdf-lib, otpauth, jose, bcryptjs. |
+| RG-ARC-10 pages sans requête base | PARTIEL | 3 fichiers de `src/app` importent Prisma : `api/documents/[id]/route.ts`, `api/patient/prescriptions/[id]/telecharger/route.ts`, `app/etablissement/disponibilites/[userId]/page.tsx`. |
+| RG-ARC-11 import d'un module par son `index.ts` | ABSENT | 77 imports de fichiers internes (`@/modules/x/fichier`) dans `src/modules`, en majorité entre modules différents (`audit/journaliser`, `notification/actions`...) ; 8 `index.ts` existent, peu utilisés. |
+| RG-ARC-12 `authorize()` + test `service-guard` | ABSENT | Contrôle par `can(role, action, ressource)` (mais `can(role, "read", "patient")` n'est appelé nulle part) puis vérification de consentement recopiée dans une dizaine de fichiers. Un scan heuristique des fichiers `use server` signale 17 fonctions sans contrôle de session apparent (section 3.4). |
+| RG-ARC-13/14 repository seul à toucher Prisma, mêmes services pour API et actions | ABSENT | Prisma appelé partout dans `actions.ts` ; pas de couche service/repository/schemas/rules. |
+| 20.5 Cycle de requête : `proxy.ts`, identifiant de requête, schéma de sortie Zod | PARTIEL | `middleware.ts` (déprécié en Next 16, à renommer `proxy.ts` : `node_modules/next/dist/docs/.../middleware.md`) ne vérifie que la signature du JWT pour `/app/*` ; `/api/*` non couvert (chaque route refait `getSession()`). Aucun identifiant de requête. |
+| 20.6 Environnements dev/test/staging/production, `APP_ENV`, secrets séparés | PARTIEL | Seul `NODE_ENV` pilote le comportement (dont l'affichage des codes de démonstration `codeDemo`). Pas de staging. |
+| 20.7 Variables `APP_URL`, `APP_ENV`, `QR_SIGNING_SECRET`, `FIELD_ENCRYPTION_KEY`, `S3_*`, `SMS_PROVIDER`, `AI_PROVIDER` | ABSENT | `src/lib/env.ts` : 15 variables (DATABASE_URL, NEXTAUTH_SECRET, SMTP_*, CLOUDINARY_*, WAPY_*). Les URL absolues sont reconstruites depuis l'en-tête `Host`. |
+
+### 2.4 Chapitre 21, modèle de données (comparaison table par table)
+
+Conventions du pack non tenues : clés UUID v7 (le dépôt utilise `cuid()`), `snake_case` avec `@@map` (noms français en PascalCase), `created_at/updated_at/created_by/facility_id` partout (présents au cas par cas), trois schémas `app/audit/analytics` (deux : `public` et `analytics`), index sur toute clé étrangère (12 `@@index` pour 73 relations), déclencheurs d'immuabilité (aucun : seul un déclencheur de chaînage existe sur `JournalAudit`), `record_versions` (ABSENT).
+
+| Table du pack | Équivalent dans `prisma/schema.prisma` | État |
+|---|---|---|
+| `users` | `User` : e-mail obligatoire et unique, téléphone libre non vérifié ; pas de `sex`, `birth_date`, `identity_level`, `failed_login_count`, `locked_until`, `terms_version` | PARTIEL |
+| `sessions`, `accounts`, `verifications`, `two_factors` | `SessionActive` (sans jeton haché, sans espace actif ni `reauth_at`), mot de passe dans `User`, `CodeVerificationEmail`, `CodeReinitialisationMotDePasse`, `User.mfaSecret/mfaActif` (secret TOTP en clair, sans codes de secours) | PARTIEL |
+| `memberships` | `AffiliationProfessionnelle` (étape A : écrite à la création des comptes, jamais lue par le code ; pas de `scope_type`, `scope_id`, `service_ids`) | PARTIEL |
+| `practitioner_profiles` | `ProfessionnelSante` (+ `profession`, `numeroOrdre` uniques ensemble) ; manquent carte, `validated_by/at`, `rejection_reason`, `show_publicly`, statut `INFO_REQUESTED` | PARTIEL |
+| `invitations` | (aucun : mot de passe temporaire donné par l'administrateur) | ABSENT |
+| `patients` | `Patient` (`userId` obligatoire, donc tout patient a un `User` ; manquent `merged_into_id`, `birth_date_approximate`, `phone`, résidence, `blood_group_source`, `identity_level`, `search_name`) | PARTIEL |
+| `patient_identifiers` | `Patient.referenceIdentiteNationale` (NPI en clair, unique ; ni chiffrement, ni empreinte, ni 4 derniers chiffres : RG-ACC-51 non tenue) | PARTIEL |
+| `guardianships` | (aucun : tutelle = `Consentement` `dossier_complet` + `User` `sans_compte`) | ABSENT |
+| `allergies`, `conditions`, `emergency_contacts` | Colonnes JSON texte dans `Patient` (sans source déclarée/confirmée, statut, version, auteur) | PARTIEL |
+| `pregnancies` | `Patient.grossesseEnCours` (booléen) | PARTIEL |
+| `consents` | `Consentement` (unique par patient+acteur, `typeAcces` texte libre : pas de niveaux `SUMMARY/FULL/FULL_SENSITIVE`, canal, preuve, bénéficiaire établissement) | PARTIEL |
+| `consent_requests` | `DemandeAccesDossier` (flux inverse : le professionnel déclenche un code) | PARTIEL |
+| `care_contexts`, `visits`, `appointment_events` | (aucun) | ABSENT |
+| `emergency_accesses` | `Consentement` `typeAcces="urgence"` + `JournalAudit` + `RevueAccesUrgence` | PARTIEL |
+| `share_codes` | `CodePartageDossier` | PARTIEL |
+| `health_card_tokens` | (aucun : `Map` en mémoire dans `src/modules/patient/carte-sante.ts`) | ABSENT |
+| `facilities` | `EtablissementSanitaire` (latitude/longitude flottants, pas PostGIS, pas d'horaires, équipements, `settings`) | PARTIEL |
+| `facility_services`, `slots`, `closures` | (aucun : `servicesDisponibles` JSON ; créneaux vérifiés à la volée) | ABSENT |
+| `schedules` | `CreneauDisponibilite` (hebdomadaire par professionnel, capacité 1) | PARTIEL |
+| `appointments` | `RendezVous` (statut texte libre, pas de référence `AP-`, `slot_id`, `reason_code`, `reschedule_count`, canal) | PARTIEL |
+| `consultations`, `vital_signs`, `diagnoses` | `Consultation` (constantes en colonnes, dupliquées dans `PriseEnChargeInfirmiere` ; `conclusion` tient lieu de diagnostic ; pas de CIM-10, `sensitive`, `late_validation`) | PARTIEL / ABSENT (`diagnoses`) |
+| `consultation_addenda` | `AddendumConsultation` | PARTIEL |
+| `immunizations`, `nursing_notes`, `documents`, `referrals` | `Vaccination` (sans `client_uuid`, campagne), `PriseEnChargeInfirmiere.noteSoins`, `DocumentMedical` (sans `sha256`, établissement, statut), `ReferencePatient` (P2 livré) | PARTIEL |
+| `prescriptions`, `prescription_items` | `Prescription` (pas de `valid_until` stocké, statuts 5 sur 9), `LignePrescription` (posologie en `String`, pas de dose/unité/voie/fréquence structurées) | PARTIEL |
+| `dispensations`, `dispensation_items` | `Delivrance`, `LigneDelivrance` | PARTIEL |
+| `lab_orders`, `lab_order_items`, `lab_results` | `ExamenMedical` unique (pas de numéro `LB-`, pas de QR, pas de destinataire "au choix", pas de versions de résultat, JSON `resultatsParametres`) | PARTIEL |
+| `community_areas`, `community_referrals`, `campaigns`, `sync_batches`, `sync_items` | (aucun) | ABSENT |
+| `community_visits` | `SuiviCommunautaire` + `PersonneCommunautaire` (sans `client_uuid`, questionnaire, signes de danger) | PARTIEL |
+| `duplicate_candidates`, `merge_operations`, `pending_admin_actions` | (aucun : fusion irréversible, pas de quatre yeux) | ABSENT |
+| `health_alert_reviews` | `HealthAlertReview` | FAIT |
+| `notifications`, `notification_preferences`, `sms_outbox` | `Notification` (sans code, titre, priorité, espace), `PreferenceNotification`, `EnvoiSms` (statuts `simule/differe` seulement) | PARTIEL / FAIT / PARTIEL |
+| `ai_requests` | (aucun) | ABSENT |
+| `record_versions` | (aucun) | ABSENT |
+| Référentiels : `geo_*`, `services`, `icd10_codes`, `drug_classes`, `allergy_class_map`, `lab_tests`, `vaccines`, `appointment_reasons`, `questionnaires`, `holidays`, `referential_versions` | Présents : `Departement`, `Commune`, `ZoneSanitaire`, `Medicament`, `ExamenReferentielAdmin`, `VaccinReferentiel`, `ModeleNotification`. Absents : `services`, `icd10_codes`, classes, `appointment_reasons`, `questionnaires`, `holidays`, versionnement (RG-ADM-21) | PARTIEL |
+| `settings`, `feature_flags`, `data_requests` | `Parametre`, `FonctionnaliteActivable`, `TraitementDemandePersonne` + `JournalAudit` | PARTIEL |
+| `audit.audit_events` | `JournalAudit` dans le schéma `public` (champs : utilisateur, action libre, donnée en texte, justification, IP ; pas de rôle, établissement, patient, résultat ALLOWED/DENIED, base d'accès, identifiant de requête ; chaînage par déclencheur, sans verrou, hash sans `date` ni IP ; pas de `REVOKE`, pas de déclencheur anti-UPDATE/DELETE : RG-DB-01/02 non tenues) | PARTIEL |
+| `audit.anomalies` | `SignalementAnomalieAcces` | PARTIEL |
+| `analytics.agg_*`, `population` | `AgregatQuotidien` (table de faits unique, schéma `analytics` séparé, rôle `analytics_reader` par `prisma/analytics-role.sql` + test conditionnel) ; `population` ABSENT | PARTIEL |
+
+### 2.5 Chapitre 22, API et interopérabilité
+
+| Exigence | État | Constat |
+|---|---|---|
+| Catalogue d'environ 100 routes `/api/v1` | ABSENT | Une seule route v1 (`api/v1/public/prescriptions/[number]/verify`). Six routes hors v1 : `api/documents/[id]`, `api/patient/export/{json,pdf}`, `api/patient/prescriptions/[id]/telecharger`, `api/pilotage/export/{csv,pdf}`. Tout le reste passe par Server Actions (non exploitable par un tiers). |
+| Erreurs RFC 9457, `X-Request-Id`, `Idempotency-Key`, `If-Match`, OpenAPI + Scalar | ABSENT | Réponses `{ error }` libres. |
+| Limitation de débit 22.3 | PARTIEL | Vérification publique d'ordonnance 30/min/IP (en mémoire, `src/lib/limite-debit.ts`), code de partage 5/h et pharmacie 5/h (comptage dans `JournalAudit`), accès par code 20/h. Absentes : connexion, OTP, mot de passe oublié, recherche d'établissements, API générale, exports 10/jour. |
+| Façade FHIR R4 en lecture (`/fhir/r4`) | ABSENT | Le drapeau `fhir.api` est déclaré mais ne commande rien ; `src/modules/prescription/README.md` ne fait que documenter une projection `MedicationRequest`. `docs/roadmap.md` coche la "préparation de l'interopérabilité FHIR", ce qui recouvre uniquement cette documentation. |
+| DHIS2, ANIP, cartographie | PARTIEL | Champ `identifiantExterneDhis2` seulement. Pas d'interface `IdentityVerifier`, NPI saisi sans vérification. Carte : simple lien Google Maps (`src/app/etablissements/[id]/page.tsx`). |
+| SMS via adaptateur `OutboxSmsProvider` | FAIT | `src/modules/notification/sms/provider.ts` ; `HttpSmsProvider` inexistant (prévu P2). |
+| Adaptateur IA `FakeProvider` | ABSENT | Aucun code d'IA. |
+| RG-INT-10 journal des échanges sortants | ABSENT | Aucun journal des envois Wapy, Cloudinary, SMTP (seul `DemandeAccesDossier.canal`). |
+
+### 2.6 Chapitre 23, sécurité et conformité
+
+| Exigence | État | Constat |
+|---|---|---|
+| Durées de session par profil (citoyen 30 j, pro 12 h, admin/audit 8 h, inactivité 15 min) | ÉCART | JWT de 7 jours pour tous les rôles (`DUREE_SESSION`, `src/lib/session.ts`). Verrou d'écran côté navigateur à 10 min pour 5 rôles seulement (`VerrouillageInactivite.tsx`) ; aucune déconnexion serveur pour inactivité, rien pour admin et ministère. |
+| TOTP obligatoire pour tous sauf citoyen, codes de secours, secret chiffré, réinitialisation par admin | ABSENT | TOTP optionnel, secret en clair (`User.mfaSecret`), aucun code de secours, désactivation possible par le titulaire avec son mot de passe (`desactiverMfaAction`, contraire à RG-AUTH-52). En contrepartie un code à 6 chiffres par e-mail est exigé à chaque connexion. |
+| Verrouillage et limites anti force brute (5 échecs/15 min) | ABSENT | Aucun compteur d'échecs, aucune limitation sur `loginAction`, le code e-mail (un code est consommé au premier essai, ce qui limite un peu) ni le TOTP (`verifierMfaEtConnecterAction`, 5 minutes de jeton sans plafond d'essais). Échecs de connexion non journalisés. |
+| Ré-authentification 5 min (`reauth_at`) | PARTIEL | Ressaisie du mot de passe à chaque action sensible (signature d'ordonnance, retrait de consultation, validation de résultat, export de données), TOTP pour l'accès d'urgence ; pas de fenêtre de 5 min ni de champ de session. |
+| Cookies `HttpOnly`, `Secure`, `SameSite=Lax`, préfixe `__Host-` | PARTIEL | Trois premiers FAITS (`Secure` seulement si `NODE_ENV=production`), préfixe ABSENT. |
+| Chiffrement applicatif AES-256-GCM (NPI, TOTP), clé `FIELD_ENCRYPTION_KEY` | ABSENT | Aucun `createCipheriv` dans `src/`. |
+| Documents en stockage privé chiffré, URL signée 60 s | PARTIEL | Voir risque 3 (section 5.1) : fichiers chez Cloudinary (type `authenticated`), octets relayés par `src/app/api/documents/[id]/route.ts` (jamais d'URL au client). |
+| En-têtes HSTS, CSP, X-Content-Type-Options, Referrer-Policy, Permissions-Policy, `frame-ancestors` | ABSENT | `next.config.ts` ne définit aucun en-tête. |
+| Injection, XSS, CSRF | FAIT | Prisma sans SQL brut, aucun `dangerouslySetInnerHTML`, cookies `Lax` et vérification d'origine des Server Actions par Next ; routes API en GET. |
+| Fichiers malveillants | FAIT | Type réel par signature binaire, 10 Mo, `Content-Disposition: attachment` (`stockage-fichiers.ts`, `api/documents/[id]/route.ts`). |
+| IDOR, suite de tests de la matrice | PARTIEL | `src/security/permissions.test.ts` (27 tests) ; aucun test IDOR par route. |
+| Fuite par les journaux (pino masqué) | non verifie | Pas de logger structuré ; 107 `console.error` sur des objets d'erreur. |
+| `npm audit` en CI, dépendances | ABSENT | Pas de CI. |
+| Détection d'anomalies (F-AUD-03) | PARTIEL | 4 règles sur 7, à la demande (`src/modules/audit/anomalies.ts`). |
+| Sauvegardes chiffrées, RPO 15 min, RTO 4 h, test de restauration mensuel, procédure d'incident | ABSENT | Aucun script ni document (`docs/securite/incident.md` inexistant). |
+| Gouvernance : DPO/auditeur, registre des traitements, durées de conservation, source des données | ABSENT / PARTIEL | Purge des notifications à 90 jours seulement (`notification/purge.ts`). |
+| Conformité béninoise : autorisation APDP, transferts hors Bénin, contrats sous-traitants, CGU et confidentialité, engagement des professionnels, ANIP, bandeau "Données fictives" | ABSENT / non verifie | Décision prise de demander l'autorisation APDP (`docs/conception-transfert-dossier.md` section 12), dossier déposé : non verifie. Aucune page CGU/confidentialité, aucune preuve d'acceptation (RG-AUTH-07), aucun contrat. Le drapeau `demo.banner` ne commande aucun bandeau. Flux vers l'extérieur : Cloudinary (documents médicaux, avatars), Wapy/WhatsApp (numéro de téléphone du patient, nom du professionnel, identifiant santé dans le champ `consentement`), SMTP. |
+| Test d'intrusion, revue de sécurité avec preuves | ABSENT | Aucun rapport. |
+
+### 2.7 Chapitre 24, exigences non fonctionnelles
+
+| Exigence | État | Constat |
+|---|---|---|
+| Slow 4G < 4 s, LCP < 2,5 s, JS < 200 Ko, API p95 < 500 ms, SQL < 200 ms | non verifie | Aucune mesure Lighthouse, rapport de build ni `EXPLAIN` dans le dépôt. |
+| Index sur toutes les FK, agrégats pré-calculés, pas de N+1 | PARTIEL | Agrégats FAITS (schéma `analytics`) ; 12 index pour 73 relations, aucun index sur `JournalAudit` (date, donnée), `RendezVous` (date, statut), `Notification` (utilisateur, lu) ; 133 `findMany` pour 9 `take`. |
+| Charge : 200 utilisateurs, k6 | ABSENT | |
+| Disponibilité 99,5 %, supervision, alerte si tâche planifiée absente | ABSENT | Pas de `/api/health` ; tâches planifiées par `setInterval` dans le processus Next, journalisées par `console.log`. |
+| Compatibilité Android 9+/iOS 15+, Playwright 360 à 1920 px | ABSENT | |
+| Hors ligne (chapitre 13) | PARTIEL | Service worker "réseau d'abord" (`public/service-worker.js`). Il met en cache toute réponse GET de même origine, y compris pages `/app/*` et routes `/api/*` de documents et d'export (risque 2 de la section 5.1). Aucune IndexedDB, aucune saisie hors ligne. |
+| 100 % des lectures de données patient journalisées | ABSENT | Plusieurs lectures ne journalisent pas (listes d'ordonnances, d'examens, de consultations d'un professionnel : `getPrescriptionsDuProfessionnel`, `getExamensPourLaboratoire`...). |
+| TypeScript strict sans `any`, lint sans erreur | FAIT | `strict: true`, 0 `: any`/`as any` hors tests, un commit récent corrige des erreurs de lint bloquantes (`ed6d454`). |
+| Couverture ≥ 80 % / 60 % | ABSENT | Pas d'outil de couverture configuré. |
+| Documentation livrable (README, architecture, API, installation, sécurité, guides) | PARTIEL | README, CONTRIBUTING, 7 audits ; README contredit le code sur le stockage des documents ; pas de guide par rôle. |
+| Observabilité (JSON + identifiant de requête) | ABSENT | |
+| i18n : 0 texte en dur | ABSENT | |
+
+### 2.8 Chapitre 25, plan de construction (E00 à E30)
+
+Le suivi du pack (`docs/pack claude/PROGRESS.md`) n'a jamais été renseigné : les 31 étapes y sont "À FAIRE", aucun rapport `docs/rapports/EXX.md`, aucune validation "validé EXX". Le développement suit en réalité `docs/roadmap.md` (phases 0 à 10, en retard sur le code : MFA décochée alors qu'elle existe, SQLite citée). Cartographie approximative fondée sur les fiches vérifiées ci-dessus :
+
+| Étape | Titre | Prio | Statut réel | Constat |
+|---|---|---|---|---|
+| E00 | Poste de travail | P0 | non verifie | Hors dépôt. |
+| E01 | Dépôt et règles de qualité | P0 | PARTIEL | ESLint, TypeScript strict, Vitest ; ni Prettier, Husky, commitlint, CI, règle de frontières entre modules, `docs/decisions.md` ; `npm` et non `pnpm`. |
+| E02 | Base de données, Docker, file de tâches | P0 | PARTIEL | PostgreSQL + 29 migrations Prisma ; ni Docker, ni pg-boss (`setInterval`). |
+| E03 | Design system et gabarits | P0 | PARTIEL | 17 composants, charte marine unique ; pas de gabarits par espace, `/style-guide` public. |
+| E04 | Authentification citoyen | P0 | PARTIEL | F-AUTH-01, 02, 04 partielles (e-mail au lieu du téléphone, pas d'OTP SMS, pas de verrouillage). |
+| E05 | Affiliations, invitations, espaces actifs | P0 | PARTIEL | Table d'affiliations écrite, jamais lue ; F-AUTH-05 partielle, F-AUTH-07 absente. |
+| E06 | Second facteur, audit, moteur d'autorisation | P0 | PARTIEL | TOTP facultatif, journal chaîné ; pas d'`authorize()`, pas des suites `matrix`, `access-basis`, `service-guard`. |
+| E07 | Référentiels et données de départ | P0 | PARTIEL | Vaccins, médicaments, examens en base ; ni CIM-10, ni jours fériés, ni fichiers `seed/*.csv`. |
+| E08 | Administration | P0 | PARTIEL | F-ADM-01, 02, 04, 06, 07 partielles ; F-ADM-03 et 05 absentes. |
+| E09 | Espace établissement | P0 | PARTIEL | Fiche injoignable, personnel et agendas partiels. |
+| E10 | Dossier patient, première utilisation | P0/P1 | PARTIEL | F-CIT-01, F-AUTH-03, F-CIT-07, F-CLI-03 partielles. |
+| E11 | Tableau de bord, dossier, carte santé | P0 | PARTIEL | F-CIT-02 à 06 partielles ; carte injoignable. |
+| E12 | Consentements, partage, historique des accès | P0 | PARTIEL | F-CIT-10 à 12 partielles (pas de niveaux, accès invisibles pour 4 types). |
+| E13 | Recherche d'établissements, rendez-vous | P0 | PARTIEL | Pas de créneaux, double réservation possible, recherche sans accents absente. |
+| E14 | Accueil, arrivée, contexte de soins | P0 | PARTIEL, cœur ABSENT | File du jour partielle ; visite et contexte de soins B4 absents, pas de rôle accueil. |
+| E15 | Espace soignant | P0 | PARTIEL | F-CLI-01, 02, 04, 09 partielles. |
+| E16 | Consultation médicale | P0/P1 | PARTIEL | Pas de CIM-10, d'enregistrement automatique, de brouillon hors ligne ; addendum et vaccination faits. |
+| E17 | Ordonnance électronique | P0 | PARTIEL | Contrôles de sécurité et vérification publique faits ; pas de DRAFT, empreinte fausse. |
+| E18 | Pharmacie | P1 | PARTIEL | Délivrance sans verrou, pas de scan. |
+| E19 | Laboratoire | P1 | PARTIEL | Saisie structurée cassée, pas de numéro `LB-` ni de QR. |
+| E20 | Documents médicaux | P1 | PARTIEL | Stockage externe, plafond réel de 4 Mo. |
+| E21 | Accès d'urgence et revue | P1 | PARTIEL | Revue faite ; pas de droit d'écriture B5, pas de SMS. |
+| E22 | Application terrain hors ligne | P1 | ABSENT | Aucune IndexedDB, aucun chiffrement local, aucune synchronisation. |
+| E23 | Notifications et rappels | P0 | PARTIEL | 22 codes N-* sur 38 jamais émis, SMS simulés, préférences ignorées. |
+| E24 | Agrégats et pilotage | P0 | PARTIEL | Agrégats et exports faits ; carte absente, alertes inopérantes. |
+| E25 | Résumé IA | P1 | ABSENT | |
+| E26 | Documentation d'API, façade FHIR | P1 | ABSENT | Une route `/api/v1`. |
+| E27 | Durcissement, audit, droits des personnes | P0/P1 | PARTIEL | Verrou d'écran, sessions, audit et droits partiels ; ni CSP, ni limites de débit. |
+| E28 | Performance, accessibilité, charge | P0 | ABSENT | Aucune mesure. |
+| E29 | Démonstration, staging, sauvegardes | P0 | ABSENT | Seed de 3 établissements, pas de déploiement documenté, pas de sauvegarde. |
+| E30 | Recette et répétition | P0 | ABSENT | Grille non remplie, `demo:e2e` partiel. |
+
+### 2.9 Chapitre 26, tests et recette
+
+| Exigence | État | Constat |
+|---|---|---|
+| Unitaires Vitest | PARTIEL | 20 fichiers `*.test.ts`, environ 205 cas (`grep`), concentrés sur `transfert` (81), `security` (27), `identity` (34), `pilotage` (19), `lib` (20). Aucun test pour `clinical`, `prescription` (hors vérification publique), `laboratoire`, `facility` (hors créneaux), `partage`, `proches`, `soins`, `vaccination`, `document`, `reference`, `urgence`, `communautaire`, `notification`, `administration`. |
+| Intégration avec base PostgreSQL de test (Docker) | ABSENT | 11 fichiers de test mockent `@/lib/prisma`. Seul `analytics-role.test.ts` parle à une vraie base, et se saute sans variable d'environnement. |
+| Bout en bout Playwright (mobile 360 px et ordinateur) | ABSENT | `scripts/demo-e2e.ts` (542 lignes) rejoue en HTTP les Server Actions de 3 comptes contre un serveur lancé à la main, sans navigateur. |
+| Suites obligatoires (`matrix`, `access-basis`, `idor`, `audit-coverage`, `service-guard`, `concurrency`, `immutability`, `no-phi-in-logs`, `sms-content`, `analytics-privacy`, `ai-minimization`, `dev-pages`) | PARTIEL | Équivalents partiels : `permissions.test.ts` (matrice), `masquage.test.ts` + `agregation.test.ts` (confidentialité), `integrite.test.ts` (chaînage d'audit). Les 9 autres suites sont ABSENTES. Le test de concurrence de la délivrance a été fait par script jetable sous SQLite, jamais versionné (`docs/audit-cote-pharmacien.md` demande de le revérifier sous PostgreSQL). |
+| RG-TST-01 : identifiant du critère d'acceptation dans le nom du test | ABSENT | Aucun test ne porte un `F-XXX-NN CA-n`. |
+| Grille de recette REC-01 à REC-32, registre d'anomalies | ABSENT | |
+| RG-TST-02 : aucun `skip` | PARTIEL | Un `describe.skip` conditionnel (`analytics-role.test.ts`). |
+
+### 2.10 Chapitre 27, déploiement et exploitation
+
+| Exigence | État |
+|---|---|
+| Branches `feature/*` vers `develop` vers `main`, étiquettes, protection de branches (RG-DEP-01) | ABSENT : une seule branche `main` (141 commits, dépôt distant `origin` sur GitHub, visibilité du dépôt non verifiee), `develop` jamais créée malgré `CONTRIBUTING.md` |
+| Dockerfile multi-étapes, Docker Compose (Postgres+PostGIS, MinIO, Mailpit), procédure de déploiement et de retour arrière | ABSENT (README : 4 contrôles manuels et "migrations avant l'application") |
+| CHANGELOG, versionnement sémantique (RG-DEP-02) | ABSENT (`package.json` en `0.1.0`) |
+| Supervision (sonde `/api/health`, p95, erreurs, tâches, sauvegardes) | ABSENT |
+| Journaux techniques séparés de l'audit, 12 mois | ABSENT (`console.*`) |
+| Support N1/N2/N3, guides et formation par rôle | ABSENT |
+| Migrations compatibles vers l'arrière | PARTIEL : 29 migrations Prisma rejouables (annoncé vérifié par le README), dossier `prisma/migrations_sqlite_archive` conservé, `prisma/dev.db` SQLite local résiduel |
+| Hébergement conforme (Bénin ou cadre autorisé) | non verifie : la base de développement partagée est sur un serveur distant (`docs/conception-transfert-dossier.md` section 6) |
+
+### 2.11 Chapitre 28, données de démonstration
+
+| Exigence | État | Constat |
+|---|---|---|
+| Volume : 30 établissements, 300 patients, 2 500 consultations, 1 800 ordonnances, 600 examens, 900 vaccinations, 3 000 rendez-vous, alerte de paludisme | ABSENT | `prisma/seed.ts` (426 lignes) : 3 établissements, environ 7 comptes, un patient avec quelques rendez-vous, consultations et une prescription. |
+| RG-DEMO-02 mention "(démo)" | ABSENT | Noms réels plausibles ("Centre de Sante Akpakpa"). |
+| RG-DEMO-03 reproductible, graine fixe, dates relatives | PARTIEL | Dates relatives partielles ; `create` non idempotent, aucun `db:reset`, pas de générateur à graine. |
+| Comptes de démo du tableau 28.3 (17 comptes et scénarios Aïcha, Koffi, Rachida, Jean) | ABSENT | Comptes différents (`patient.demo@benin-health.test`...), mot de passe de démonstration commun écrit en dur (constante `MOT_DE_PASSE_DEMO`) dans `prisma/seed.ts` et `scripts/demo-e2e.ts` (aucune garde empêchant un `db:seed` en production). |
+| Scénario de démonstration 8 à 10 minutes, plan de secours (vidéo), checklist 28.6, livrables 28.7 | ABSENT | `npm run demo:e2e` couvre un parcours automatisé de 3 rôles, pas la trame du chapitre 28 (pas d'accueil, ordonnance avec alerte pénicilline, pharmacie, carte, alerte épidémique dans le jeu de données). |
+| Bandeau "Données fictives" | ABSENT | |
+
+### 2.12 Chapitre 29, registre des risques du pack : couverture
+
+| Risque du pack | État de la parade dans le dépôt |
+|---|---|
+| Fuite par contrôle d'accès oublié (`authorize()`, test RG-ARC-12, IDOR) | Non couverte (voir sections 2.3 et 3.4) |
+| Doublons de patients | Partielle (exact, fusion sans retour arrière) |
+| Connectivité faible / hors ligne | Non couverte (service worker seul) |
+| IA sur données réelles | Sans objet (aucune IA) |
+| Données de démo confondues avec le réel | Non couverte (ni "(démo)", ni bandeau) |
+| Non-conformité APDP / hébergement | Ouverte (section 2.6) |
+| Référentiels cliniques inexacts | Partielle (mots-clés et sous-ensembles, à valider par les autorités) |
+| Perte de données | Non couverte (pas de sauvegarde) |
+| Erreur humaine (mauvais patient) | Partielle (retrait "saisi par erreur", pas de bandeau patient partagé ni de vérification de présence) |
+| Panne réseau prolongée | Non couverte |
+
+## 3. Dette technique et simplifications assumées trouvées dans le code
+
+Le code ne contient aucun `TODO`/`FIXME` (recherche vide dans `src/`) : la dette est écrite en commentaires "limite assumée", "périmètre réduit", "hors périmètre" (104 occurrences dans 69 fichiers de `src/`), ce qui la rend facile à sous-estimer. Voici ce qui est vérifié.
+
+### 3.1 Constantes et paramètres non branchés
+
+- **Table `Parametre` sans effet.** Quatre clés sont semées (`identity.code_verification_duree_minutes`, `reference.duree_acces_jours`, `urgence.limite_acces_24h`, `partage.code_duree_minutes`, dans `src/modules/administration/parametres.ts`). Aucun code hors de ce module ne lit `prisma.parametre` : l'écran `/app/ministere/parametres` modifie des valeurs qui ne pilotent rien (l'en-tête du fichier le reconnaît).
+- **Environ 80 constantes numériques en dur**, dont : `DUREE_VALIDITE_MINUTES = 10` (`identity/verification-email.ts:15`), `DUREE_VALIDITE_CODE_MINUTES = 10` (`reinitialisation-mot-de-passe.ts:40`, `partage/actions.ts:41`), `MAX_TENTATIVES_PAR_HEURE = 5` (`partage/actions.ts:43`), `DUREE_SESSION = "7d"` (`lib/session.ts:44`), `JOURS_VALIDITE_ORDONNANCE = 90` (`prescription/verification-publique.ts`, règle recopiée dans `app/patient/prescriptions/lib.ts`), `DUREE_ACCES_URGENCE_MS` (`audit/actions.ts:298`), `SEUIL_DOSSIERS_DISTINCTS_JOUR = 60` (`audit/anomalies.ts:21`), `JOURS_CONSERVATION = 90` (`notification/purge.ts:16`), `DELAI_ABSENCE_MS` (`facility/file-du-jour.ts:49`), `LIMITE_PAR_MINUTE = 30` (page et route de vérification), `ROUNDS_BCRYPT = 12` (5 fichiers), `AGE_MAJORITE_ANNEES = 18` (`administration/tutelles.ts:27`).
+- **Drapeaux activables** : 9 déclarés (`fonctionnalites-catalogue.ts`), un seul consommé (`access.by_npi`, `app/medecin/patients/page.tsx:28` et `transfert/actions.ts:176`). `pharmacy.module`, `lab.module`, `community.module`, `ai.summary`, `ai.citizen_assistant`, `sms.real_provider`, `fhir.api`, `demo.banner` n'ont aucun consommateur : les basculer ne change rien.
+- **Catalogue de notifications** (`ModeleNotification`) : aucun émetteur ne lit la table (`notification/catalogue-defaut.ts`, `administration/referentiel-notifications.ts`), les textes restent en dur dans chaque module.
+
+### 3.2 Fournisseurs simulés ou externes
+
+| Fournisseur | État | Fichier et constat |
+|---|---|---|
+| SMS | Simulé | `notification/sms/provider.ts` : `OutboxSmsProvider` écrit dans `EnvoiSms` (statut `simule`), aucun `HttpSmsProvider`. En production le repli SMS du code d'accès est coupé (`transfert/envoi-code.ts:116`). |
+| WhatsApp (Wapy.pro) | Réel, limité | `src/lib/wapy.ts` : hors production, envoi réel seulement vers `WAPY_NUMEROS_TEST` ; 60 messages/heure et 500/jour pour toute la plateforme (`conception-transfert-dossier.md` section 5). Le champ `consentement` transmis à Wapy contient l'identifiant santé du patient (`dossier-<identifiantSante>`) : donnée de santé sortie vers un tiers, sans preuve de consentement du titulaire (point de conformité ouvert, section 7 de la note). |
+| E-mail | Réel (SMTP) | `src/lib/mail.ts` ; codes de connexion et de réinitialisation. Hors production, si le relais est injoignable, le code est affiché à l'écran (`codeDemo`, décidé par `NODE_ENV` seul). |
+| Stockage de fichiers | Réel, externe | Cloudinary : avatars (`identity/actions.ts:879`) et documents médicaux (`api/documents/[id]/route.ts`, type `authenticated`). Hébergeur hors du Bénin (art. 391 du Code du numérique) : le README l'a reconnu comme point de conformité pendant mon analyse ; `private-uploads/` n'est plus qu'un reliquat local. |
+| IA | Absent | Aucun adaptateur, aucun `FakeProvider`. |
+| ANIP, DHIS2, FHIR, cartographie | Absents | Champ `identifiantExterneDhis2` seulement ; NPI saisi sans vérification. |
+| Planificateur | En processus | `src/instrumentation.ts` lance 4 `setInterval` (pilotage, absences, purge, rappels). Inopérant en environnement sans processus persistant, doublé en multi-instance, sans rattrapage après arrêt. |
+
+### 3.3 Fonctionnalités qui existent mais ne sont reliées à rien
+
+- `/app/patient/carte` (carte santé QR) : aucun lien, ni menu ni tableau de bord (vérifié par recherche de `patient/carte` dans `src/`).
+- `/app/etablissement/fiche` (F-ETA-03) : aucun lien depuis `src/` hors de son dossier (vérifié), absent du menu de l'administrateur d'établissement (`layout.tsx:218`).
+- `/app/medecin/patients/[id]/reclamation` et `genererCodeReclamationAction` : aucun lien depuis la fiche patient, aucun déclenchement à la création d'un dossier sans compte.
+- `/app/patient/demandes-acces` : joignable seulement par le lien d'une notification (`transfert/envoi-code.ts:73`) ; `/app/ministere/sms` : hors menu.
+- `getMesVaccinations()` : lue par l'export de données seulement, aucun écran patient.
+- `PreferenceNotification` (préférences) et `ModeleNotification` (catalogue) : aucun émetteur ne les lit.
+- `EnvoiSms.statut = "differe"` et `dateProgrammee` : aucun planificateur ne les traite.
+- `AffiliationProfessionnelle` : écrite à la création des comptes (`identity/gestion-comptes.ts:420, 605`), lue par aucun contrôle.
+- `normaliserTelephoneBenin` (`lib/telephone.ts`) : seulement dans le module `transfert`.
+- `lib/limite-debit.ts` : seulement la vérification publique d'ordonnance.
+- Rôle SQL `analytics_reader` et variable `ANALYTICS_READER_DATABASE_URL` : aucune connexion applicative ne les utilise.
+- Agrégats IND-06, 09, 12, 13 calculés et jamais affichés ; 5 types d'événements de pilotage déclarés (`file-taches.ts`) jamais publiés (`prescription_signee`, `delivrance`, `vaccination`, `rendez_vous_change`, `compte_cree`).
+- `NavigationProgressBar` : branché à `/style-guide` seulement. Dossiers `src/features`, `src/hooks`, `src/services`, `src/tests` : vides.
+
+### 3.4 Server Actions exportées sans contrôle de session ou de rôle
+
+Un script de 20 lignes a listé les 212 fonctions exportées par les 52 fichiers `"use server"` et signalé celles dont le corps ne contient aucun contrôle de session apparent : 17. Chaque fichier `"use server"` expose toutes ses fonctions exportées comme points d'entrée ; la documentation de Next 16 demande de les traiter comme atteignables par POST direct et de contrôler à l'intérieur de chacune (`node_modules/next/dist/docs/01-app/02-guides/data-security.md`, ligne 291). Les identifiants d'action des fonctions non référencées par le client ne sont pas exposés (même document, ligne 286) : l'exploitabilité réelle n'est donc pas vérifiée, la correction reste simple (sortir la logique dans un module sans `"use server"`).
+
+| Fonction | Fichier | Constat |
+|---|---|---|
+| `creerNotification(utilisateurId, type, message, lien)` | `src/modules/notification/actions.ts:41` | Écrit une notification (texte et lien libres) chez n'importe quel utilisateur, sans session. Appelée par une douzaine de modules serveur : à déplacer dans un module pur. |
+| `verifierCodeMfaPourConnexion(userId, code)` | `src/modules/identity/mfa.ts:230` | Oracle TOTP sans session ni limite d'essais. |
+| `marquerAbsencesDues(maintenant?: Date)` | `src/modules/facility/file-du-jour.ts:234` | Passe en "absent" tous les rendez-vous confirmés antérieurs à une date fournie par l'appelant. |
+| `listProfessionnelsParEtablissement(etablissementId)`, `listerCreneauxProfessionnel(professionnelId)` | `facility/actions.ts:158`, `facility/disponibilites.ts:113` | Sans session : nom et spécialité des professionnels validés d'un établissement (RG-ETA-10 : masqués par défaut) ; créneaux d'un professionnel. |
+| `demanderReinitialisationMotDePasseAction` | `identity/reinitialisation-mot-de-passe.ts:174` | Publique par conception, mais sans limitation de débit (envoi d'e-mails à volonté) et plus lente pour un compte existant. |
+| `estFonctionnaliteActive`, `dateDansUnCreneauDisponible`, `listEtablissements`, `listLaboratoires`, `listMedicaments`, `getAnnuairePublicEtablissements`, `getEtablissementPublicParId` | divers | Lectures de catalogues, risque faible. |
+| `verifierCarteSanteAction(jeton)` | `patient/carte-sante.ts:105` | Accepte toute session (y compris un patient) alors que l'usage prévu est professionnel ; consommé par un simple GET de page (un aperçu de lien peut brûler le jeton). |
+| `getFicheVerification(userId)` | `verification/actions.ts:145` | Un consentement actif de n'importe quel `typeAcces` suffit pour lire groupe sanguin, allergies, maladies chroniques et contacts d'urgence ; pour un compte administrateur renvoie son e-mail à tout utilisateur connecté. |
+| `getPrescriptionsADelivrer`, `getDetailPrescriptionPourDelivrance(id)` | `prescription/actions.ts:1623, 1802` | Contrôle de rôle présent, mais tout pharmacien voit noms et identifiants de tous les patients ayant une ordonnance en attente et ouvre n'importe quelle ordonnance par identifiant (contourne RG-PHA-01 et RG-PHA-02). |
+| `getExamensPourLaboratoire` | `laboratoire/actions.ts:702` | Pas de test de rôle : un administrateur d'établissement du laboratoire voit noms et résultats non validés. |
+
+### 3.5 Autres dettes vérifiées
+
+- **Identifiants et unicité par `count()`** : `identity/identifiants.ts:44` (identifiants santé, professionnels, établissements), `prescription/actions.ts:237` (ordonnances). Collision possible en concurrence, séquence prédictible.
+- **Stores en mémoire de processus** : jetons de carte santé (`patient/carte-sante.ts:40`), jetons de téléchargement de PDF (`prescription/jetons-telechargement.ts:20`), limiteur de débit (`lib/limite-debit.ts:22`). Perdus au redémarrage, inopérants à plusieurs instances.
+- **Journal d'audit** : voir 2.4 (pas d'append-only en base, hash sans `date` ni IP, pas de verrou, refus et échecs de connexion non journalisés, actions en chaînes libres, `adresseTechnique: "interne"` pour la MFA). L'adresse technique est reconstruite dans une douzaine de fichiers (fonction `adresseTechniqueCourante` recopiée) et enregistre l'en-tête `x-forwarded-for` brut.
+- **Réservation de rendez-vous non atomique** : `facility/actions.ts:214` fait `findFirst` puis `create` sans contrainte d'unicité (aucun `@@unique` sur `RendezVous`) ; pas de limite de 3 rendez-vous à venir, de contrôle du même jour, de fenêtre 1 h / 30 jours ; le statut est toujours `demande` ; sans professionnel choisi, aucun contrôle de disponibilité.
+- **Création de dossier par un professionnel** (`identity/actions.ts:342`) : le professionnel s'accorde automatiquement un consentement de 12 mois `dossier_complet` (contraire à RG-ACC-10 et 15), le doublon est un test d'égalité exacte, l'e-mail du compte est un faux (`sans-compte.<uuid>@interne.benin-health.local`).
+- **Suspension sans effet immédiat** : `getSession()` ne relit jamais `User.statut` et `suspendrePersonnelAction` (`facility/gestion-personnel.ts:105`) ne supprime aucune `SessionActive` : un compte suspendu, terminé ou fermé garde un accès complet jusqu'à 7 jours.
+- **Service worker** : `public/service-worker.js:41-70` met en cache toute réponse GET de même origine (pages `/app/*`, `/api/documents/*`, `/api/patient/export/json`) et rien ne le purge à la déconnexion ; `Cache-Control: no-store` posé par les routes n'est pas respecté par l'API Cache.
+- **Classification de diagnostics par mots-clés** (`pilotage/referentiel-groupes-maladies.ts`) : sous-chaînes courtes (`"ist"`, `"hta"`, `"ivg"`, `"toux"`) et aucun usage du drapeau `sensible` dans `agregation.ts`, `lecture.ts` ou `alertes.ts` : VIH, IST, troubles mentaux, IVG, violences et addictions sont agrégés et affichés par établissement (RG-PIL-05, RG-PIL-30 non tenues).
+- **Empreinte d'ordonnance erronée** (`prescription/actions.ts:250`) et même schéma pour les résultats de laboratoire (`laboratoire/actions.ts:272`, sans perte grave car le texte du résultat est inclus).
+- **Bug de saisie de résultat de laboratoire et alertes épidémiologiques inopérantes** : voir F-LAB-03 et F-PIL-06.
+- **Seed incohérent avec l'annuaire public** : `prisma/seed.ts` crée les 3 établissements sans `statut`, donc au défaut `'brouillon'` (migration `20260926073317`), alors que `facility/annuaire-public.ts` ne liste que les `actif` : après un `db:seed` neuf, `/etablissements` est vide tant qu'un administrateur ne les active pas. La création par le ministère (`identity/gestion-comptes.ts:389`) passe directement à `actif` et court-circuite le cycle brouillon, contrôle, activation (F-ADM-02).
+- **Textes serveur sans accents** ("Session expiree. Veuillez vous reconnecter.") alors que les pages sont accentuées ; `adresseTechniqueCourante` et `premierMessageErreur` recopiées dans une douzaine de fichiers.
+- **Middleware** : `middleware.ts` est le nom déprécié en Next 16 (renommer `proxy.ts`) et ne couvre que `/app/*`.
+- **Tests** : 20 fichiers, tous mockés sauf un test conditionnel ; un test lit `.env` directement (`pilotage/analytics-role.test.ts:12`).
+- **Hygiène du dépôt local** : `prisma/analytics-role.sql` contient un mot de passe réel (ignoré par git) ; `.env.sqlite.bak`, `prisma/dev.db` et `prisma/migrations_sqlite_archive` sont des restes de la période SQLite ; `.kilo/worktrees/rotated-nutmeg` (4,3 Mo, copie du dépôt, hors git) est parcouru par `eslint .` et `tsconfig.json` (`include: **/*.ts`), à exclure ou à supprimer ; `docs/conception-transfert-dossier.md` dit encore que les notes de `docs/recherche-transfert/` ne sont pas versionnées alors qu'elles le sont ; la clé Wapy a été communiquée en clair (`conception-transfert-dossier.md` section 5) et doit être remplacée avant tout déploiement.
+
+### 3.6 Documentation en retard ou contradictoire
+
+- `README.md` : mis à jour en fin de session (lancement, contrôles avant push, variables, points de déploiement, stockage chez Cloudinary) ; il parle encore d'une PWA "prévue" alors qu'un service worker existe, et de PostGIS "prévu".
+- `docs/roadmap.md` : MFA décochée (elle existe, `identity/mfa.ts`), SQLite et "migration PostgreSQL prévue" (déjà faite), "notifications de confirmation" décochées alors qu'un centre de notifications existe. `CLAUDE.md` décrit une branche `develop` et des agents qui ne sont pas appliqués (une seule branche `main`).
+- `docs/audit-cote-administration.md` : la ligne F-ADM-03 dit que la validation centrale ne sera pas développée par décision produit du 2026-09-26 ; `docs/conception-transfert-dossier.md` section 12 (même jour, plus récente) décide au contraire que l'administrateur national valide les professionnels avec un écran à construire.
+- Audits `docs/audit-cote-*.md` : plusieurs statuts périmés ou incomplets (`audit-cote-patient.md` F-CIT-05 sans mention de l'écran orphelin, `audit-cote-pharmacien.md` F-PHA-04 "partiel" alors que le code le fait, `audit-cote-laboratoire.md` F-LAB-03 sans mention du bug de saisie structurée, `audit-cote-medecin.md` F-PRE-04 sans mention de l'empreinte erronée).
+- Commentaires de code périmés : `notification/sms/envoyer.ts:23` (aucune tâche planifiée : il y en a quatre), `identity/identifiants.ts:9` (base SQLite), `prescription/actions.ts:1949` (verrou fondé sur SQLite), `pilotage/agregation.ts` et `SectionPilotage.tsx:129` (IND-11 et absences "impossibles" alors que `heureArrivee` existe).
+- `src/database/schema-notes.md` (phase 1, "documentation uniquement"), `src/security/README.md` ("aucune logique de contrôle d'accès réelle").
+- `docs/pack claude/PROGRESS.md` jamais renseigné ; `docs/decisions.md`, `docs/anomalies.md`, `docs/rapports/` inexistants.
+
+### 3.7 Constats complémentaires issus de la relecture des fiches (établissements, clinique, audit)
+
+- **Lecture clinique sans base d'accès ni trace** : `getConsultationsDeLEtablissement` (`clinical/actions.ts:986`, appelée pour l'infirmier par `app/medecin/consultations/page.tsx:282`) renvoie toutes les consultations validées de l'établissement (identité, identifiant santé, motif, constantes, `observations` réservées, conclusion) sans consentement, sans contrôle de rôle et sans `journaliser` ; même famille : `facility/actions.ts:449` (`getRendezVousDeLEtablissementDuProfessionnel`) et `file-du-jour.ts:114`. Vérifié par lecture du code.
+- **Lectures de données patient sans trace d'audit** : `getConsultationsDeLEtablissement`, `getVaccinationsDuPatient` (`vaccination/actions.ts:418`), `getPriseEnChargeNonRecuperee` (`soins/actions.ts:402`), `getPatientsAvecConsentement`, `getReferencesRecues` et `getDetailReference` (`reference/actions.ts:413`), `getFileDuJourEtablissement`, plus les listes d'ordonnances et d'examens vues plus haut.
+- **Audit falsifiable** : `journaliserOuvertureDetailHistoriqueAction(type, id)` (`clinical/actions.ts:905`) écrit une ligne d'audit "détail ouvert" pour n'importe quel type et identifiant à toute session, sans vérifier l'accès (vérifié) : un utilisateur peut faire apparaître de faux accès dans "Qui a consulté mon dossier" d'un tiers.
+- **Consentement et rôle** : le type de consentement (`documents`, `examens`...) n'est pas appliqué en lecture (`clinical/actions.ts:530`, `vaccination/actions.ts:141`, `soins/actions.ts:320`) ; un consentement "urgence" autorise l'écriture d'une vaccination ; `patient/actions.ts:408` propose au patient tous les professionnels validés du pays, comptes Administration compris.
+- **Historique chargé en mémoire** : `clinical/actions.ts:748` charge tout puis filtre et pagine en JavaScript (RG-ACC-05 : filtrage en SQL exigé).
+- **Journal** : `donneeConcernee` est une chaîne `type:id` analysée par `split`/`startsWith` (`audit/actions.ts:117`, `patient/actions.ts:318`), d'où les accès invisibles du patient pour les types non listés.
+- **Dates "du jour" en heure du serveur** : `file-du-jour.ts:101`, `soins/actions.ts:127`, `DashboardMedecin.tsx:18`.
+- **Fusion de doublons** : détection O(n) en mémoire (`patient/fusion-doublons.ts:88`), `consentement.updateMany` pouvant violer l'unicité (patient, acteur), aucune table de correspondance.
+- **`file-du-jour.ts:269`** exporte une fonction synchrone (`demarrerMarquageAbsences`) depuis un fichier `"use server"`, alors que Next demande des fonctions asynchrones seulement. Le build de production passe malgré tout (vérifié le 2026-09-26), mais c'est fragile : à sortir dans un module sans `"use server"`.
+- **Limite réelle de téléversement de 4 Mo** (`next.config.ts:9`) contre 10 Mo annoncés (RG-CLI-110, formulaire de document).
+
+### 3.8 Limites et décisions ouvertes de `docs/conception-transfert-dossier.md` (sections 5, 7 à 11)
+
+| Point | État |
+|---|---|
+| Aucun message WhatsApp de production ; un premier envoi réel a été fait vers le numéro de test du produit (Wapy l'a accepté, rendu sur le téléphone non confirmé) | Ouvert : un fournisseur SMS réel et un volume supérieur à 60 messages/heure sont un prérequis d'un déploiement large (décision 4 : Wapy pour les tests seulement). |
+| Canal de fuite résiduel par mesure du temps de réponse (une requête de plus quand un patient est trouvé) | Non supprimé, atténué par les limites de débit. |
+| Numéro vérifié n'égale pas titulaire actuel (SIM réattribuées) : date de dernière vérification, refus 72 h après changement, notification de l'ancien numéro | Non construit. |
+| NPI contrôlé sur la longueur seulement, aucune API ANIP, autorisation APDP requise (art. 407) | Décision produit : demander l'autorisation ; `access.by_npi` reste désactivé ; démarche APDP et questions écrites à l'ANIP : non verifie. |
+| Patient sans smartphone ni compte : dépend du SMS réel ; patient créé sans compte contacté sur WhatsApp sans preuve de consentement du titulaire (champ `consentement` de Wapy = identifiant santé) | Ouvert, relecture par un juriste demandée (décision 6 de la section 10, non tranchée). |
+| Le patient ne voit les demandes reçues que depuis la notification (pas d'entrée de menu) | Ouvert. |
+| Preuve de présence : attestation obligatoire et plafond de 24 h sans rendez-vous ni arrivée du jour | Tranché (section 12), à revoir quand une carte de santé lisible existera. |
+| Catégories de données (VIH, santé mentale) non exclues par défaut du consentement obtenu par code | Non construit. |
+| Audit actif des demandes d'accès (rafales, refus répétés) | Non construit. |
+| USSD, appel vocal, mode assisté en établissement, personne de confiance | Non construits ; disponibilité chez les opérateurs béninois non vérifiée. |
+| Identité des professionnels multi-établissements : phase A faite (`profession`, `numeroOrdre`, affiliations écrites) ; phases B (26 fichiers à migrer), C (espace actif, recherche puis rattachement, détection de doublons de professionnels), D (suppression de `ProfessionnelSante.etablissementId`) non commencées | Ouvert. Décision 4 (consentement lié à la personne ou à l'affiliation) non tranchée. Impacts listés : créneaux rattachés au professionnel, établissement affiché sur l'ordonnance publique pris sur le profil et non sur l'acte. |
+| Écran de validation des professionnels et colonne `ordreVerifieLe` | Décidé (administrateur national, permission dédiée), non construit. |
+| Cadre légal : accès sans relation préalable non réglé expressément par le texte, hébergement de la base sur un serveur distant à vérifier (art. 391) | Non verifie, aucune donnée réelle avant l'autorisation de l'APDP (section 12). |
+
+## 4. Idées ajoutables, non demandées par le pack
+
+Chacune est reliée à un constat du code ou à `docs/recherche-transfert/` (V = vérifié, NV = non vérifié dans ces fichiers).
+
+| Idée | Constat qui la justifie |
+|---|---|
+| Fournisseur SMS réel (et appel vocal ou USSD après vérification opérateur) pour le code de confirmation et les rappels | En production le repli SMS est coupé (`src/modules/transfert/envoi-code.ts`) et l'outbox est simulée : un patient sans smartphone ni compte ne reçoit rien. Recherche : 32 % d'internautes (V), part de téléphones basiques et USSD chez les opérateurs béninois NV, smartphones à 51 à 54 % des connexions en Afrique subsaharienne/CEDEAO (V, benchmark leçon 6). Wapy limite à 60 messages/heure pour toute la plateforme (V). |
+| Personne de confiance ou représentant déclaré à l'avance, périmètre limité | Aucun code n'existe (recherche dans `src/`) ; benchmark leçon 6 (Belgique, Estonie, Kenya) ; utile pour patients sans téléphone ou incapables de répondre. |
+| Délai de carence après changement de numéro, notification à l'ancien numéro, date de dernière vérification du téléphone | `mettreAJourProfilAction` remplace le téléphone sans vérification ni alerte alors que le mode "téléphone + date de naissance" repose dessus ; SIM swap documenté en Côte d'Ivoire, Ghana, Kenya, Nigeria (V) ; `conception-transfert-dossier.md` section 9. |
+| Audit actif sur les demandes d'accès (rafales, refus répétés, mêmes patients demandés dans un établissement) | Section 11 de la note de conception ("Non construit") ; `SignalementAnomalieAcces` et `DemandeAccesDossier` existent déjà, il reste à les relier. |
+| Notification au patient à chaque accès, blocage définitif d'un professionnel par le patient, catégories exclues par défaut (VIH, santé mentale) | Benchmark leçons 3, 4 et 8 (Belgique, France, Angleterre) ; le consentement actuel est plat, sans catégories. |
+| Preuve de présence par lecture du QR de la carte de santé quand elle existera | Décision produit du 2026-09-26 (section 12) : attestation seule, plafond 24 h ; l'écran `/app/patient/carte` existe mais n'est relié à aucun menu (vérifié). |
+| Alerte de nouvelle connexion (N-NEW-DEVICE) et révocation immédiate à la suspension | `SessionActive` contient déjà appareil, navigateur, IP ; la suspension d'un compte ne ferme pas les sessions (risque 5 de la section 5.1). |
+| Codes de secours TOTP, chiffrement applicatif du secret TOTP et du NPI, rotation de clé | Secret TOTP et NPI en clair dans `prisma/schema.prisma` ; art. 407 (NPI). |
+| `Clear-Site-Data` à la déconnexion et service worker qui ne met en cache que les ressources publiques | Risque 2 de la section 5.1. |
+| CI GitHub Actions : `tsc`, `eslint`, `vitest`, `next build`, `npm audit`, détection de secrets (gitleaks) | Le dépôt est poussé sur un dépôt distant (`origin`), aucune CI ; `conception-transfert-dossier.md` section 5 : une clé Wapy a été communiquée en clair et doit être remplacée avant tout déploiement. |
+| Test automatique "service guard" (parcourir les fichiers `"use server"`, exiger un contrôle de session ou un marqueur public) | Un script de 20 lignes a signalé 17 fonctions (section 3.4) ; le pack l'exige (RG-ARC-12). |
+| Tests d'intégration PostgreSQL (concurrence de délivrance et de réservation, immuabilité, index) | Tests actuels tous mockés ; `docs/audit-cote-pharmacien.md` signale la garantie de délivrance non revérifiée depuis SQLite. |
+| Identifiants santé et numéros d'ordonnance aléatoires avec caractère de contrôle | Séquences par `count()` (énumération, collisions). |
+| Index manquants et jeu de données volumineux à graine fixe | 12 `@@index` pour 73 relations ; seed de 3 établissements : impossible de mesurer les performances. |
+| Lecture hors ligne du tableau de bord et de la carte santé du citoyen, en cache chiffré ou limité à un QR de secours | Chapitre 13.1 ; aujourd'hui le cache du service worker est non filtré. |
+| Sélecteur de langue et pictogrammes pour citoyens peu lettrés (langues nationales) | Le pack le prévoit (H4, next-intl) ; aucun constat de la recherche ne le chiffre : à évaluer avec des tests utilisateurs, NV. |
+| Écran de validation des professionnels (F-ADM-03) par l'administrateur national, avec `ordreVerifieLe` et revalidation périodique | Décision produit actée (section 12), non construit ; risque 3 de `identite-professionnels.md` (deux comptes pour une personne, probable dès aujourd'hui). |
+
+## 5. Synthèse finale
+
+### 5.1 Les 15 risques ou manques les plus importants, par gravité
+
+| # | Risque ou manque | Justification (preuve) |
+|---|---|---|
+| 1 | Modèle d'accès contourné : aucune base d'accès unifiée | Un infirmier lit toutes les consultations de son établissement, notes réservées comprises, sans consentement ni trace (`clinical/actions.ts:986`) ; un médecin qui crée un dossier s'octroie 12 mois d'accès (`identity/actions.ts:471`) ; le type de consentement n'est pas appliqué en lecture ; pas de contexte de soins, d'`authorize()` ni de niveaux `SUMMARY/FULL/FULL_SENSITIVE`. |
+| 2 | Le service worker met en cache les pages de santé et ne les purge jamais | `public/service-worker.js:41-70` stocke toute réponse GET de même origine (pages `/app/*`, `/api/documents/*`, export JSON) et la resert hors ligne, y compris après déconnexion et pour un autre utilisateur du même poste ; `no-store` est ignoré par l'API Cache. |
+| 3 | Données de santé et identifiants envoyés à des tiers hors du Bénin | Documents médicaux et avatars chez Cloudinary (`api/documents/[id]/route.ts`), numéro de téléphone et identifiant santé transmis à Wapy (`transfert/envoi-code.ts`), sans contrat, sans autorisation APDP (art. 391, 394, 407) ; le README le reconnaît maintenant comme point de conformité. |
+| 4 | Authentification sans protection contre l'essai répété | Aucun verrouillage ni limitation sur la connexion, la réinitialisation, le TOTP (5 minutes d'essais libres) ; MFA facultative, secret en clair, désactivable avec le seul mot de passe ; `verifierCodeMfaPourConnexion` exportée comme Server Action. |
+| 5 | Suspension, fin d'affiliation et fermeture de compte sans effet immédiat | `getSession()` ne relit jamais `User.statut` et aucune `SessionActive` n'est supprimée (`facility/gestion-personnel.ts:105`) : accès complet jusqu'à 7 jours (le pack veut 12 h/8 h). |
+| 6 | Journal d'audit insuffisant comme preuve | Pas d'append-only en base, déclencheur sans verrou (fourches, fausses ruptures), hash sans date ni IP, ni refus ni échecs de connexion journalisés, lectures non tracées (ordonnances, examens, vaccinations, références), fausses lignes possibles via `journaliserOuvertureDetailHistoriqueAction`. |
+| 7 | Pas de diagnostic codé (CIM-10) : sensibilité et pilotage reposent sur des mots-clés | `Consultation.conclusion` en texte libre ; aucune consultation `SENSITIVE` ; groupes sensibles (VIH, IST, IVG...) agrégés par établissement, contre RG-PIL-05 ; alertes épidémiologiques jamais déclenchables (zone jamais écrite) ; faux positifs par sous-chaîne (`"ist"`). |
+| 8 | Intégrité des actes cliniques non garantie | Empreinte d'ordonnance qui vide les lignes ; délivrance en lecture puis écriture sans verrou (surdélivrance possible) ; double réservation de rendez-vous, statut libre sans machine à états ; ordonnances jamais expirées ; saisie structurée des résultats de laboratoire impossible ; immutabilité seulement applicative (aucun déclencheur en base). |
+| 9 | Identité et identifiants fragiles | Identifiants santé et ordonnances séquentiels par `count()` (énumération, collisions), NPI en clair, e-mail obligatoire non vérifié, énumération à l'inscription, code de réclamation renvoyé en clair au professionnel qui connaît déjà téléphone et date de naissance (prise de contrôle du dossier possible). |
+| 10 | Aucun socle d'exploitation | Pas de CI, Docker, sauvegarde ni test de restauration, supervision, `/api/health`, en-têtes de sécurité ni CSP ; planificateurs `setInterval` en processus (inopérants sans processus persistant, doublés en multi-instance) ; jetons et limiteur en mémoire ; hébergement de la base non vérifié. |
+| 11 | Conformité et transparence à l'égard des personnes | Aucune CGU ni politique de confidentialité, aucune preuve d'acceptation (RG-AUTH-07), autorisation APDP non obtenue, pas de DPO ni de registre des traitements, contact WhatsApp de patients sans compte sans base de consentement, ni bandeau "Données fictives" ni mention "(démo)". |
+| 12 | Tests trop faibles pour protéger les règles critiques | 20 fichiers, tous mockés (un test d'intégration conditionnel) ; aucun test sur clinique, ordonnance hors vérification, laboratoire, rendez-vous, urgence, documents ; ni IDOR, concurrence, immutabilité, `service-guard` ; les quatre défauts bloquants n'ont été vus par aucun test. |
+| 13 | Server Actions exportées sans contrôle | 17 fonctions sur 212 sans contrôle de session apparent, dont `creerNotification`, `marquerAbsencesDues(date)`, `listProfessionnelsParEtablissement` ; Next demande de contrôler dans chaque action ; exploitabilité non vérifiée ; un export synchrone dans `file-du-jour.ts` peut casser le build. |
+| 14 | Parcours P0 de la démonstration incomplets ou injoignables | Pas d'arrivée ni de contexte de soins, pas de créneaux, pas de rôle accueil, carte santé QR et fiche d'établissement sans lien, annuaire vide après `db:seed`, seed de 3 établissements, validation des professionnels absente, terrain hors ligne absent, carte sanitaire absente. |
+| 15 | Gouvernance et documentation | Audits et roadmap en retard ou contradictoires (F-ADM-03 tranché dans deux sens le même jour), `PROGRESS.md` du pack jamais tenu, pas de `docs/decisions.md`, trois sessions qui committent sur `main`, clé Wapy communiquée en clair à remplacer, mot de passe réel dans `prisma/analytics-role.sql` (ignoré par git), copie du dépôt sous `.kilo/`. |
+
+### 5.2 Ordre de priorité proposé, en 5 vagues
+
+**Vague 1, colmater sans changer le modèle (quelques jours).**
+1. Service worker : ne mettre en cache que des ressources publiques, exclure `/app/*` et `/api/*`, vider les caches et envoyer `Clear-Site-Data` à la déconnexion.
+2. Sessions : relire `User.statut` dans `getSession()`, supprimer les `SessionActive` à la suspension, fin d'affiliation, fermeture et changement de mot de passe ; durées par rôle.
+3. Anti force brute : limitation et verrouillage (compteurs en base) sur connexion, code e-mail, TOTP, réinitialisation ; journaliser les échecs.
+4. Sortir de `"use server"` : `creerNotification`, `verifierCodeMfaPourConnexion`, `marquerAbsencesDues`, les listes de professionnels ; ajouter un test `service-guard`.
+5. Corriger `getConsultationsDeLEtablissement` (consentement ou contexte, rôle, audit), supprimer l'auto-consentement de 12 mois, appliquer le `typeAcces`, ne plus renvoyer le code de réclamation.
+6. Défauts bloquants : transmettre `parametresJson`, écrire la zone dans les agrégats, empreinte d'ordonnance (clés imbriquées), verrou de délivrance (`SELECT ... FOR UPDATE` ou mise à jour conditionnelle), contrainte d'unicité des rendez-vous.
+7. En-têtes de sécurité et CSP, renommer `middleware.ts` en `proxy.ts`, ré-authentification vérifiée côté serveur pour les routes d'export, lier la carte santé et la fiche d'établissement, corriger le seed (statut `actif`), remplacer la clé Wapy.
+
+**Vague 2, conformité et hébergement (décisions du produit d'abord).** Trancher le stockage des documents (hébergement au Bénin ou stockage objet chiffré, sinon décision écrite), limiter ce qui part vers Wapy, rédiger CGU et politique de confidentialité avec enregistrement de la version acceptée, déposer le dossier APDP, tenir le registre des traitements, afficher "Données fictives" et "(démo)", faire relire l'accès sans relation préalable par un juriste.
+
+**Vague 3, modèle d'accès et de données (le vrai écart avec le pack).** `authorize()` unique et test de garde ; bases d'accès (contexte de soins, visite, arrivée avec preuve de présence, niveaux `SUMMARY/FULL/FULL_SENSITIVE`, catégories sensibles) ; CIM-10 et groupes de maladies en référentiel ; espace actif et affiliations (phases B et C), invitations, écran de validation des professionnels, rôles accueil et auditeur ; créneaux et machine d'états des rendez-vous ; audit append-only (déclencheur, `REVOKE`, verrou, hash complet), `record_versions`, déclencheurs d'immuabilité ; identifiants aléatoires avec caractère de contrôle, NPI chiffré.
+
+**Vague 4, fonctions P0 et P1 manquantes.** Ordonnance (DRAFT, 10 lignes, poids, validité stockée, expiration), laboratoire complet (numéro, QR, valeurs de référence, corrections versionnées), pharmacie (scan, base ASSIGNMENT), fournisseur SMS réel et émission des 22 codes N-* jamais émis, tâches planifiées persistantes (expiration des rendez-vous, ordonnances et examens, abandon des brouillons, SMS différés, revue d'urgence), enregistrement automatique des brouillons, pilotage (carte GeoJSON, filtres, IND manquants, exports sécurisés), application terrain hors ligne et synchronisation, API `/api/v1` documentée puis façade FHIR en lecture, IA derrière drapeaux si le produit la retient.
+
+**Vague 5, qualité, exploitation et recette.** Docker et compose, CI (`tsc`, `eslint`, `vitest`, `next build`, `npm audit`, détection de secrets), sauvegardes chiffrées avec test de restauration, supervision et `/api/health`, journaux structurés sans donnée de santé, tests d'intégration PostgreSQL, Playwright, concurrence, IDOR, immutabilité, matrice de permissions, Lighthouse, axe, k6, index manquants et pagination par curseur, i18n, seed reproductible de 30 établissements et 300 patients, grille de recette REC-01 à REC-32, guides par rôle, test d'intrusion, revue de sécurité avec preuves, mise à jour des documents de suivi.
+
+Décisions à prendre par le produit avant la vague 2 : hébergement des documents et de la base, fournisseur SMS, calendrier de l'autorisation APDP et des questions à l'ANIP, consentement lié à la personne ou à l'affiliation, périmètre du rôle "accueil" et du rôle "auditeur" (créer les rôles ou continuer à les fusionner).
+
+## Annexe, fichiers de référence
+
+`prisma\schema.prisma`, `src\lib\session.ts`, `public\service-worker.js`, `src\instrumentation.ts`, `src\security\permissions.ts`, `src\modules\clinical\actions.ts`, `src\modules\identity\actions.ts`, `src\modules\prescription\actions.ts`, `src\modules\laboratoire\actions.ts`, `src\modules\pilotage\agregation.ts`, `src\modules\pilotage\alertes.ts`, `prisma\migrations\20260926080821_ajout_chainage_journal_audit\migration.sql`, `docs\conception-transfert-dossier.md`, `docs\recherche-transfert\*.md`, `docs\pack claude\specs\*.md`.

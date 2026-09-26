@@ -1,6 +1,6 @@
 # Accès au dossier d'un patient sans relation préalable : conception
 
-Note de conception du 2026-09-26. Elle répond à deux questions du produit : (1) comment un professionnel ouvre le dossier d'un patient qu'il n'a jamais vu, en toute sécurité et dans la réalité béninoise ; (2) comment identifier de façon unique un spécialiste qui exerce dans plusieurs établissements. Les recherches d'appui sont dans `docs/recherche-transfert/` (fichiers non versionnés : `realite-benin.md`, `identite-professionnels.md`, `benchmark-consentement.md`). Légende des faits externes : V = vérifié, NV = non vérifié.
+Note de conception du 2026-09-26. Elle répond à deux questions du produit : (1) comment un professionnel ouvre le dossier d'un patient qu'il n'a jamais vu, en toute sécurité et dans la réalité béninoise ; (2) comment identifier de façon unique un spécialiste qui exerce dans plusieurs établissements. Les recherches d'appui sont dans `docs/recherche-transfert/` (versionnés depuis le 2026-09-26 : `realite-benin.md`, `identite-professionnels.md`, `benchmark-consentement.md`). Légende des faits externes : V = vérifié, NV = non vérifié.
 
 ## 1. Recommandation en bref
 
