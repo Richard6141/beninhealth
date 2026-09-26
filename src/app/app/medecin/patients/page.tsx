@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { getPatientsAvecConsentement } from "@/modules/clinical/actions";
+import { FormulaireCodePartage } from "./FormulaireCodePartage";
 import { ListePatients } from "./ListePatients";
 
 /**
@@ -30,6 +31,8 @@ export default async function PatientsPage() {
           Patients vous ayant accordé l&apos;accès à leur dossier.
         </p>
       </header>
+
+      <FormulaireCodePartage />
 
       <ListePatients patients={patients} />
     </div>

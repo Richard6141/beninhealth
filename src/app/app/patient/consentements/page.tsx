@@ -8,6 +8,7 @@ import { Alert } from "@/components/ui/Alert";
 import { Card } from "@/components/ui/Card";
 import { ListeConsentements } from "./ListeConsentements";
 import { FormulaireNouveauConsentement } from "./FormulaireNouveauConsentement";
+import { GenerateurCodePartage } from "./GenerateurCodePartage";
 
 const principesConsentement = [
   {
@@ -115,6 +116,15 @@ export default async function ConsentementsPage() {
           )}
         </section>
       </div>
+
+      <section aria-labelledby="titre-partage-code" className="flex flex-col gap-4">
+        <h2 id="titre-partage-code" className="text-[20px] font-bold text-encre">
+          Partager rapidement par code
+        </h2>
+        <div className="max-w-md">
+          <GenerateurCodePartage />
+        </div>
+      </section>
     </div>
   );
 }

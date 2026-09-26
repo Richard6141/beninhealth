@@ -141,6 +141,11 @@ const navigationInfirmier: ElementNavigation[] = [
     icon: <HeartPulse size={tailleIconeNav} aria-hidden="true" />,
   },
   {
+    label: "Patients",
+    href: "/app/medecin/patients",
+    icon: <Users size={tailleIconeNav} aria-hidden="true" />,
+  },
+  {
     label: "Rendez-vous",
     href: "/app/medecin/rendez-vous",
     icon: <CalendarClock size={tailleIconeNav} aria-hidden="true" />,

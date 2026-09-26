@@ -59,6 +59,9 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     'create:rendez_vous',
     'read:rendez_vous',
     'update:rendez_vous',
+    // F-CIT-11 : generer un code de partage temporaire de son propre dossier.
+    'create:code_partage',
+    'read:code_partage',
   ]),
 
   medecin: new Set<Permission>([
@@ -82,6 +85,9 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     'create:vaccination',
     'read:prise_en_charge_infirmiere',
     'create:acces_urgence',
+    // F-CIT-11 : utiliser le code de partage temporaire presente par un
+    // patient (RG-CIT-91 : medecin ou infirmier valide uniquement).
+    'update:code_partage',
     // F-CLI-14 : le medecin peut envoyer une reference vers un autre
     // etablissement, et repondre (contre-reference) a une reference recue
     // par son propre etablissement.
@@ -102,6 +108,9 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     'read:prise_en_charge_infirmiere',
     'create:prise_en_charge_infirmiere',
     'create:acces_urgence',
+    // F-CIT-11 : utiliser le code de partage temporaire presente par un
+    // patient (RG-CIT-91 : medecin ou infirmier valide uniquement).
+    'update:code_partage',
   ]),
 
   agent_communautaire: new Set<Permission>([
