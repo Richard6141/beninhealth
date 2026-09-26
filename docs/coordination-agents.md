@@ -3353,3 +3353,25 @@ complements, correctif F-AUTH-08, correctif RBAC medicaments).
 - Les fichiers de recherche `docs/recherche-transfert/` (3e, 3d, 86) sont
   maintenant suivis : recherche publique, aucun secret.
 - 2026-09-26.
+
+### Repartition des chantiers, projet-gouv-e1 [0212b4], 2026-09-26 (soir)
+
+Sur demande de l'utilisateur ("assure-toi que tous les agents aient du travail"),
+file de travail par session, tiree de `docs/reste-a-faire.md`, en fichiers
+disjoints. Chaque session lit les fiches concernees, verifie dans le code, ecrit
+ses tests, commite sans pathspec, previent e1 par un message court (hash +
+fichiers) ; e1 pousse sur l'ordre permanent de l'utilisateur.
+
+| Session | Ordre de travail | Fichiers a elle |
+|---|---|---|
+| 3d | 1. pilotage F-PIL-05/06/07, RG-PIL-05/30 ; F-PRE-06 etablissement de l'acte. 2. rendez-vous : RG-RDV-03 (unicite), machine d'etats, F-RDV-01/02/03. 3. F-ADM-03 validation des professionnels (admin national). 4. tests urgence, proches, clinical | `src/modules/pilotage/**`, `src/app/api/pilotage/**`, `src/modules/prescription/verification-publique.ts`, `src/modules/facility/{actions,rendez-vous-guichet,file-du-jour}.ts`, `src/app/app/{patient,medecin}/rendez-vous/**`, `src/modules/administration/validation-professionnels.ts`, `src/app/app/ministere/validation-professionnels/**` |
+| 86 | 1. prescription : F-PRE-04 empreinte, F-PRE-01, F-PRE-05. 2. pharmacie : F-PHA-03 verrou, F-PHA-01/02. 3. tests prescription, partage, reference, document. 4. referentiels F-ADM-04 restants | `src/modules/prescription/**` (sauf verification-publique.ts), `src/app/app/medecin/{prescriptions,pharmacie}/**`, `src/app/app/patient/prescriptions/**`, `src/modules/administration/referentiel-*.ts`, `src/app/app/ministere/referentiels/**` |
+| 3e | 1. laboratoire : RG-LAB-41, F-LAB-06, F-LAB-01 (numero LB-), F-LAB-04 versions. 2. notifications : F-NOT-02 remise 7 h, F-NOT-03 preferences, F-NOT-04 codes N-*, F-NOT-01. 3. tests soins, vaccination, communautaire, notification | `src/modules/{laboratoire,notification,soins,vaccination,communautaire}/**`, `src/app/app/medecin/{laboratoire,examens}/**`, `src/app/app/notifications/**`, `src/app/app/patient/examens/**` |
+| e1 | Securite transverse (vague 1 : faite pour session, login, MFA, service worker, actions exposees, saisie de labo), en-tetes de securite, seed, liens de menu, modele d'acces clinique (consultations d'un etablissement, auto-consentement de 12 mois, type de consentement applique en lecture), module transfert, integration et push | `src/lib/**`, `next.config.ts`, `middleware.ts`, `public/**`, `prisma/seed.ts`, `src/app/app/layout.tsx`, `src/modules/{identity,transfert,clinical,patient,partage,proches,urgence,audit}/**` |
+
+Rappels communs : fichiers partages (schema.prisma, permissions.ts, layout.tsx,
+docs) en petits hunks commites tout de suite ; `use server` = chaque export est
+un point d'entree (controle session et role dedans) ; `useSearchParams` exige un
+Suspense (le build echoue sinon) ; `creerNotification` vit dans
+`src/modules/notification/creer.ts` ; migration puis `migrate diff` doit dire
+"No difference detected".
