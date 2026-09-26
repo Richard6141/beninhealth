@@ -14,10 +14,11 @@
  * active) ni de canal email pour les notifications elles-memes (seul usage
  * email reel : le code de connexion, src/lib/mail.ts, qui ne passe pas par
  * ce systeme de preferences). Les cases SMS/email des categories
- * modifiables sont donc bien enregistrees et relues fidelement, mais n'ont
- * aujourd'hui AUCUN effet reel sur l'envoi : seul le canal interne
- * (affichage dans /app/notifications) est reellement actif. A cabler
- * veritablement le jour ou un fournisseur SMS/email existe.
+ * modifiables sont enregistrees et relues fidelement. A l'emission
+ * (creerNotification, creer.ts), la case SMS depose un SMS dans la boite
+ * d'envoi simulee (F-NOT-02, aucun SMS reel ne part) ; la case email n'a
+ * aucun effet, faute de canal email pour les notifications. Les categories
+ * verrouillees ne declenchent pas encore de SMS depuis ce chemin.
  */
 
 export type CategorieNotification =

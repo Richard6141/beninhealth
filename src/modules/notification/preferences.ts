@@ -2,11 +2,10 @@
 
 /**
  * Server Actions du module notification : preferences par categorie
- * (F-NOT-03 du pack). Nouveau fichier, aucune modification de
- * src/modules/notification/actions.ts : creerNotification n'a pas besoin
- * de lire ces preferences puisque, dans ce depot, seul le canal interne est
- * reellement actif (voir src/modules/notification/categories.ts pour le
- * detail de cette limite assumee).
+ * (F-NOT-03 du pack). Ces preferences sont lues a l'emission par
+ * creerNotification (src/modules/notification/creer.ts) : la case SMS d'une
+ * categorie depose un SMS dans la boite d'envoi simulee ; la case email
+ * reste sans effet (voir categories.ts pour le detail des limites).
  */
 
 import { z } from "zod";
