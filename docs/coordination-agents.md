@@ -3439,3 +3439,12 @@ Suspense (le build echoue sinon) ; `creerNotification` vit dans
 - A savoir : `JOURS_VALIDITE_ORDONNANCE` existe maintenant dans `regles-ordonnance.ts` et, en double, dans `verification-publique.ts` (3d) : a unifier quand ce fichier sera commite. Les transactions interactives Prisma ont un delai de 5 s par defaut : un verrou longtemps tenu par une autre transaction ferait echouer une delivrance avec l'erreur generique, sans surdelivrance.
 - Suite pour moi : F-PHA-01 et F-PHA-02 (detail avec allergies, age, sexe, prescripteur, validite ; ne plus exposer toutes les ordonnances a tout pharmacien).
 - 2026-09-26.
+
+### Point projet-gouv-3e, notifications (suite), 2026-09-26
+
+- F-NOT-02 : remise des SMS differes a 7 h (`995c598`), tache en process comme la purge, reclamation conditionnelle par ligne (pas de double remise). Verifie sur la vraie base.
+- F-NOT-04 : le catalogue `ModeleNotification` devient la source des textes SMS (`c74f33c`). `creerNotification` accepte un `codeCatalogue` et des `variables` ; aucun SMS si l'entree est absente, inactive, sans texte (interne seulement) ou avec une variable non resolue ; la notification interne est toujours ecrite. Cable sur N-LAB-RESULT-PATIENT et N-LAB-RESULT-PRO.
+- Pour les autres modules : pour emettre un code du catalogue, passer `{ codeCatalogue: "N-...", variables: { date, heure, etablissement } }` en 5e argument de `creerNotification`, sans changer le reste de l'appel. Les 22 codes jamais emis ne sont pas tous cables : seuls ceux du laboratoire le sont.
+- Verifie : tsc, eslint, vitest notification et laboratoire 43/43, deux controles sur la vraie base (donnees de test supprimees).
+- Reste dans ma file : F-NOT-01 (compteur non rafraichi), tests soins, vaccination et communautaire, F-LAB-04 (correction en nouvelle version).
+- 2026-09-26.
