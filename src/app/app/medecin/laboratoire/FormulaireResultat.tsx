@@ -6,9 +6,63 @@ import {
   type ExamenResume,
   type LaboratoireActionState,
 } from "@/modules/laboratoire/actions";
+import { parametresPourExamen } from "@/modules/laboratoire/referentiel-parametres-examens";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { Modal, type ModalHandle } from "@/components/ui/Modal";
+
+/**
+ * Saisie structuree par parametre (F-LAB-03 du pack), pour le sous-ensemble
+ * d'examens quantitatifs couvert par referentiel-parametres-examens.ts :
+ * un champ numerique par parametre (unite affichee), serialise dans un champ
+ * cache "parametresJson" a chaque frappe pour rester un <form action=...>
+ * natif (Server Action), sans passer par un gestionnaire de soumission JS.
+ * L'indicateur (N/L/H/LL/HH) et le rejet des valeurs hors limites
+ * physiologiquement possibles (RG-LAB-20) sont calcules cote serveur, jamais
+ * ici : ce composant ne fait que collecter la saisie.
+ */
+function ChampParametresStructures({
+  parametres,
+  valeursInitiales,
+}: {
+  parametres: ReturnType<typeof parametresPourExamen>;
+  valeursInitiales: Record<string, string>;
+}) {
+  const [valeurs, setValeurs] = useState<Record<string, string>>(valeursInitiales);
+
+  if (!parametres) return null;
+
+  return (
+    <div className="flex flex-col gap-3">
+      <input type="hidden" name="parametresJson" value={JSON.stringify(Object.entries(valeurs).map(([code, valeur]) => ({ code, valeur })))} />
+      {parametres.map((parametre) => {
+        const fieldId = `param-${parametre.code}`;
+        return (
+          <div key={parametre.code} className="flex flex-col gap-1.5">
+            <label htmlFor={fieldId} className="text-[14px] font-semibold text-encre">
+              {parametre.libelle}{" "}
+              <span className="text-critique" aria-hidden="true">
+                *
+              </span>
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                id={fieldId}
+                type="text"
+                inputMode="decimal"
+                required
+                value={valeurs[parametre.code] ?? ""}
+                onChange={(e) => setValeurs((v) => ({ ...v, [parametre.code]: e.target.value }))}
+                className="w-40 rounded-champ border border-bordure-forte bg-surface px-3 py-2 text-[16px] text-encre transition-colors motion-reduce:transition-none focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+              />
+              <span className="text-[13px] text-encre-attenuee">{parametre.unite}</span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 const etatInitial: LaboratoireActionState = { error: null, success: false };
 
@@ -65,6 +119,10 @@ function ContenuFormulaire({
     etatInitial
   );
   const enCorrection = examen.statut === "correction_demandee";
+  const parametresStructures = parametresPourExamen(examen.typeExamen);
+  const valeursInitiales = Object.fromEntries(
+    (enCorrection ? examen.resultatsParametres ?? [] : []).map((p) => [p.code, String(p.valeur)])
+  );
 
   if (state.success) {
     return (
@@ -107,7 +165,11 @@ function ContenuFormulaire({
         <p className="text-[13px] text-encre-secondaire">{examen.typeExamen}</p>
       </div>
 
-      <ChampResultat valeurInitiale={enCorrection ? examen.resultat ?? "" : ""} />
+      {parametresStructures ? (
+        <ChampParametresStructures parametres={parametresStructures} valeursInitiales={valeursInitiales} />
+      ) : (
+        <ChampResultat valeurInitiale={enCorrection ? examen.resultat ?? "" : ""} />
+      )}
 
       <Button type="submit" variant="primary" className="w-fit" disabled={pending}>
         {pending

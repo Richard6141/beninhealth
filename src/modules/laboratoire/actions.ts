@@ -37,11 +37,29 @@ import { headers } from "next/headers";
 import { createHash } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
 import { estExamenSensible } from "./referentiel-examens-sensibles";
+import {
+  parametresPourExamen,
+  calculerIndicateur,
+  valeurPhysiologiquementPossible,
+  type Sexe,
+  type Indicateur,
+} from "./referentiel-parametres-examens";
 import { journaliser } from "@/modules/audit/journaliser";
+import { creerNotification } from "@/modules/notification/actions";
+
+/** Une valeur de parametre structure saisie et son indicateur calcule (F-LAB-03). Snapshot autonome, stocke tel quel dans ExamenMedical.resultatsParametres : jamais recalcule depuis le referentiel a l'affichage, pour rester stable si le referentiel change. */
+export interface ResultatParametre {
+  code: string;
+  libelle: string;
+  unite: string;
+  valeur: number;
+  indicateur: Indicateur;
+}
 
 /** Etat renvoye par chaque Server Action de ce module, consomme via useActionState. */
 export interface LaboratoireActionState {
@@ -63,6 +81,10 @@ export interface ExamenResume {
   date: string; // ISO
   statut: string;
   resultat: string | null;
+  // F-LAB-03 du pack : renseigne uniquement pour le perimetre reduit
+  // d'examens quantitatifs couvert par referentiel-parametres-examens.ts,
+  // null sinon (resultat en texte libre uniquement, comportement inchange).
+  resultatsParametres: ResultatParametre[] | null;
   dateResultat: string | null; // ISO ou null
   patientNomComplet: string | null; // rempli cote medecin/laboratoire
   patientIdentifiantSante: string | null; // rempli cote medecin/laboratoire
@@ -120,7 +142,12 @@ const schemaDemandeExamen = z.object({
 
 const schemaSaisieResultat = z.object({
   examenId: z.string().trim().min(1, "L'examen est obligatoire."),
-  resultat: z.string().trim().min(1, "Le resultat est obligatoire."),
+  // L'un ou l'autre selon que l'examen fait partie du perimetre structure
+  // (referentiel-parametres-examens.ts) : resultat en texte libre, ou
+  // parametresJson (tableau JSON [{ code, valeur }], valeur en texte pour
+  // tolerer un champ de saisie HTML standard).
+  resultat: z.string().trim().optional().default(""),
+  parametresJson: z.string().trim().optional().default(""),
 });
 
 const schemaAnnonceResultat = z.object({
@@ -216,6 +243,10 @@ export async function getIdProfessionnelCourant(): Promise<string | null> {
 function calculerEmpreinteResultat(champs: {
   examenId: string;
   resultat: string;
+  // F-LAB-03 : inclus dans l'empreinte pour que la garantie d'integrite
+  // (F-LAB-04) couvre aussi un resultat structure, jamais seulement le
+  // resume texte genere a partir de lui.
+  resultatsParametres: ResultatParametre[] | null;
   saisiParId: string;
 }): string {
   const contenuCanonique = JSON.stringify(champs, Object.keys(champs).sort());
@@ -230,6 +261,7 @@ function versExamenResume(
     date: Date;
     statut: string;
     resultat: string | null;
+    resultatsParametres: unknown;
     dateResultat: Date | null;
     laboratoire: { nom: string };
     sensible: boolean;
@@ -252,6 +284,7 @@ function versExamenResume(
     date: examen.date.toISOString(),
     statut: examen.statut,
     resultat: examen.resultat,
+    resultatsParametres: (examen.resultatsParametres as ResultatParametre[] | null) ?? null,
     dateResultat: examen.dateResultat ? examen.dateResultat.toISOString() : null,
     patientNomComplet: options.patientNomComplet,
     patientIdentifiantSante: options.patientIdentifiantSante,
@@ -720,7 +753,7 @@ export async function saisirResultatExamenAction(
     };
   }
 
-  const { examenId, resultat } = validation.data;
+  const { examenId, resultat, parametresJson } = validation.data;
 
   try {
     const professionnel = await prisma.professionnelSante.findUnique({
@@ -733,6 +766,7 @@ export async function saisirResultatExamenAction(
 
     const examen = await prisma.examenMedical.findUnique({
       where: { id: examenId },
+      include: { patient: true },
     });
 
     if (!examen || examen.laboratoireId !== professionnel.etablissementId) {
@@ -746,6 +780,82 @@ export async function saisirResultatExamenAction(
       };
     }
 
+    // F-LAB-03 : pour le perimetre reduit d'examens quantitatifs couvert par
+    // referentiel-parametres-examens.ts, la saisie est structuree par
+    // parametre (valeur numerique, indicateur calcule) plutot qu'en texte
+    // libre. Les examens hors de ce perimetre gardent le texte libre,
+    // comportement inchange.
+    const refParametres = parametresPourExamen(examen.typeExamen);
+    let resultatTexte: string;
+    let resultatsParametresSnapshot: ResultatParametre[] | null = null;
+
+    if (refParametres) {
+      let valeursSoumises: unknown;
+      try {
+        valeursSoumises = JSON.parse(parametresJson);
+      } catch {
+        return { error: "Format des valeurs saisies invalide.", success: false };
+      }
+
+      if (!Array.isArray(valeursSoumises)) {
+        return { error: "Format des valeurs saisies invalide.", success: false };
+      }
+
+      const parValeurs = new Map(
+        valeursSoumises
+          .filter(
+            (v): v is { code: string; valeur: string } =>
+              typeof v === "object" && v !== null && typeof v.code === "string" && typeof v.valeur === "string"
+          )
+          .map((v) => [v.code, v.valeur])
+      );
+
+      const snapshot: ResultatParametre[] = [];
+      for (const parametre of refParametres) {
+        const valeurBrute = parValeurs.get(parametre.code);
+        if (!valeurBrute || valeurBrute.trim() === "") {
+          return { error: `La valeur de "${parametre.libelle}" est obligatoire.`, success: false };
+        }
+
+        const valeurNumerique = Number(valeurBrute.trim().replace(",", "."));
+        if (Number.isNaN(valeurNumerique)) {
+          return { error: `La valeur de "${parametre.libelle}" doit etre un nombre.`, success: false };
+        }
+
+        // RG-LAB-20 : une valeur hors des limites physiologiquement
+        // possibles est refusee, jamais enregistree avec un indicateur.
+        if (!valeurPhysiologiquementPossible(parametre.code, valeurNumerique)) {
+          return {
+            error: `La valeur de "${parametre.libelle}" (${valeurNumerique} ${parametre.unite}) est hors des limites physiologiquement possibles.`,
+            success: false,
+          };
+        }
+
+        const indicateur = calculerIndicateur(parametre.code, valeurNumerique, examen.patient.sexe as Sexe);
+        if (!indicateur) {
+          return { error: `La valeur de "${parametre.libelle}" est invalide.`, success: false };
+        }
+
+        snapshot.push({
+          code: parametre.code,
+          libelle: parametre.libelle,
+          unite: parametre.unite,
+          valeur: valeurNumerique,
+          indicateur,
+        });
+      }
+
+      resultatsParametresSnapshot = snapshot;
+      resultatTexte = snapshot
+        .map((p) => `${p.libelle} : ${p.valeur} ${p.unite} (${p.indicateur})`)
+        .join(" ; ");
+    } else {
+      if (resultat.trim().length === 0) {
+        return { error: "Le resultat est obligatoire.", success: false };
+      }
+      resultatTexte = resultat.trim();
+    }
+
     const adresseTechnique = await adresseTechniqueCourante();
     const etaitEnCorrection = examen.statut === "correction_demandee";
 
@@ -754,7 +864,10 @@ export async function saisirResultatExamenAction(
         where: { id: examenId },
         data: {
           statut: "resultat_saisi",
-          resultat,
+          resultat: resultatTexte,
+          resultatsParametres: resultatsParametresSnapshot
+            ? (resultatsParametresSnapshot as unknown as Prisma.InputJsonValue)
+            : undefined,
           dateResultat: new Date(),
           saisiParId: professionnel.id,
         },
@@ -897,6 +1010,7 @@ export async function validerResultatExamenAction(
       const empreinteResultat = calculerEmpreinteResultat({
         examenId: examen.id,
         resultat: examen.resultat ?? "",
+        resultatsParametres: (examen.resultatsParametres as ResultatParametre[] | null) ?? null,
         saisiParId: examen.saisiParId ?? "",
       });
 
@@ -950,6 +1064,25 @@ export async function validerResultatExamenAction(
         "/app/medecin/examens"
       ),
     ]);
+
+    // RG-LAB-21 du pack : une valeur critique (LL/HH) declenche, a la
+    // validation, une notification prioritaire au prescripteur. Limite
+    // assumee : l'escalade "au responsable d'etablissement si non lue sous
+    // 2h" du pack n'est pas implementee (pas de tache planifiee fiable a
+    // laquelle se raccrocher ce soir) ; seule la notification immediate au
+    // prescripteur est envoyee.
+    const parametresCritiques = ((examenValide.resultatsParametres as ResultatParametre[] | null) ?? []).filter(
+      (p) => p.indicateur === "LL" || p.indicateur === "HH"
+    );
+    if (parametresCritiques.length > 0) {
+      const listeParametres = parametresCritiques.map((p) => `${p.libelle} : ${p.valeur} ${p.unite} (${p.indicateur})`).join(", ");
+      await creerNotification(
+        examenValide.demandeur.userId,
+        "resultat_examen_critique",
+        `URGENT : valeur critique dans un resultat d'examen (${listeParametres}).`,
+        "/app/medecin/examens"
+      );
+    }
 
     return { error: null, success: true };
   } catch (erreur) {
