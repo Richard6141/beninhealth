@@ -258,7 +258,10 @@ export async function registerPatientAction(
   }
 
   await createSession({ userId, roles: ["patient"] });
-  redirect("/app/patient");
+  // F-CIT-01 : assistant de premiere utilisation, affiche une seule fois
+  // juste apres l'inscription plutot que d'atterrir directement sur un
+  // dossier vide (voir src/app/app/patient/bienvenue).
+  redirect("/app/patient/bienvenue");
 }
 
 /**
