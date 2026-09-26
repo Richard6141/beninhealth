@@ -25,6 +25,7 @@ import type { NomRole } from "@/types";
 import { AvatarMenu } from "@/components/ui/AvatarMenu";
 import { ClocheNotifications } from "@/components/ui/ClocheNotifications";
 import { Sidebar, type ElementNavigation } from "@/components/ui/Sidebar";
+import { VerrouillageInactivite } from "@/components/VerrouillageInactivite";
 
 const libellesRole: Record<NomRole, string> = {
   patient: "Patient",
@@ -300,7 +301,11 @@ export default async function EspaceAuthentifieLayout({
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto bg-plan">{children}</main>
+        <main className="flex-1 overflow-y-auto bg-plan">
+          <VerrouillageInactivite role={session.roles[0]} logoutAction={logoutAction}>
+            {children}
+          </VerrouillageInactivite>
+        </main>
 
         <footer className="sans-impression shrink-0 border-t border-bordure bg-surface px-4 py-3 text-center text-[12px] text-encre-attenuee sm:px-6">
           © {new Date().getFullYear()} Ministère de la Santé, République du Bénin.
