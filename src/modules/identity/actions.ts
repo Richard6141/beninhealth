@@ -27,6 +27,10 @@ import { getEnv } from "@/lib/env";
 import { televerserImageCloudinary } from "@/lib/cloudinary";
 import { verifierCodeMfaPourConnexion } from "@/modules/identity/mfa";
 import {
+  creerEtEnvoyerCodeVerificationEmail,
+  verifierEtConsommerCodeVerificationEmail,
+} from "@/modules/identity/verification-email";
+import {
   CODES_IDENTIFIANT_PAR_ROLE,
   prefixeIdentifiant,
   prochainIdentifiant,
@@ -37,18 +41,34 @@ import type { NomRole } from "@/types";
 
 /**
  * Etat renvoye par chaque Server Action de ce module, consomme via useActionState.
- * mfaRequis/preAuthToken (Phase 7) : uniquement renvoyes par loginAction quand le
- * compte a la double authentification active ; l'ecran doit alors afficher une
- * deuxieme etape (code a 6 chiffres) et soumettre preAuthToken tel quel a
- * verifierMfaEtConnecterAction, sans jamais le modifier ni le decoder cote client.
+ *
+ * emailCodeRequis/preAuthToken : renvoyes par loginAction pour TOUT compte (le
+ * code par e-mail est une etape obligatoire, independante de la double
+ * authentification) ; l'ecran doit alors afficher l'etape "code recu par
+ * e-mail" et soumettre preAuthToken tel quel a verifierCodeEmailEtConnecterAction.
+ *
+ * mfaRequis/preAuthToken : renvoyes par verifierCodeEmailEtConnecterAction
+ * uniquement si le compte a, en plus, la double authentification TOTP
+ * active ; l'ecran doit alors afficher l'etape "code de l'application
+ * d'authentification" et soumettre ce preAuthToken (different de celui de
+ * l'etape e-mail) a verifierMfaEtConnecterAction.
+ *
+ * Dans les deux cas, preAuthToken n'est jamais modifie ni decode cote client.
+ *
+ * codeDemo : code de verification e-mail en clair, uniquement hors
+ * production (voir loginAction), pour permettre de tester sans acces a une
+ * vraie boite mail. Toujours absent en production.
  */
 export interface AuthActionState {
   error: string | null;
+  emailCodeRequis?: boolean;
   mfaRequis?: boolean;
   preAuthToken?: string;
+  codeDemo?: string;
 }
 
-const DUREE_PRE_AUTH_MFA = "5m";
+const DUREE_PRE_AUTH = "5m";
+const TYPE_JETON_PRE_AUTH_EMAIL = "email_pending";
 const TYPE_JETON_PRE_AUTH_MFA = "mfa_pending";
 
 function cleSecretePreAuth(): Uint8Array {
@@ -67,6 +87,37 @@ function redirigerSelonRoles(roles: NomRole[]): never {
     redirect("/app/etablissement");
   }
   redirect("/app/medecin");
+}
+
+/**
+ * Marque la connexion comme aboutie (derniere connexion + JournalAudit) et
+ * ouvre la session reelle. Ne redirige pas : l'appelant doit toujours faire
+ * suivre d'un redirigerSelonRoles(roles) HORS de son propre bloc try/catch,
+ * pour que le throw interne de redirect() ne soit jamais intercepte comme
+ * une erreur generique.
+ */
+async function finaliserConnexion(
+  userId: string,
+  roles: NomRole[],
+  justification: string
+): Promise<void> {
+  const adresseTechnique = await adresseTechniqueCourante();
+
+  await prisma.$transaction([
+    prisma.user.update({
+      where: { id: userId },
+      data: { derniereConnexion: new Date() },
+    }),
+    journaliser({
+      utilisateurId: userId,
+      action: "connexion",
+      donneeConcernee: `utilisateur:${userId}`,
+      adresseTechnique,
+      justification,
+    }),
+  ]);
+
+  await createSession({ userId, roles });
 }
 
 const ROUNDS_BCRYPT = 12;
@@ -234,15 +285,16 @@ export async function registerPatientAction(
         },
       });
 
-      await tx.journalAudit.create({
-        data: {
+      await journaliser(
+        {
           utilisateurId: utilisateur.id,
           action: "creation",
           donneeConcernee: `patient:${utilisateur.id}`,
           adresseTechnique,
           justification: "Inscription patient",
         },
-      });
+        tx
+      );
 
       return utilisateur;
     });
@@ -429,8 +481,8 @@ export async function creerPatientParProfessionnelAction(
         },
       });
 
-      await tx.journalAudit.create({
-        data: {
+      await journaliser(
+        {
           utilisateurId: session.userId,
           action: "creation_patient_par_professionnel",
           donneeConcernee: `patient:${utilisateur.patient!.id}`,
@@ -439,7 +491,8 @@ export async function creerPatientParProfessionnelAction(
             ? `Dossier cree malgre un doublon probable : ${donnees.justificationDoublon}`
             : "Dossier patient cree sans compte, aucun doublon probable detecte.",
         },
-      });
+        tx
+      );
 
       return { patientId: utilisateur.patient!.id, identifiantSante };
     });
@@ -484,8 +537,8 @@ export async function loginAction(
 
   const { email, motDePasse } = validation.data;
 
-  let roles: NomRole[];
   let userId: string;
+  let codeDemo: string;
 
   try {
     const utilisateur = await prisma.user.findUnique({
@@ -503,46 +556,109 @@ export async function loginAction(
       return { error: MESSAGE_ERREUR_GENERIQUE };
     }
 
-    roles = utilisateur.roles.map((role) => role.nom as NomRole);
     userId = utilisateur.id;
 
-    // Double authentification (Phase 7) : mot de passe correct mais MFA active
-    // sur ce compte, on ne cree pas encore de session. On emet un jeton de
-    // pre-authentification de courte duree (5 minutes, jamais pose en cookie,
-    // uniquement transmis dans un champ cache du formulaire de code) que
-    // verifierMfaEtConnecterAction devra presenter avec un code TOTP valide
-    // pour obtenir la session reelle.
-    if (utilisateur.mfaActif) {
-      const preAuthToken = await new SignJWT({ userId, type: TYPE_JETON_PRE_AUTH_MFA })
-        .setProtectedHeader({ alg: "HS256" })
-        .setIssuedAt()
-        .setExpirationTime(DUREE_PRE_AUTH_MFA)
-        .sign(cleSecretePreAuth());
-
-      return { error: null, mfaRequis: true, preAuthToken };
-    }
-
-    const adresseTechnique = await adresseTechniqueCourante();
-
-    await prisma.$transaction([
-      prisma.user.update({
-        where: { id: userId },
-        data: { derniereConnexion: new Date() },
-      }),
-      prisma.journalAudit.create({
-        data: {
-          utilisateurId: userId,
-          action: "connexion",
-          donneeConcernee: `utilisateur:${userId}`,
-          adresseTechnique,
-          justification: "Connexion reussie",
-        },
-      }),
-    ]);
-
-    await createSession({ userId, roles });
+    // Code de verification par e-mail : etape obligatoire pour tout compte
+    // (independante de la double authentification TOTP optionnelle, geree
+    // ensuite par verifierCodeEmailEtConnecterAction si mfaActif). On ne cree
+    // pas encore de session : on emet un jeton de pre-authentification de
+    // courte duree (5 minutes, jamais pose en cookie, uniquement transmis
+    // dans un champ cache du formulaire de code) que
+    // verifierCodeEmailEtConnecterAction devra presenter avec le code recu
+    // par e-mail pour poursuivre la connexion.
+    codeDemo = await creerEtEnvoyerCodeVerificationEmail(userId, utilisateur.email);
   } catch (erreur) {
     console.error("Erreur lors de la connexion :", erreur);
+    return { error: MESSAGE_ERREUR_GENERIQUE };
+  }
+
+  const preAuthToken = await new SignJWT({ userId, type: TYPE_JETON_PRE_AUTH_EMAIL })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime(DUREE_PRE_AUTH)
+    .sign(cleSecretePreAuth());
+
+  return {
+    error: null,
+    emailCodeRequis: true,
+    preAuthToken,
+    // Jamais renvoye en production : uniquement pour tester sans acces a une
+    // vraie boite mail (voir AuthActionState.codeDemo).
+    codeDemo: getEnv().NODE_ENV !== "production" ? codeDemo : undefined,
+  };
+}
+
+/**
+ * Deuxieme etape de connexion, obligatoire pour tout compte : verifie le
+ * jeton de pre-authentification emis par loginAction (signature, expiration,
+ * type) puis le code recu par e-mail, avant de poursuivre. Si le compte a en
+ * plus la double authentification TOTP active, renvoie mfaRequis (troisieme
+ * etape, verifierMfaEtConnecterAction) au lieu de creer la session
+ * directement. Message d'erreur volontairement generique, comme loginAction.
+ */
+export async function verifierCodeEmailEtConnecterAction(
+  prevState: AuthActionState,
+  formData: FormData
+): Promise<AuthActionState> {
+  const MESSAGE_ERREUR_GENERIQUE = "Code incorrect ou session expiree. Veuillez vous reconnecter.";
+
+  const preAuthToken = formData.get("preAuthToken");
+  const code = formData.get("code");
+
+  if (typeof preAuthToken !== "string" || typeof code !== "string") {
+    return { error: MESSAGE_ERREUR_GENERIQUE };
+  }
+
+  let userId: string;
+
+  try {
+    const { payload } = await jwtVerify(preAuthToken, cleSecretePreAuth());
+
+    if (payload.type !== TYPE_JETON_PRE_AUTH_EMAIL || typeof payload.userId !== "string") {
+      return { error: MESSAGE_ERREUR_GENERIQUE };
+    }
+
+    userId = payload.userId;
+  } catch {
+    return { error: MESSAGE_ERREUR_GENERIQUE };
+  }
+
+  const codeValide = await verifierEtConsommerCodeVerificationEmail(userId, code);
+
+  if (!codeValide) {
+    return { error: MESSAGE_ERREUR_GENERIQUE };
+  }
+
+  let roles: NomRole[];
+
+  try {
+    const utilisateur = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { roles: true },
+    });
+
+    if (!utilisateur || utilisateur.statut !== "actif") {
+      return { error: MESSAGE_ERREUR_GENERIQUE };
+    }
+
+    roles = utilisateur.roles.map((role) => role.nom as NomRole);
+
+    // Double authentification (Phase 7), en plus du code e-mail qui vient
+    // d'etre valide : meme principe de jeton de pre-authentification courte
+    // duree que ci-dessus, pour la troisieme etape (verifierMfaEtConnecterAction).
+    if (utilisateur.mfaActif) {
+      const preAuthTokenMfa = await new SignJWT({ userId, type: TYPE_JETON_PRE_AUTH_MFA })
+        .setProtectedHeader({ alg: "HS256" })
+        .setIssuedAt()
+        .setExpirationTime(DUREE_PRE_AUTH)
+        .sign(cleSecretePreAuth());
+
+      return { error: null, mfaRequis: true, preAuthToken: preAuthTokenMfa };
+    }
+
+    await finaliserConnexion(userId, roles, "Connexion reussie (code e-mail valide)");
+  } catch (erreur) {
+    console.error("Erreur lors de la validation du code e-mail :", erreur);
     return { error: MESSAGE_ERREUR_GENERIQUE };
   }
 
@@ -601,25 +717,7 @@ export async function verifierMfaEtConnecterAction(
     }
 
     roles = utilisateur.roles.map((role) => role.nom as NomRole);
-    const adresseTechnique = await adresseTechniqueCourante();
-
-    await prisma.$transaction([
-      prisma.user.update({
-        where: { id: userId },
-        data: { derniereConnexion: new Date() },
-      }),
-      prisma.journalAudit.create({
-        data: {
-          utilisateurId: userId,
-          action: "connexion",
-          donneeConcernee: `utilisateur:${userId}`,
-          adresseTechnique,
-          justification: "Connexion reussie (double authentification validee)",
-        },
-      }),
-    ]);
-
-    await createSession({ userId, roles });
+    await finaliserConnexion(userId, roles, "Connexion reussie (double authentification validee)");
   } catch (erreur) {
     console.error("Erreur lors de la validation MFA :", erreur);
     return { error: MESSAGE_ERREUR_GENERIQUE };
@@ -638,14 +736,12 @@ export async function logoutAction(): Promise<void> {
   if (session) {
     try {
       const adresseTechnique = await adresseTechniqueCourante();
-      await prisma.journalAudit.create({
-        data: {
-          utilisateurId: session.userId,
-          action: "deconnexion",
-          donneeConcernee: `utilisateur:${session.userId}`,
-          adresseTechnique,
-          justification: "Deconnexion utilisateur",
-        },
+      await journaliser({
+        utilisateurId: session.userId,
+        action: "deconnexion",
+        donneeConcernee: `utilisateur:${session.userId}`,
+        adresseTechnique,
+        justification: "Deconnexion utilisateur",
       });
     } catch (erreur) {
       console.error("Erreur lors de l'ecriture du journal d'audit (deconnexion) :", erreur);
@@ -752,14 +848,12 @@ export async function mettreAJourProfilAction(
         where: { id: session.userId },
         data: validation.data,
       }),
-      prisma.journalAudit.create({
-        data: {
-          utilisateurId: session.userId,
-          action: "modification_profil",
-          donneeConcernee: `utilisateur:${session.userId}`,
-          adresseTechnique,
-          justification: "Mise a jour des informations personnelles",
-        },
+      journaliser({
+        utilisateurId: session.userId,
+        action: "modification_profil",
+        donneeConcernee: `utilisateur:${session.userId}`,
+        adresseTechnique,
+        justification: "Mise a jour des informations personnelles",
       }),
     ]);
   } catch (erreur) {

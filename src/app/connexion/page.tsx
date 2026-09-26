@@ -3,7 +3,11 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useActionState } from "react";
-import { loginAction, verifierMfaEtConnecterAction } from "@/modules/identity/actions";
+import {
+  loginAction,
+  verifierCodeEmailEtConnecterAction,
+  verifierMfaEtConnecterAction,
+} from "@/modules/identity/actions";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -58,6 +62,73 @@ function EtapeCodeMfa({ preAuthToken }: { preAuthToken: string }) {
   );
 }
 
+/**
+ * Deuxieme etape de connexion, obligatoire pour tout compte : affichee des
+ * que loginAction renvoie emailCodeRequis=true. Si le compte a en plus la
+ * double authentification active, verifierCodeEmailEtConnecterAction renvoie
+ * a son tour mfaRequis=true : cette etape enchaine alors directement sur
+ * EtapeCodeMfa (troisieme etape) plutot que de revenir au formulaire de
+ * connexion.
+ */
+function EtapeCodeEmail({
+  preAuthToken,
+  codeDemo,
+}: {
+  preAuthToken: string;
+  codeDemo?: string;
+}) {
+  const [state, formAction, pending] = useActionState(verifierCodeEmailEtConnecterAction, {
+    error: null,
+  });
+
+  if (state.mfaRequis && state.preAuthToken) {
+    return <EtapeCodeMfa preAuthToken={state.preAuthToken} />;
+  }
+
+  return (
+    <Card
+      title="Vérification par e-mail"
+      description="Saisissez le code à 6 chiffres que nous venons de vous envoyer par e-mail."
+    >
+      <form action={formAction} aria-busy={pending} className="flex flex-col gap-4">
+        {state.error ? (
+          <Alert level="critical" title="Code refuse">
+            {state.error}
+          </Alert>
+        ) : null}
+
+        {codeDemo ? (
+          <Alert level="info" title="Environnement de démonstration">
+            Code envoyé : <span className="chiffres font-semibold">{codeDemo}</span>
+          </Alert>
+        ) : null}
+
+        <input type="hidden" name="preAuthToken" value={preAuthToken} />
+
+        <TextField
+          label="Code de verification"
+          name="code"
+          type="text"
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          maxLength={6}
+          required
+          autoFocus
+        />
+
+        <Button
+          type="submit"
+          variant="primary"
+          className="mt-2 w-full"
+          disabled={pending}
+        >
+          {pending ? "Verification en cours..." : "Valider"}
+        </Button>
+      </form>
+    </Card>
+  );
+}
+
 export default function ConnexionPage() {
   const [state, formAction, pending] = useActionState(loginAction, {
     error: null,
@@ -74,8 +145,8 @@ export default function ConnexionPage() {
         priority
       />
       <div className="w-full max-w-md">
-        {state.mfaRequis && state.preAuthToken ? (
-          <EtapeCodeMfa preAuthToken={state.preAuthToken} />
+        {state.emailCodeRequis && state.preAuthToken ? (
+          <EtapeCodeEmail preAuthToken={state.preAuthToken} codeDemo={state.codeDemo} />
         ) : (
           <Card
             title="Connexion"
@@ -102,6 +173,12 @@ export default function ConnexionPage() {
                 autoComplete="current-password"
                 required
               />
+              <Link
+                href="/mot-de-passe-oublie"
+                className="w-fit text-[13px] font-semibold text-accent hover:underline"
+              >
+                Mot de passe oublié ?
+              </Link>
 
               <Button
                 type="submit"

@@ -8,6 +8,7 @@ export {
   registerPatientAction,
   loginAction,
   logoutAction,
+  verifierCodeEmailEtConnecterAction,
   verifierMfaEtConnecterAction,
   type AuthActionState,
 } from "./actions";
