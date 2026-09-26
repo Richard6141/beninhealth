@@ -41,6 +41,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
 import { estExamenSensible } from "./referentiel-examens-sensibles";
+import { journaliser } from "@/modules/audit/journaliser";
 
 /** Etat renvoye par chaque Server Action de ce module, consomme via useActionState. */
 export interface LaboratoireActionState {
@@ -430,15 +431,16 @@ export async function demanderExamenAction(
         },
       });
 
-      await tx.journalAudit.create({
-        data: {
+      await journaliser(
+        {
           utilisateurId: session.userId,
           action: "creation",
           donneeConcernee: `examen_medical:${examenCree.id}`,
           adresseTechnique,
           justification: `Examen medical demande pour le patient ${patientId}`,
         },
-      });
+        tx
+      );
     });
 
     return { error: null, success: true };
@@ -517,14 +519,12 @@ export async function annulerExamenAction(
 
     await prisma.$transaction([
       prisma.examenMedical.update({ where: { id: examen.id }, data: { statut: "annule" } }),
-      prisma.journalAudit.create({
-        data: {
-          utilisateurId: session.userId,
-          action: "modification",
-          donneeConcernee: `examen_medical:${examen.id}`,
-          adresseTechnique,
-          justification: "Demande d'examen annulee par le medecin demandeur",
-        },
+      journaliser({
+        utilisateurId: session.userId,
+        action: "modification",
+        donneeConcernee: `examen_medical:${examen.id}`,
+        adresseTechnique,
+        justification: "Demande d'examen annulee par le medecin demandeur",
       }),
     ]);
 
@@ -760,8 +760,8 @@ export async function saisirResultatExamenAction(
         },
       });
 
-      await tx.journalAudit.create({
-        data: {
+      await journaliser(
+        {
           utilisateurId: session.userId,
           action: "saisie_resultat_examen",
           donneeConcernee: `examen_medical:${examenId}`,
@@ -770,7 +770,8 @@ export async function saisirResultatExamenAction(
             ? `Resultat resaisi apres correction demandee. Ancienne valeur : ${examen.resultat ?? "aucune"}. Motif du renvoi : ${examen.commentaireValidation ?? "non precise"}.`
             : `Resultat saisi pour l'examen medical ${examenId}, en attente de validation par un autre professionnel du laboratoire (principe des quatre yeux, F-LAB-04).`,
         },
-      });
+        tx
+      );
     });
 
     // Contrairement a l'ancien flux (saisie = disponible immediatement),
@@ -874,8 +875,8 @@ export async function validerResultatExamenAction(
       // professionnel du role laboratoire de ce laboratoire, autre que celui
       // ayant saisi le resultat (quatre yeux entre pairs).
       if (examen.saisiParId === professionnel.id) {
-        await tx.journalAudit.create({
-          data: {
+        await journaliser(
+          {
             utilisateurId: session.userId,
             action: "tentative_autovalidation_refusee",
             donneeConcernee: `examen_medical:${examenId}`,
@@ -883,7 +884,8 @@ export async function validerResultatExamenAction(
             justification:
               "Tentative de validation d'un resultat par le professionnel l'ayant lui-meme saisi, refusee (principe des quatre yeux, F-LAB-04).",
           },
-        });
+          tx
+        );
 
         return {
           error:
@@ -909,15 +911,16 @@ export async function validerResultatExamenAction(
         },
       });
 
-      await tx.journalAudit.create({
-        data: {
+      await journaliser(
+        {
           utilisateurId: session.userId,
           action: "validation_resultat_examen",
           donneeConcernee: `examen_medical:${examenId}`,
           adresseTechnique,
           justification: `Resultat de l'examen medical ${examenId} valide (principe des quatre yeux, saisi par le professionnel ${examen.saisiParId ?? "inconnu"}).`,
         },
-      });
+        tx
+      );
 
       return { error: null, examen };
     });
@@ -1018,8 +1021,8 @@ export async function renvoyerPourCorrectionAction(
       }
 
       if (examen.saisiParId === professionnel.id) {
-        await tx.journalAudit.create({
-          data: {
+        await journaliser(
+          {
             utilisateurId: session.userId,
             action: "tentative_autovalidation_refusee",
             donneeConcernee: `examen_medical:${examenId}`,
@@ -1027,7 +1030,8 @@ export async function renvoyerPourCorrectionAction(
             justification:
               "Tentative de renvoi pour correction d'un resultat par le professionnel l'ayant lui-meme saisi, refusee (principe des quatre yeux, F-LAB-04).",
           },
-        });
+          tx
+        );
 
         return {
           error:
@@ -1040,15 +1044,16 @@ export async function renvoyerPourCorrectionAction(
         data: { statut: "correction_demandee", commentaireValidation: commentaire },
       });
 
-      await tx.journalAudit.create({
-        data: {
+      await journaliser(
+        {
           utilisateurId: session.userId,
           action: "renvoi_correction_examen",
           donneeConcernee: `examen_medical:${examenId}`,
           adresseTechnique,
           justification: `Resultat de l'examen medical ${examenId} renvoye pour correction. Motif : ${commentaire}`,
         },
-      });
+        tx
+      );
 
       return { error: null };
     });
@@ -1139,15 +1144,16 @@ export async function annoncerResultatExamenAction(
         data: { resultatAnnonceAuPatient: true },
       });
 
-      await tx.journalAudit.create({
-        data: {
+      await journaliser(
+        {
           utilisateurId: session.userId,
           action: "annonce_resultat_examen",
           donneeConcernee: `examen_medical:${examenId}`,
           adresseTechnique,
           justification: `Resultat d'examen sensible annonce au patient ${examen.patientId}`,
         },
-      });
+        tx
+      );
     });
 
     const { creerNotification } = await import("@/modules/notification/actions");

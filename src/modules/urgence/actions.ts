@@ -20,6 +20,7 @@
 import { headers } from "next/headers";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
 import { creerNotification } from "@/modules/notification/actions";
@@ -145,14 +146,12 @@ export async function declencherAccesUrgenceAction(
   });
 
   if (nombreAccesRecents >= MAX_ACCES_URGENCE_PAR_JOUR) {
-    await prisma.journalAudit.create({
-      data: {
-        utilisateurId: session.userId,
-        action: "acces_urgence_refuse_quota",
-        donneeConcernee: `patient:${patient.id}`,
-        adresseTechnique,
-        justification: `Quota de ${MAX_ACCES_URGENCE_PAR_JOUR} acces d'urgence par 24h atteint. Tentative motif "${motif}" refusee.`,
-      },
+    await journaliser({
+      utilisateurId: session.userId,
+      action: "acces_urgence_refuse_quota",
+      donneeConcernee: `patient:${patient.id}`,
+      adresseTechnique,
+      justification: `Quota de ${MAX_ACCES_URGENCE_PAR_JOUR} acces d'urgence par 24h atteint. Tentative motif "${motif}" refusee.`,
     });
     return {
       error: `Vous avez deja declenche ${MAX_ACCES_URGENCE_PAR_JOUR} acces d'urgence au cours des dernieres 24 heures. Refus, alerte transmise.`,
@@ -204,15 +203,16 @@ export async function declencherAccesUrgenceAction(
       },
     });
 
-    await tx.journalAudit.create({
-      data: {
+    await journaliser(
+      {
         utilisateurId: session.userId,
         action: "acces_urgence",
         donneeConcernee: `patient:${patient.id}`,
         adresseTechnique,
         justification: `Motif : ${motif}. ${justification}`,
       },
-    });
+      tx
+    );
   });
 
   const heureExpiration = dateFin.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });

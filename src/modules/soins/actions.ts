@@ -21,6 +21,7 @@
 import { headers } from "next/headers";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
 import { getRendezVousDeLEtablissementDuProfessionnel } from "@/modules/facility/actions";
@@ -365,15 +366,16 @@ export async function enregistrerPriseEnChargeAction(
         },
       });
 
-      await tx.journalAudit.create({
-        data: {
+      await journaliser(
+        {
           utilisateurId: session.userId,
           action: "creation_prise_en_charge_infirmiere",
           donneeConcernee: `prise_en_charge_infirmiere:${creee.id}`,
           adresseTechnique,
           justification: `Prise en charge infirmiere enregistree pour le patient ${patientId} (priorite ${prioriteTri})`,
         },
-      });
+        tx
+      );
 
       return creee;
     });

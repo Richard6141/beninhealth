@@ -20,6 +20,7 @@
 import { headers } from "next/headers";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
 import {
@@ -290,15 +291,16 @@ export async function enregistrerVaccinationAction(
         },
       });
 
-      await tx.journalAudit.create({
-        data: {
+      await journaliser(
+        {
           utilisateurId: session.userId,
           action: "creation_vaccination",
           donneeConcernee: `vaccination:${vaccinationCreee.id}`,
           adresseTechnique,
           justification: `Vaccination enregistree (${vaccin}, dose ${numeroDose}) pour le patient ${patientId}`,
         },
-      });
+        tx
+      );
     });
 
     return { error: null, success: true };
@@ -384,15 +386,16 @@ export async function retirerVaccinationAction(
         data: { saisieParErreur: true, motifRetrait: motif },
       });
 
-      await tx.journalAudit.create({
-        data: {
+      await journaliser(
+        {
           utilisateurId: session.userId,
           action: "retrait_vaccination",
           donneeConcernee: `vaccination:${vaccination.id}`,
           adresseTechnique,
           justification: `Vaccination retiree (saisie par erreur), motif : ${motif}`,
         },
-      });
+        tx
+      );
     });
 
     return { error: null, success: true };

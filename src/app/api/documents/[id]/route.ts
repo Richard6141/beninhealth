@@ -21,6 +21,7 @@
 import { readFile } from "node:fs/promises";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
 import { cheminAbsoluDocument } from "@/modules/document/stockage-fichiers";
 
@@ -94,14 +95,12 @@ export async function GET(request: Request, { params }: RouteContext) {
     return reponseIntrouvable();
   }
 
-  await prisma.journalAudit.create({
-    data: {
-      utilisateurId: session.userId,
-      action: "consultation_document_medical",
-      donneeConcernee: `document_medical:${document.id}`,
-      adresseTechnique: adresseTechniqueDepuisRequete(request),
-      justification: `Document "${document.titre}" telecharge`,
-    },
+  await journaliser({
+    utilisateurId: session.userId,
+    action: "consultation_document_medical",
+    donneeConcernee: `document_medical:${document.id}`,
+    adresseTechnique: adresseTechniqueDepuisRequete(request),
+    justification: `Document "${document.titre}" telecharge`,
   });
 
   return new NextResponse(new Uint8Array(octets), {

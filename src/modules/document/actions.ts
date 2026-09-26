@@ -35,6 +35,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
 import {
@@ -297,15 +298,16 @@ export async function ajouterDocumentAction(
           },
         });
 
-        await tx.journalAudit.create({
-          data: {
+        await journaliser(
+          {
             utilisateurId: session.userId,
             action: "ajout_document_medical",
             donneeConcernee: `document_medical:${document.id}`,
             adresseTechnique,
             justification: `Document "${titre}" ajoute au dossier du patient ${patientId}`,
           },
-        });
+          tx
+        );
 
         return document;
       });
@@ -383,15 +385,16 @@ export async function retirerDocumentAction(
         data: { retirePourErreur: true, motifRetrait: motif },
       });
 
-      await tx.journalAudit.create({
-        data: {
+      await journaliser(
+        {
           utilisateurId: session.userId,
           action: "retrait_document_medical",
           donneeConcernee: `document_medical:${document.id}`,
           adresseTechnique,
           justification: `Document medical retire (ajoute par erreur), motif : ${motif}`,
         },
-      });
+        tx
+      );
     });
 
     return { error: null, success: true };
@@ -455,14 +458,12 @@ export async function getDocumentsDuPatient(patientId: string): Promise<Document
 
   const adresseTechnique = await adresseTechniqueCourante();
 
-  await prisma.journalAudit.create({
-    data: {
-      utilisateurId: session.userId,
-      action: "consultation_liste_documents_medicaux",
-      donneeConcernee: `patient:${patientId}`,
-      adresseTechnique,
-      justification: `Liste des documents medicaux consultee (consentement ${consentement.typeAcces})`,
-    },
+  await journaliser({
+    utilisateurId: session.userId,
+    action: "consultation_liste_documents_medicaux",
+    donneeConcernee: `patient:${patientId}`,
+    adresseTechnique,
+    justification: `Liste des documents medicaux consultee (consentement ${consentement.typeAcces})`,
   });
 
   return documents.map((document) => ({

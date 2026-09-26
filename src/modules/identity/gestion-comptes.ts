@@ -26,6 +26,7 @@ import { Prisma } from "@prisma/client";
 import { headers } from "next/headers";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
 import type { NomRole, TypeEtablissement } from "@/types";
 import {
@@ -393,15 +394,16 @@ export async function creerEtablissementAction(
         },
       });
 
-      await tx.journalAudit.create({
-        data: {
+      await journaliser(
+        {
           utilisateurId: session.userId,
           action: "creation",
           donneeConcernee: `etablissement:${etablissement.id}`,
           adresseTechnique,
           justification: "Creation d'etablissement et de son compte administrateur",
         },
-      });
+        tx
+      );
     });
   } catch (erreur) {
     if (estErreurContrainteUnique(erreur)) {
@@ -544,15 +546,16 @@ export async function creerProfessionnelAction(
         },
       });
 
-      await tx.journalAudit.create({
-        data: {
+      await journaliser(
+        {
           utilisateurId: session.userId,
           action: "creation",
           donneeConcernee: `professionnel:${professionnel.id}`,
           adresseTechnique,
           justification: "Creation de compte professionnel par l'administrateur d'etablissement",
         },
-      });
+        tx
+      );
     });
   } catch (erreur) {
     if (estErreurContrainteUnique(erreur)) {
@@ -628,14 +631,12 @@ export async function changerMotDePasseAction(
         where: { id: session.userId },
         data: { motDePasseHash: nouveauMotDePasseHash },
       }),
-      prisma.journalAudit.create({
-        data: {
-          utilisateurId: session.userId,
-          action: "modification",
-          donneeConcernee: `utilisateur:${session.userId}`,
-          adresseTechnique,
-          justification: "Changement de mot de passe",
-        },
+      journaliser({
+        utilisateurId: session.userId,
+        action: "modification",
+        donneeConcernee: `utilisateur:${session.userId}`,
+        adresseTechnique,
+        justification: "Changement de mot de passe",
       }),
     ]);
   } catch (erreur) {

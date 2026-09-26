@@ -15,6 +15,7 @@
 import { headers } from "next/headers";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
 import type { TypeVisiteCommunautaire } from "@/types";
@@ -144,15 +145,16 @@ export async function creerSuiviCommunautaireAction(
         },
       });
 
-      await tx.journalAudit.create({
-        data: {
+      await journaliser(
+        {
           utilisateurId: session.userId,
           action: "creation",
           donneeConcernee: `suivi_communautaire:${cree.id}`,
           adresseTechnique,
           justification: `Visite communautaire enregistree pour ${beneficiaireNom}`,
         },
-      });
+        tx
+      );
 
       return cree;
     });

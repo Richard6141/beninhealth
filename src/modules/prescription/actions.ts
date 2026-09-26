@@ -28,6 +28,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
 import { creerNotification } from "@/modules/notification/actions";
@@ -599,26 +600,28 @@ export async function creerPrescriptionAction(
           },
         });
 
-        await tx.journalAudit.create({
-          data: {
+        await journaliser(
+          {
             utilisateurId: session.userId,
             action: "forcage_alerte_allergie",
             donneeConcernee: `prescription:${prescriptionCreee.id}`,
             adresseTechnique,
             justification: `Allergie "${ligneForcee.allergie}" forcee pour ${ligneForcee.medicamentNom} : ${ligneForcee.justification}`,
           },
-        });
+          tx
+        );
       }
 
-      await tx.journalAudit.create({
-        data: {
+      await journaliser(
+        {
           utilisateurId: session.userId,
           action: "creation",
           donneeConcernee: `prescription:${prescriptionCreee.id}`,
           adresseTechnique,
           justification: `Prescription creee pour le patient ${consultation.patientId} suite a la consultation ${consultation.id}`,
         },
-      });
+        tx
+      );
 
       return prescriptionCreee.id;
     });
@@ -1229,8 +1232,8 @@ export async function delivrerPrescriptionAction(
         },
       });
 
-      await tx.journalAudit.create({
-        data: {
+      await journaliser(
+        {
           utilisateurId: session.userId,
           action: "creation_delivrance",
           donneeConcernee: `delivrance:${delivranceCreee.id}`,
@@ -1240,7 +1243,8 @@ export async function delivrerPrescriptionAction(
               ? `Prescription ${prescriptionActuelle.numero} entierement delivree`
               : `Prescription ${prescriptionActuelle.numero} partiellement delivree (manquant : ${nomsLignesIncompletes.join(", ")})`,
         },
-      });
+        tx
+      );
 
       return {
         ok: true as const,
@@ -1399,15 +1403,16 @@ export async function annulerDelivranceAction(
         },
       });
 
-      await tx.journalAudit.create({
-        data: {
+      await journaliser(
+        {
           utilisateurId: session.userId,
           action: "annulation_delivrance",
           donneeConcernee: `delivrance:${delivranceId}`,
           adresseTechnique,
           justification: motif,
         },
-      });
+        tx
+      );
 
       return { ok: true as const, prescriptionId: delivrance.prescriptionId };
     });

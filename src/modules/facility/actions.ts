@@ -17,6 +17,7 @@
 import { headers } from "next/headers";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
 
 /** Etat renvoye par chaque Server Action de ce module, consomme via useActionState. */
@@ -279,14 +280,12 @@ export async function creerRendezVousAction(
       },
     });
 
-    await prisma.journalAudit.create({
-      data: {
-        utilisateurId: session.userId,
-        action: "creation",
-        donneeConcernee: `rendez_vous:${rendezVous.id}`,
-        adresseTechnique,
-        justification: `Demande de rendez-vous creee aupres de l'etablissement ${etablissementId}`,
-      },
+    await journaliser({
+      utilisateurId: session.userId,
+      action: "creation",
+      donneeConcernee: `rendez_vous:${rendezVous.id}`,
+      adresseTechnique,
+      justification: `Demande de rendez-vous creee aupres de l'etablissement ${etablissementId}`,
     });
 
     return { error: null, success: true };
@@ -344,14 +343,12 @@ export async function annulerRendezVousAction(
 
     await prisma.$transaction([
       prisma.rendezVous.update({ where: { id: rendezVous.id }, data: { statut: "annule" } }),
-      prisma.journalAudit.create({
-        data: {
-          utilisateurId: session.userId,
-          action: "modification",
-          donneeConcernee: `rendez_vous:${rendezVous.id}`,
-          adresseTechnique,
-          justification: "Rendez-vous annule par le patient",
-        },
+      journaliser({
+        utilisateurId: session.userId,
+        action: "modification",
+        donneeConcernee: `rendez_vous:${rendezVous.id}`,
+        adresseTechnique,
+        justification: "Rendez-vous annule par le patient",
       }),
     ]);
 
@@ -497,14 +494,12 @@ export async function confirmerRendezVousAction(
 
     await prisma.$transaction([
       prisma.rendezVous.update({ where: { id: rendezVous.id }, data: { statut: "confirme" } }),
-      prisma.journalAudit.create({
-        data: {
-          utilisateurId: session.userId,
-          action: "modification",
-          donneeConcernee: `rendez_vous:${rendezVous.id}`,
-          adresseTechnique,
-          justification: "Rendez-vous confirme par le professionnel de sante",
-        },
+      journaliser({
+        utilisateurId: session.userId,
+        action: "modification",
+        donneeConcernee: `rendez_vous:${rendezVous.id}`,
+        adresseTechnique,
+        justification: "Rendez-vous confirme par le professionnel de sante",
       }),
     ]);
 
@@ -582,14 +577,12 @@ export async function annulerRendezVousProfessionnelAction(
 
     await prisma.$transaction([
       prisma.rendezVous.update({ where: { id: rendezVous.id }, data: { statut: "annule" } }),
-      prisma.journalAudit.create({
-        data: {
-          utilisateurId: session.userId,
-          action: "modification",
-          donneeConcernee: `rendez_vous:${rendezVous.id}`,
-          adresseTechnique,
-          justification: "Rendez-vous annule par le professionnel de sante",
-        },
+      journaliser({
+        utilisateurId: session.userId,
+        action: "modification",
+        donneeConcernee: `rendez_vous:${rendezVous.id}`,
+        adresseTechnique,
+        justification: "Rendez-vous annule par le professionnel de sante",
       }),
     ]);
 

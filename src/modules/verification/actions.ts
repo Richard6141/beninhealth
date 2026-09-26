@@ -24,6 +24,7 @@
 import { headers } from "next/headers";
 import QRCode from "qrcode";
 import { prisma } from "@/lib/prisma";
+import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
 import type { NomRole } from "@/types";
 
@@ -184,14 +185,12 @@ export async function getFicheVerification(cibleUserId: string): Promise<FicheVe
       // (jamais la propre consultation du patient de sa propre fiche, non
       // pertinente pour cet historique). Journalise apres la verification du
       // consentement : un acces refuse n'est pas un acces reussi a tracer ici.
-      await prisma.journalAudit.create({
-        data: {
-          utilisateurId: session.userId,
-          action: "consultation_fiche_verification",
-          donneeConcernee: `patient:${cible.patient.id}`,
-          adresseTechnique: await adresseTechniqueCourante(),
-          justification: `Fiche de verification consultee via QR ou lien direct (consentement ${consentement.typeAcces})`,
-        },
+      await journaliser({
+        utilisateurId: session.userId,
+        action: "consultation_fiche_verification",
+        donneeConcernee: `patient:${cible.patient.id}`,
+        adresseTechnique: await adresseTechniqueCourante(),
+        justification: `Fiche de verification consultee via QR ou lien direct (consentement ${consentement.typeAcces})`,
       });
     }
 

@@ -20,6 +20,7 @@ import { createHash } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
 import {
@@ -570,14 +571,12 @@ export async function getResumePatient(patientId: string): Promise<ResumePatient
 
   const adresseTechnique = await adresseTechniqueCourante();
 
-  await prisma.journalAudit.create({
-    data: {
-      utilisateurId: session.userId,
-      action: "consultation_resume_patient",
-      donneeConcernee: `patient:${patientId}`,
-      adresseTechnique,
-      justification: `Resume patient consulte (consentement ${consentement.typeAcces})`,
-    },
+  await journaliser({
+    utilisateurId: session.userId,
+    action: "consultation_resume_patient",
+    donneeConcernee: `patient:${patientId}`,
+    adresseTechnique,
+    justification: `Resume patient consulte (consentement ${consentement.typeAcces})`,
   });
 
   return {
@@ -830,14 +829,12 @@ export async function getHistoriquePatient(
 
   // RG-CLI-80 : l'affichage de la liste est journalise une fois par page,
   // jamais une fois par element (voir journaliserOuvertureDetailHistoriqueAction).
-  await prisma.journalAudit.create({
-    data: {
-      utilisateurId: session.userId,
-      action: "consultation_historique_patient",
-      donneeConcernee: `patient:${patientId}`,
-      adresseTechnique,
-      justification: `Historique consulte (page ${page}/${nombreDePages})`,
-    },
+  await journaliser({
+    utilisateurId: session.userId,
+    action: "consultation_historique_patient",
+    donneeConcernee: `patient:${patientId}`,
+    adresseTechnique,
+    justification: `Historique consulte (page ${page}/${nombreDePages})`,
   });
 
   return {
@@ -870,14 +867,12 @@ export async function journaliserOuvertureDetailHistoriqueAction(
   const cible = type === "examen" ? "examen_medical" : type;
   const adresseTechnique = await adresseTechniqueCourante();
 
-  await prisma.journalAudit.create({
-    data: {
-      utilisateurId: session.userId,
-      action: "consultation_historique_detail",
-      donneeConcernee: `${cible}:${id}`,
-      adresseTechnique,
-      justification: "Detail ouvert depuis l'historique du patient",
-    },
+  await journaliser({
+    utilisateurId: session.userId,
+    action: "consultation_historique_detail",
+    donneeConcernee: `${cible}:${id}`,
+    adresseTechnique,
+    justification: "Detail ouvert depuis l'historique du patient",
   });
 }
 
@@ -1245,15 +1240,16 @@ export async function enregistrerConsultationAction(
             },
           });
 
-          await tx.journalAudit.create({
-            data: {
+          await journaliser(
+            {
               utilisateurId: session.userId,
               action: "creation_brouillon",
               donneeConcernee: `consultation:${consultationCreee.id}`,
               adresseTechnique,
               justification: `Brouillon de consultation cree pour le patient ${patientId}`,
             },
-          });
+            tx
+          );
 
           // F-CLI-12 : la prise en charge infirmiere ayant pre-rempli ce
           // brouillon est marquee "recuperee" pour ne plus etre proposee au
@@ -1290,15 +1286,16 @@ export async function enregistrerConsultationAction(
         });
       }
 
-      await tx.journalAudit.create({
-        data: {
+      await journaliser(
+        {
           utilisateurId: session.userId,
           action: "validation_consultation",
           donneeConcernee: `consultation:${cible.id}`,
           adresseTechnique,
           justification: `Consultation validee pour le patient ${patientId}`,
         },
-      });
+        tx
+      );
 
       return cible.id;
     });
@@ -1408,15 +1405,16 @@ export async function ajouterAddendumConsultationAction(
         },
       });
 
-      await tx.journalAudit.create({
-        data: {
+      await journaliser(
+        {
           utilisateurId: session.userId,
           action: "ajout_addendum",
           donneeConcernee: `consultation:${consultation.id}`,
           adresseTechnique,
           justification: `Addendum ${addendumCree.id} ajoute a la consultation ${consultation.id} (motif : ${motif})`,
         },
-      });
+        tx
+      );
     });
 
     return { error: null, success: true };
@@ -1521,15 +1519,16 @@ export async function retirerConsultationAction(
         data: { saisieParErreur: true, motifRetrait: motif, dateRetrait: new Date() },
       });
 
-      await tx.journalAudit.create({
-        data: {
+      await journaliser(
+        {
           utilisateurId: session.userId,
           action: "retrait_consultation",
           donneeConcernee: `consultation:${consultation.id}`,
           adresseTechnique,
           justification: `Consultation retiree (saisie par erreur), motif : ${motif}`,
         },
-      });
+        tx
+      );
     });
 
     // Notification du responsable de l'etablissement (F-CLI-08 du pack), hors

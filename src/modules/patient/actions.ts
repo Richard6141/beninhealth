@@ -18,6 +18,7 @@
 import { headers } from "next/headers";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
 import type { ContactUrgence, GroupeSanguin, NomRole, TypeAccesConsentement } from "@/types";
 import { calculerDateFinConsentement, DUREES_CONSENTEMENT_CONNUES } from "./consentement-durees";
@@ -490,14 +491,12 @@ export async function updatePatientProfileAction(
           contactsUrgence: JSON.stringify(contactsUrgence),
         },
       }),
-      prisma.journalAudit.create({
-        data: {
-          utilisateurId: session.userId,
-          action: "modification",
-          donneeConcernee: `patient:${patient.id}`,
-          adresseTechnique,
-          justification: "Mise a jour du dossier patient par le patient lui-meme",
-        },
+      journaliser({
+        utilisateurId: session.userId,
+        action: "modification",
+        donneeConcernee: `patient:${patient.id}`,
+        adresseTechnique,
+        justification: "Mise a jour du dossier patient par le patient lui-meme",
       }),
     ]);
 
@@ -587,14 +586,12 @@ export async function grantConsentAction(
       },
     });
 
-    await prisma.journalAudit.create({
-      data: {
-        utilisateurId: session.userId,
-        action: "consentement_accorde",
-        donneeConcernee: `consentement:${consentement.id}`,
-        adresseTechnique,
-        justification: `Consentement accorde (${typeAcces}, ${duree}) a l'acteur ${acteurAutoriseId}, jusqu'au ${dateFin.toISOString()}`,
-      },
+    await journaliser({
+      utilisateurId: session.userId,
+      action: "consentement_accorde",
+      donneeConcernee: `consentement:${consentement.id}`,
+      adresseTechnique,
+      justification: `Consentement accorde (${typeAcces}, ${duree}) a l'acteur ${acteurAutoriseId}, jusqu'au ${dateFin.toISOString()}`,
     });
 
     return { error: null, success: true };
@@ -658,14 +655,12 @@ export async function revokeConsentAction(
         where: { id: consentement.id },
         data: { statut: "retire", dateFin: new Date() },
       }),
-      prisma.journalAudit.create({
-        data: {
-          utilisateurId: session.userId,
-          action: "consentement_retire",
-          donneeConcernee: `consentement:${consentement.id}`,
-          adresseTechnique,
-          justification: `Consentement retire vers l'acteur ${consentement.acteurAutoriseId}`,
-        },
+      journaliser({
+        utilisateurId: session.userId,
+        action: "consentement_retire",
+        donneeConcernee: `consentement:${consentement.id}`,
+        adresseTechnique,
+        justification: `Consentement retire vers l'acteur ${consentement.acteurAutoriseId}`,
       }),
     ]);
 

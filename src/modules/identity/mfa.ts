@@ -18,6 +18,7 @@ import * as OTPAuth from "otpauth";
 import QRCode from "qrcode";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
 
 const EMETTEUR_TOTP = "Benin Health Intelligence Platform";
@@ -129,14 +130,12 @@ export async function activerMfaAction(
         where: { id: session.userId },
         data: { mfaSecret: secretBase32, mfaActif: true },
       }),
-      prisma.journalAudit.create({
-        data: {
-          utilisateurId: session.userId,
-          action: "modification",
-          donneeConcernee: `utilisateur:${session.userId}`,
-          adresseTechnique: "interne",
-          justification: "Activation de la double authentification (MFA)",
-        },
+      journaliser({
+        utilisateurId: session.userId,
+        action: "modification",
+        donneeConcernee: `utilisateur:${session.userId}`,
+        adresseTechnique: "interne",
+        justification: "Activation de la double authentification (MFA)",
       }),
     ]);
   } catch (erreur) {
@@ -188,14 +187,12 @@ export async function desactiverMfaAction(
         where: { id: session.userId },
         data: { mfaSecret: null, mfaActif: false },
       }),
-      prisma.journalAudit.create({
-        data: {
-          utilisateurId: session.userId,
-          action: "modification",
-          donneeConcernee: `utilisateur:${session.userId}`,
-          adresseTechnique: "interne",
-          justification: "Desactivation de la double authentification (MFA)",
-        },
+      journaliser({
+        utilisateurId: session.userId,
+        action: "modification",
+        donneeConcernee: `utilisateur:${session.userId}`,
+        adresseTechnique: "interne",
+        justification: "Desactivation de la double authentification (MFA)",
       }),
     ]);
   } catch (erreur) {
