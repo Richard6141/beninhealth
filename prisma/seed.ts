@@ -97,6 +97,10 @@ async function main() {
           numeroProfessionnel: formaterIdentifiant(CODES_IDENTIFIANT_PAR_ROLE.medecin, 1),
           etablissementId: centreCotonou.id,
           statutValidation: "valide",
+          profession: "medecin",
+          affiliations: {
+            create: { etablissementId: centreCotonou.id, roleNom: "medecin", statut: "active" },
+          },
         },
       },
     },
@@ -117,6 +121,10 @@ async function main() {
           numeroProfessionnel: formaterIdentifiant(CODES_IDENTIFIANT_PAR_ROLE.infirmier, 1),
           etablissementId: centreCotonou.id,
           statutValidation: "valide",
+          profession: "infirmier",
+          affiliations: {
+            create: { etablissementId: centreCotonou.id, roleNom: "infirmier", statut: "active" },
+          },
         },
       },
     },
@@ -137,6 +145,10 @@ async function main() {
           numeroProfessionnel: formaterIdentifiant(CODES_IDENTIFIANT_PAR_ROLE.agent_communautaire, 1),
           etablissementId: centreCotonou.id,
           statutValidation: "valide",
+          profession: "agent_communautaire",
+          affiliations: {
+            create: { etablissementId: centreCotonou.id, roleNom: "agent_communautaire", statut: "active" },
+          },
         },
       },
     },
@@ -157,6 +169,10 @@ async function main() {
           numeroProfessionnel: formaterIdentifiant(CODES_IDENTIFIANT_PAR_ROLE.laboratoire, 1),
           etablissementId: laboCotonou.id,
           statutValidation: "valide",
+          profession: "laboratoire",
+          affiliations: {
+            create: { etablissementId: laboCotonou.id, roleNom: "laboratoire", statut: "active" },
+          },
         },
       },
     },
@@ -181,6 +197,9 @@ async function main() {
           numeroProfessionnel: formaterIdentifiant(CODES_IDENTIFIANT_PAR_ROLE.admin_etablissement, 1),
           etablissementId: centreCotonou.id,
           statutValidation: "valide",
+          affiliations: {
+            create: { etablissementId: centreCotonou.id, roleNom: "admin_etablissement", statut: "active" },
+          },
         },
       },
     },

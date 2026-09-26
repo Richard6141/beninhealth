@@ -63,6 +63,8 @@ model User {
   addendaConsultation AddendumConsultation[]
   documentsMedicaux DocumentMedical[]
   codesVerificationEmail CodeVerificationEmail[]
+  codesReinitialisationMotDePasse CodeReinitialisationMotDePasse[]
+  sessionsActives SessionActive[]
   revuesAccesUrgence RevueAccesUrgence[]
   alertesRevues HealthAlertReview[]
   traitementsDemandesPersonnes TraitementDemandePersonne[]
@@ -179,6 +181,7 @@ model EtablissementSanitaire {
   rendezVous     RendezVous[]
   consultations  Consultation[]
   demandesAccesDossier DemandeAccesDossier[]
+  affiliationsProfessionnelles AffiliationProfessionnelle[]
   // Examens medicaux dont cet etablissement est le laboratoire assigne
   // (uniquement pertinent pour un etablissement de type "laboratoire").
   examensMedicaux ExamenMedical[]
@@ -206,6 +209,16 @@ model ProfessionnelSante {
   etablissementId     String
   etablissement       EtablissementSanitaire @relation(fields: [etablissementId], references: [id])
   statutValidation    String @default("en_attente")
+  // Identite professionnelle nationale (RG-AUTH-42 du pack) : profession +
+  // numero d'inscription a l'Ordre, uniques ensemble. Facultatifs : les profils
+  // existants n'ont pas encore ce numero, et Postgres autorise plusieurs NULL
+  // sous une contrainte unique. Le numero d'ordre est un identifiant public,
+  // pas un authentifiant : il ne prouve pas que celui qui le saisit en est
+  // titulaire (voir docs/recherche-transfert/identite-professionnels.md).
+  profession          String?
+  numeroOrdre         String?
+  affiliations        AffiliationProfessionnelle[]
+  @@unique([profession, numeroOrdre])
 
   rendezVous    RendezVous[]
   consultations Consultation[]
@@ -230,6 +243,8 @@ model ProfessionnelSante {
   vaccinations Vaccination[]
   prisesEnChargeInfirmieres PriseEnChargeInfirmiere[]
   delivrances Delivrance[]
+  // F-ETA-05 : creneaux hebdomadaires recurrents de disponibilite.
+  creneauxDisponibilite CreneauDisponibilite[]
   @@schema("public")
 }
 
@@ -720,6 +735,26 @@ model CodeVerificationEmail {
   @@schema("public")
 }
 
+// F-AUTH-04 du pack : code de reinitialisation de mot de passe, envoye par
+// e-mail. Table dediee plutot que reutiliser CodeVerificationEmail : les deux
+// codes ont des consequences tres differentes s'ils sont devoilés (verifier
+// une connexion deja mot-de-passe-authentifiee, contre changer le mot de
+// passe sans autre verification) ; les melanger dans la meme table aurait
+// risque qu'un code de connexion valide soit accepte par erreur pour
+// reinitialiser le mot de passe (ou l'inverse) si les deux existent en meme
+// temps pour le meme compte. Meme principe sinon que CodeVerificationEmail :
+// jamais le code en clair stocke, usage unique, courte duree de vie.
+model CodeReinitialisationMotDePasse {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash     String
+  dateCreation DateTime  @default(now())
+  expireLe     DateTime
+  consommeLe   DateTime?
+  @@schema("public")
+}
+
 // Correspond a F-AUTH-03 du pack ("Reclamer un dossier existant") : code
 // permettant au titulaire d'un dossier Patient cree "sans compte" (F-CLI-03,
 // src/modules/identity/actions.ts) d'activer lui-meme ce compte. RG-AUTH-20 :
@@ -740,6 +775,19 @@ model CodeReclamationDossier {
 
 // Correspond a JournalAudit dans src/types/domain-audit.ts.
 // Trace obligatoire de toute action sensible (connexion, deconnexion...).
+// RG-AUD-02 du pack : "chaque trace contient l'empreinte de la trace
+// precedente (chainage) ; une page Verifier l'integrite recalcule la chaine
+// sur une periode et signale toute rupture." empreinte/empreintePrecedente
+// sont calcules par un trigger Postgres (voir la migration
+// ajout_chainage_journal_audit, fonction chainer_journal_audit) au moment de
+// l'insertion, jamais par le code applicatif : ainsi TOUTE ecriture dans
+// cette table est chainee, y compris une eventuelle requete SQL directe qui
+// contournerait journaliser() (src/modules/audit/journaliser.ts, point
+// d'ecriture unique cote application, mais le trigger est le vrai garant,
+// pas cette convention de code seule). numeroSequence (auto-incremente)
+// donne un ordre total fiable independant de `date` (deux ecritures
+// concurrentes peuvent partager la meme milliseconde, jamais le meme
+// numero de sequence).
 model JournalAudit {
   id               String   @id @default(cuid())
   utilisateurId    String
@@ -749,6 +797,13 @@ model JournalAudit {
   date             DateTime @default(now())
   adresseTechnique String
   justification    String
+  numeroSequence   BigInt   @default(autoincrement()) @unique
+  // Empreinte SHA-256 de (empreintePrecedente ?? "") + id + utilisateurId +
+  // action + donneeConcernee + justification. Jamais fournies par le code
+  // applicatif (absentes de DonneesJournalAudit) : toujours calculees par le
+  // trigger, quel que soit le chemin d'ecriture.
+  empreinte            String?
+  empreintePrecedente  String?
 
   revue RevueAccesUrgence?
   traitementDemande TraitementDemandePersonne?
@@ -1080,6 +1135,35 @@ model CodePartageDossier {
   @@schema("public")
 }
 
+// Lien entre UNE personne professionnelle et UN etablissement (equivalent de
+// PractitionerRole en FHIR, RG-ROL-02 du pack). Un professionnel qui exerce dans
+// plusieurs etablissements a une ligne par etablissement, sans jamais dupliquer
+// la personne. Etape A de la migration (docs/conception-transfert-dossier.md,
+// section 8) : ecrite a chaque creation de profil et rétro-remplie depuis
+// ProfessionnelSante.etablissementId, mais rien ne la LIT encore : l'etablissement
+// utilise partout reste ProfessionnelSante.etablissementId tant que l'espace actif
+// n'existe pas. Aucun flux ne cree encore plus d'une affiliation par personne.
+model AffiliationProfessionnelle {
+  id              String                 @id @default(cuid())
+  professionnelId String
+  professionnel   ProfessionnelSante     @relation(fields: [professionnelId], references: [id], onDelete: Cascade)
+  etablissementId String
+  etablissement   EtablissementSanitaire @relation(fields: [etablissementId], references: [id])
+  // Meme vocabulaire que UserRole.nom.
+  roleNom         String
+  service         String?
+  // invitee | active | suspendue | terminee. Creee "active" pour l'instant : aucun
+  // flux d'invitation n'existe, l'administrateur d'etablissement recrute directement.
+  statut          String                 @default("active")
+  dateDebut       DateTime               @default(now())
+  dateFin         DateTime?
+  inviteParUserId String?
+
+  @@index([professionnelId, statut])
+  @@index([etablissementId, statut])
+  @@schema("public")
+}
+
 // Acces au dossier d'un patient sans relation prealable, par NPI ou par
 // telephone + date de naissance, confirme par un code envoye au patient (voir
 // docs/conception-transfert-dossier.md). Une ligne par demande, y compris
@@ -1234,6 +1318,54 @@ model VaccinReferentiel {
   dateCreation     DateTime @default(now())
   dateModification DateTime @default(now())
 
+  @@schema("public")
+}
+
+// F-ETA-05 du pack (chapitre 9, "Definir les agendas"). Perimetre reduit et
+// documente comme tel (voir docs/coordination-agents.md, point F-ETA-05) :
+// disponibilite hebdomadaire RECURRENTE par professionnel, sans notion de
+// service distincte (ce depot n'a pas de modele Service), sans duree de
+// creneau ni capacite variable (capacite 1 fixe, un seul rendez-vous par
+// professionnel/date/heure), sans generation physique de creneaux (verifie a
+// la volee a la creation du rendez-vous), sans fermetures ponctuelles ni
+// jours feries (RG-ETA-42 hors perimetre), sans role RECEPTIONIST (absent
+// des 8 roles de ce depot). heureDebutMinutes/heureFinMinutes sont exprimees
+// en minutes depuis minuit, heure LOCALE Africa/Porto-Novo (RG-ETA-43 : ce
+// fuseau est fixe UTC+1 sans heure d'ete, donc un entier simple suffit, pas
+// besoin de stocker un fuseau).
+model CreneauDisponibilite {
+  id                String             @id @default(cuid())
+  professionnelId   String
+  professionnel     ProfessionnelSante @relation(fields: [professionnelId], references: [id], onDelete: Cascade)
+  // 0 = dimanche ... 6 = samedi (meme convention que Date.getUTCDay(), a
+  // interpreter cote lecture par rapport au jour LOCAL Porto-Novo, pas UTC).
+  jourSemaine       Int
+  heureDebutMinutes Int
+  heureFinMinutes   Int
+  dateCreation      DateTime           @default(now())
+
+  @@index([professionnelId, jourSemaine])
+  @@schema("public")
+}
+
+// F-AUTH-09 du pack ("Gerer ses appareils et sessions"). Chaque connexion
+// reussie cree une ligne ici, dont l'id est embarque dans le JWT de session
+// (src/lib/session.ts) : permet de fermer UNE session precise sans affecter
+// les autres, contrairement a un simple compteur de version global. Limite
+// assumee : pas de geolocalisation IP (necessiterait un service externe
+// tiers, hors de portee sans accord explicite) : adresseIp technique
+// affichee telle quelle, jamais de "ville approximative" inventee.
+model SessionActive {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appareil         String
+  navigateur       String
+  adresseIp        String
+  dateCreation     DateTime @default(now())
+  derniereActivite DateTime @default(now())
+
+  @@index([userId])
   @@schema("public")
 }
 
