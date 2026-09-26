@@ -1,8 +1,20 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+import { estFonctionnaliteActive } from "@/modules/administration/parametres";
 import { getPatientsAvecConsentement } from "@/modules/clinical/actions";
+import { DUREES_ACCES_HEURES, MOTIFS_ACCES, libelleDuree } from "@/modules/transfert/code-acces";
+import { FormulaireAccesParCode } from "./FormulaireAccesParCode";
 import { FormulaireCodePartage } from "./FormulaireCodePartage";
 import { ListePatients } from "./ListePatients";
+
+const optionsMotif = Object.entries(MOTIFS_ACCES).map(([value, libelle]) => ({
+  value,
+  label: libelle.charAt(0).toUpperCase() + libelle.slice(1),
+}));
+const optionsDuree = DUREES_ACCES_HEURES.map((heures) => ({
+  value: String(heures),
+  label: libelleDuree(heures),
+}));
 
 /**
  * Ecran "Mes patients" (F-CLI-02 du pack) : liste des patients ayant
@@ -11,7 +23,10 @@ import { ListePatients } from "./ListePatients";
  * et creation rapide d'un patient sans compte (F-CLI-03).
  */
 export default async function PatientsPage() {
-  const patients = await getPatientsAvecConsentement();
+  const [patients, npiActif] = await Promise.all([
+    getPatientsAvecConsentement(),
+    estFonctionnaliteActive("access.by_npi"),
+  ]);
 
   return (
     <div className="conteneur-page mx-auto flex flex-col gap-8 px-4 py-8 sm:px-6">
@@ -26,11 +41,13 @@ export default async function PatientsPage() {
         <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-accent">
           Espace professionnel
         </p>
-        <h1 className="text-[28px] font-black text-encre">Mes patients</h1>
+        <h1 className="text-[28px] font-bold text-titre">Mes patients</h1>
         <p className="max-w-2xl text-[15px] text-encre-secondaire">
           Patients vous ayant accordé l&apos;accès à leur dossier.
         </p>
       </header>
+
+      <FormulaireAccesParCode npiActif={npiActif} optionsMotif={optionsMotif} optionsDuree={optionsDuree} />
 
       <FormulaireCodePartage />
 

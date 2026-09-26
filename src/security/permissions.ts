@@ -88,6 +88,10 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     // F-CIT-11 : utiliser le code de partage temporaire presente par un
     // patient (RG-CIT-91 : medecin ou infirmier valide uniquement).
     'update:code_partage',
+    // Acces par NPI ou telephone + code de confirmation envoye au patient
+    // (voir src/modules/transfert/actions.ts).
+    'create:demande_acces_dossier',
+    'update:demande_acces_dossier',
     // F-CLI-14 : le medecin peut envoyer une reference vers un autre
     // etablissement, et repondre (contre-reference) a une reference recue
     // par son propre etablissement.
@@ -111,6 +115,8 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     // F-CIT-11 : utiliser le code de partage temporaire presente par un
     // patient (RG-CIT-91 : medecin ou infirmier valide uniquement).
     'update:code_partage',
+    'create:demande_acces_dossier',
+    'update:demande_acces_dossier',
   ]),
 
   agent_communautaire: new Set<Permission>([
@@ -184,6 +190,33 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     // src/modules/notification/sms/dev.ts).
     'read:envoi_sms',
     'create:envoi_sms',
+    // F-ADM-06 : detection et fusion de dossiers patient en doublon (voir
+    // src/modules/patient/fusion-doublons.ts).
+    'read:doublon_patient',
+    'update:doublon_patient',
+    // F-ADM-07 : parametres et fonctionnalites activables de la plateforme
+    // (voir src/modules/administration/parametres.ts).
+    'read:parametre',
+    'update:parametre',
+    // F-ADM-02 : referentiel des etablissements a l'echelle nationale (voir
+    // src/modules/administration/etablissements.ts). Distinct de
+    // etablissement_sanitaire accorde a admin_etablissement ci-dessus, qui
+    // ne porte que sur son propre etablissement.
+    'read:etablissement_sanitaire',
+    'update:etablissement_sanitaire',
+    // F-ADM-04 (partie 2) : referentiel medicaments administrable (voir
+    // src/modules/administration/referentiel-medicaments.ts). Ressource
+    // DISTINCTE de "medicament" (accordee a pharmacien ci-dessus) et non
+    // "medicament" lui-meme : reutiliser ce dernier aurait par erreur permis
+    // a un pharmacien d'appeler directement creerMedicamentAction/
+    // modifierMedicamentAction/basculerActifMedicamentAction (Server Actions,
+    // atteignables sans passer par l'ecran), puisque can() ne distingue pas
+    // "lire/utiliser le catalogue pour une delivrance" de "administrer le
+    // catalogue" quand les deux partagent la meme chaine de permission.
+    // Trouve et corrige avant tout commit, voir docs/coordination-agents.md.
+    'read:referentiel_medicament',
+    'create:referentiel_medicament',
+    'update:referentiel_medicament',
     // F-CIT-09 : fin de tutelle a la majorite, MVP reduit a une fin manuelle
     // par l'administrateur (pas de tache planifiee, pas de code de
     // reclamation par SMS, voir src/modules/administration/tutelles.ts).

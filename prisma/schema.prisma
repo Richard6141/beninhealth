@@ -53,6 +53,7 @@ model User {
   patient       Patient?
   professionnel ProfessionnelSante?
   journalAudit  JournalAudit[]
+  demandesAccesDossier DemandeAccesDossier[]
   // Consentements ou cet utilisateur est l'acteur autorise par un patient
   // (typiquement un professionnel de sante), pas ses propres consentements.
   consentementsRecus Consentement[]
@@ -177,6 +178,7 @@ model EtablissementSanitaire {
   professionnels ProfessionnelSante[]
   rendezVous     RendezVous[]
   consultations  Consultation[]
+  demandesAccesDossier DemandeAccesDossier[]
   // Examens medicaux dont cet etablissement est le laboratoire assigne
   // (uniquement pertinent pour un etablissement de type "laboratoire").
   examensMedicaux ExamenMedical[]
@@ -240,7 +242,11 @@ model Patient {
   userId                      String   @unique
   user                        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   identifiantSante            String   @unique
-  referenceIdentiteNationale  String?
+  // NPI (13 chiffres, chiffres seuls). Unique : deux dossiers ne peuvent pas
+  // revendiquer la meme personne (aide aussi a reperer les doublons). Tout
+  // traitement d'un NPI exige l'autorisation prealable de l'APDP (art. 407 du
+  // Code du numerique) : voir la fonctionnalite activable "access.by_npi".
+  referenceIdentiteNationale  String?  @unique
   dateNaissance               DateTime
   sexe                        String
   groupeSanguin               String   @default("inconnu")
@@ -270,6 +276,8 @@ model Patient {
   references ReferencePatient[]
   codesPartage CodePartageDossier[]
   codesReclamation CodeReclamationDossier[]
+  demandesAccesDossier DemandeAccesDossier[]
+  @@index([dateNaissance])
   @@schema("public")
 }
 
@@ -1069,6 +1077,43 @@ model CodePartageDossier {
   consommeParId String?
   consommePar   ProfessionnelSante? @relation(fields: [consommeParId], references: [id])
 
+  @@schema("public")
+}
+
+// Acces au dossier d'un patient sans relation prealable, par NPI ou par
+// telephone + date de naissance, confirme par un code envoye au patient (voir
+// docs/conception-transfert-dossier.md). Une ligne par demande, y compris
+// quand aucun patient ne correspond (patientId null) : la reponse faite au
+// professionnel est identique dans les deux cas (RG-CLI-10), et ces lignes
+// servent au comptage anti-balayage. Jamais le code en clair, ni le NPI ni le
+// telephone saisis : uniquement leurs empreintes (RG-CLI-11).
+model DemandeAccesDossier {
+  id               String                 @id @default(cuid())
+  demandeurId      String
+  demandeur        User                   @relation(fields: [demandeurId], references: [id])
+  etablissementId  String
+  etablissement    EtablissementSanitaire @relation(fields: [etablissementId], references: [id])
+  patientId        String?
+  patient          Patient?               @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  // npi | telephone
+  modeRecherche    String
+  empreinteCritere String
+  // consultation | avis_specialise | suite_de_soins | hospitalisation
+  motif            String
+  dureeAccesHeures Int
+  codeHash         String
+  tentatives       Int                    @default(0)
+  renvois          Int                    @default(0)
+  // en_attente | valide | expire | bloque
+  statut           String                 @default("en_attente")
+  // whatsapp | sms_simule | aucun : renseigne apres l'envoi, jamais montre au professionnel
+  canal            String?
+  dateCreation     DateTime               @default(now())
+  expireLe         DateTime
+  valideLe         DateTime?
+
+  @@index([demandeurId, dateCreation])
+  @@index([patientId, dateCreation])
   @@schema("public")
 }
 

@@ -16,6 +16,7 @@ export const CLES_FONCTIONNALITES = [
   "community.module",
   "fhir.api",
   "demo.banner",
+  "access.by_npi",
 ] as const;
 
 export type CleFonctionnalite = (typeof CLES_FONCTIONNALITES)[number];
@@ -29,4 +30,6 @@ export const DESCRIPTIONS_FONCTIONNALITES: Record<CleFonctionnalite, string> = {
   "community.module": "Module de suivi communautaire (agents de terrain).",
   "fhir.api": "Exposition d'une API HL7 FHIR reelle (aujourd'hui, seule la projection est documentee, jamais exposee).",
   "demo.banner": "Bandeau \"environnement de demonstration\" affiche sur toutes les pages.",
+  "access.by_npi":
+    "Acces au dossier d'un patient par son NPI (avec code de confirmation). A n'activer avec des donnees reelles qu'apres l'autorisation de l'APDP (art. 407 du Code du numerique).",
 };

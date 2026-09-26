@@ -18,7 +18,19 @@ export interface EnvVariables {
   NEXTAUTH_SECRET: string;
   /** Environnement d'exécution courant. */
   NODE_ENV: 'development' | 'production' | 'test';
-  /** Nom du cloud Cloudinary (stockage des images téléversées : avatars, documents médicaux). */
+  /** Hôte du relais SMTP sortant (envoi d'e-mails : codes de vérification, notifications). */
+  SMTP_HOST: string;
+  /** Port du relais SMTP (465 en TLS implicite, 587 en STARTTLS). */
+  SMTP_PORT: string;
+  /** "true" pour TLS implicite (port 465), "false" pour STARTTLS (port 587). */
+  SMTP_SECURE: string;
+  /** Identifiant du compte SMTP. */
+  SMTP_USER: string;
+  /** Mot de passe du compte SMTP. */
+  SMTP_PASSWORD: string;
+  /** Adresse et libellé d'expéditeur utilisés dans l'en-tête "From" des e-mails envoyés. */
+  SMTP_FROM: string;
+  /** Nom du cloud Cloudinary (stockage des images téléversées : avatars). */
   CLOUDINARY_CLOUD_NAME: string;
   /** Clé API Cloudinary. */
   CLOUDINARY_API_KEY: string;
@@ -26,12 +38,27 @@ export interface EnvVariables {
   CLOUDINARY_API_SECRET: string;
   /** Dossier Cloudinary racine dans lequel toutes les images de cette plateforme sont rangées. */
   CLOUDINARY_FOLDER: string;
+  /**
+   * Cle API Wapy.pro (pont WhatsApp Business, https://wapy.pro/developpeurs) :
+   * envoi du code de confirmation au telephone du patient lors d'un acces au
+   * dossier par NPI ou telephone (voir src/lib/wapy.ts). Facultative : absente,
+   * le code part par SMS simule hors production et n'est pas livre en production.
+   */
+  WAPY_PONT_CLE: string;
 }
 
 /** Variables sans lesquelles l'application ne doit jamais démarrer en production. */
 const VARIABLES_OBLIGATOIRES_EN_PRODUCTION: ReadonlyArray<
   Exclude<keyof EnvVariables, 'NODE_ENV'>
-> = ['DATABASE_URL', 'NEXTAUTH_SECRET'];
+> = [
+  'DATABASE_URL',
+  'NEXTAUTH_SECRET',
+  'SMTP_HOST',
+  'SMTP_PORT',
+  'SMTP_USER',
+  'SMTP_PASSWORD',
+  'SMTP_FROM',
+];
 
 function lireVariable(nom: keyof EnvVariables): string | undefined {
   return process.env[nom];
@@ -65,9 +92,16 @@ export function getEnv(): EnvVariables {
     DATABASE_URL: lireVariable('DATABASE_URL') ?? '',
     NEXTAUTH_SECRET: lireVariable('NEXTAUTH_SECRET') ?? '',
     NODE_ENV: nodeEnv,
+    SMTP_HOST: lireVariable('SMTP_HOST') ?? '',
+    SMTP_PORT: lireVariable('SMTP_PORT') ?? '',
+    SMTP_SECURE: lireVariable('SMTP_SECURE') ?? '',
+    SMTP_USER: lireVariable('SMTP_USER') ?? '',
+    SMTP_PASSWORD: lireVariable('SMTP_PASSWORD') ?? '',
+    SMTP_FROM: lireVariable('SMTP_FROM') ?? '',
     CLOUDINARY_CLOUD_NAME: lireVariable('CLOUDINARY_CLOUD_NAME') ?? '',
     CLOUDINARY_API_KEY: lireVariable('CLOUDINARY_API_KEY') ?? '',
     CLOUDINARY_API_SECRET: lireVariable('CLOUDINARY_API_SECRET') ?? '',
     CLOUDINARY_FOLDER: lireVariable('CLOUDINARY_FOLDER') ?? '',
+    WAPY_PONT_CLE: lireVariable('WAPY_PONT_CLE') ?? '',
   };
 }
