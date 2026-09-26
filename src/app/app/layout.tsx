@@ -23,6 +23,7 @@ import {
   Settings,
   ShieldAlert,
   ShieldCheck,
+  UserCog,
   Users,
   UserX,
 } from "lucide-react";
@@ -293,6 +294,11 @@ const navigationAdminNational: ElementNavigation[] = [
     label: "Validation des professionnels",
     href: "/app/ministere/validation-professionnels",
     icon: <BadgeCheck size={tailleIconeNav} aria-hidden="true" />,
+  },
+  {
+    label: "Gestion des comptes",
+    href: "/app/ministere/comptes",
+    icon: <UserCog size={tailleIconeNav} aria-hidden="true" />,
   },
   {
     label: "Doublons patients",

@@ -250,6 +250,15 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     // (RG-ROL-06) et que l'admin d'etablissement ne puisse pas se valider lui-meme.
     'read:validation_professionnel',
     'update:validation_professionnel',
+    // F-ADM-05 : gestion nationale des comptes (recherche, suspension,
+    // reactivation, reinitialisation du second facteur, invitation d'un
+    // administrateur, quatre yeux RG-ADM-30), voir
+    // src/modules/administration/gestion-comptes-nationale.ts. Ressource
+    // dediee, accordee a admin_national seul : aucun autre role ne peut
+    // rechercher un compte de la plateforme ni agir dessus.
+    'read:compte_plateforme',
+    'create:compte_plateforme',
+    'update:compte_plateforme',
   ]),
 };
 

@@ -1511,3 +1511,31 @@ model JourFerie {
 
   @@schema("public")
 }
+
+// F-ADM-05 / RG-ADM-30 du pack ("pending_admin_actions") : toute action sur un
+// compte d'administrateur doit etre confirmee par un SECOND administrateur
+// (principe des quatre yeux). L'action demandee reste "en_attente" ici tant
+// qu'un autre administrateur ne l'a pas approuvee ou refusee, ou jusqu'a son
+// expiration. Ids en simples chaines (aucune cle etrangere) : la trace doit
+// survivre a toute evolution des comptes. Jamais de mot de passe ni de secret
+// dans `parametres` (motif, coordonnees d'une invitation seulement).
+// Voir src/modules/administration/gestion-comptes-nationale.ts.
+model ActionAdministrateurEnAttente {
+  id            String    @id @default(cuid())
+  // suspension | reactivation | reinitialisation_2fa | invitation_admin
+  type          String
+  // Compte vise ; null pour une invitation (le compte n'existe pas encore).
+  cibleUserId   String?
+  parametres    Json
+  demandeParId  String
+  // en_attente | approuvee | refusee | expiree
+  statut        String    @default("en_attente")
+  decideParId   String?
+  motifDecision String?
+  dateDemande   DateTime  @default(now())
+  dateDecision  DateTime?
+  expireLe      DateTime
+
+  @@index([statut, expireLe])
+  @@schema("public")
+}
