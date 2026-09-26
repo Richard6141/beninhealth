@@ -5,6 +5,7 @@ import {
   Building2,
   CalendarClock,
   ClipboardList,
+  CreditCard,
   FlaskConical,
   FolderOpen,
   Gauge,
@@ -78,6 +79,11 @@ const navigationPatient: ElementNavigation[] = [
     label: "Mes examens",
     href: "/app/patient/examens",
     icon: <FlaskConical size={tailleIconeNav} aria-hidden="true" />,
+  },
+  {
+    label: "Ma carte santé",
+    href: "/app/patient/carte",
+    icon: <CreditCard size={tailleIconeNav} aria-hidden="true" />,
   },
   {
     label: "Mes consentements",
@@ -221,6 +227,11 @@ const navigationAdminEtablissement: ElementNavigation[] = [
     label: "File du jour",
     href: "/app/etablissement/file-du-jour",
     icon: <CalendarClock size={tailleIconeNav} aria-hidden="true" />,
+  },
+  {
+    label: "Fiche de l'établissement",
+    href: "/app/etablissement/fiche",
+    icon: <Building2 size={tailleIconeNav} aria-hidden="true" />,
   },
   {
     label: "Journal d'audit",
