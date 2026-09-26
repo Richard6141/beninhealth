@@ -156,6 +156,7 @@ model EtablissementSanitaire {
   // (uniquement pertinent pour un etablissement de type "laboratoire").
   examensMedicaux ExamenMedical[]
   suivisCommunautaires SuiviCommunautaire[]
+  personnesCommunautaires PersonneCommunautaire[]
   vaccinations Vaccination[]
   prisesEnChargeInfirmieres PriseEnChargeInfirmiere[]
   delivrances Delivrance[]
@@ -197,6 +198,7 @@ model ProfessionnelSante {
   examensValides ExamenMedical[] @relation("ExamenValidePar")
   // Visites de suivi communautaire menees par ce professionnel (role agent_communautaire).
   suivisCommunautaires SuiviCommunautaire[]
+  personnesEnregistrees PersonneCommunautaire[]
   vaccinations Vaccination[]
   prisesEnChargeInfirmieres PriseEnChargeInfirmiere[]
   delivrances Delivrance[]
@@ -385,6 +387,13 @@ model ExamenMedical {
   // du role laboratoire autre que celui ayant saisi le resultat.
   statut          String    @default("demande")
   resultat        String?
+  // F-LAB-03 du pack : resultat structure par parametre (tableau JSON de
+  // { code, valeur, unite, indicateur }), pour le sous-ensemble d'examens
+  // quantitatifs couverts par
+  // src/modules/laboratoire/referentiel-parametres-examens.ts. Colonne
+  // additive : les examens hors de ce perimetre reduit continuent d'utiliser
+  // uniquement `resultat` (texte libre), inchange, jamais les deux a la fois.
+  resultatsParametres Json?
   dateResultat    DateTime?
   saisiParId      String?
   saisiPar        ProfessionnelSante? @relation("ExamenSaisiPar", fields: [saisiParId], references: [id])
@@ -417,6 +426,15 @@ model SuiviCommunautaire {
   etablissement   EtablissementSanitaire @relation(fields: [etablissementId], references: [id])
   patientId       String?
   patient         Patient?  @relation(fields: [patientId], references: [id])
+  // F-COM-02 du pack : lien optionnel vers une fiche personne enregistree
+  // (voir PersonneCommunautaire ci-dessous), distinct de patientId (jamais
+  // rempli, un dossier Patient exigerait un compte User que
+  // agent_communautaire n'a pas le droit de creer, voir
+  // src/modules/communautaire/actions.ts). beneficiaireNom reste toujours
+  // rempli (copie du nom de la personne si personneId est fourni), aucun
+  // ecran d'affichage existant n'a besoin d'etre modifie.
+  personneId      String?
+  personne        PersonneCommunautaire? @relation(fields: [personneId], references: [id])
   beneficiaireNom String
   // vaccination | depistage | suivi_grossesse | sensibilisation | autre
   typeVisite      String
@@ -424,6 +442,37 @@ model SuiviCommunautaire {
   localisation    String    @default("")
   notes           String    @default("")
   dateCreation    DateTime  @default(now())
+  @@schema("public")
+}
+
+// Correspond a F-COM-02 du pack ("Enregistrer une personne") : fiche dediee
+// pour un beneficiaire suivi par un agent communautaire, jamais un dossier
+// Patient (qui exigerait un compte User, hors du perimetre RBAC
+// d'agent_communautaire, voir le commentaire de SuiviCommunautaire
+// ci-dessus et src/modules/communautaire/actions.ts). Perimetre reduit
+// assume par rapport au pack : detection de doublon par correspondance
+// exacte normalisee (nom, prenom, date de naissance), pas un score de
+// similarite ; portee etablissement (tous les agents du meme etablissement
+// partagent le meme registre), pas de mode hors ligne ni de statut REVIEW
+// distinct (ce depot n'a pas d'infrastructure de synchronisation).
+model PersonneCommunautaire {
+  id              String    @id @default(cuid())
+  etablissementId String
+  etablissement   EtablissementSanitaire @relation(fields: [etablissementId], references: [id])
+  agentId         String
+  agent           ProfessionnelSante @relation(fields: [agentId], references: [id])
+  nom             String
+  prenom          String
+  dateNaissance   DateTime
+  // Coche "date approximative" du pack (F-CLI-03) : la date de naissance
+  // saisie est une estimation ("environ 35 ans"), jamais une date d'etat
+  // civil exacte.
+  dateNaissanceApproximative Boolean @default(false)
+  sexe            String
+  villageQuartier String
+  chefMenage      String?
+  dateCreation    DateTime  @default(now())
+  visites         SuiviCommunautaire[]
   @@schema("public")
 }
 
