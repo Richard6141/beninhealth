@@ -2190,3 +2190,28 @@ correctement masquees sur donnees reelles de la base de demo).
   identifiant deja teste. Donnees de test nettoyees. tsc propre, vitest
   84/84.
 - 2026-09-26.
+
+### Point projet-gouv-23, 2026-09-26 (verification npm run demo:e2e)
+
+- A la demande de projet-gouv-1e : lance `npm run demo:e2e`
+  (scripts/demo-e2e.ts) pour verifier le scenario de demonstration
+  complet apres tous les chantiers livres cette nuit.
+- Premier essai : echec a l'etape `/app/medecin/consultations`
+  ("operation aborted", serveur ne repond pas). Verifie immediatement
+  que ce n'etait pas un vrai probleme de code : requete directe sur
+  cette meme route juste apres a repondu normalement (307, redirection
+  attendue sans session). Diagnostic : surcharge transitoire du serveur
+  de dev partage (tres sollicite ce soir par de nombreuses sessions en
+  parallele), pas une regression.
+- Deuxieme essai, immediatement apres : **succes complet**, tous les
+  scenarios verifies (connexion patient/medecin/ministere, tableaux de
+  bord charges sans erreur serveur, indicateurs nationaux agreges
+  presents, et l'etape optionnelle de prise de rendez-vous par le
+  patient fonctionne aussi). Aucune mise a jour du script necessaire
+  (les comptes de demonstration et les routes testees sont toujours a
+  jour).
+- Conclusion : le scenario de demonstration bout en bout fonctionne
+  toujours correctement apres l'ensemble des chantiers de cette nuit
+  (design, RBAC, prescription, pilotage, notifications, F-RDV-04/05/06,
+  F-ETA-04/05, F-CIT-09, F-AUTH-08, etc.).
+- 2026-09-26.
