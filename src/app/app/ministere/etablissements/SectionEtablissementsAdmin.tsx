@@ -121,7 +121,7 @@ function ModaleReferentiel({
       variant="dialog"
       width="wide"
       icon={Settings}
-      title={`Référentiel — ${etablissement.nom}`}
+      title={`Référentiel : ${etablissement.nom}`}
       onClose={onFerme}
     >
       <form action={formAction} aria-busy={pending} className="flex flex-col gap-4">

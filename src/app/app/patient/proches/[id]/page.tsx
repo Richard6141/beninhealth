@@ -146,7 +146,7 @@ export default async function ProcheDetailPage({
                       </p>
                       <p className="text-[13px] text-encre-secondaire">
                         {rdv.etablissementNom}
-                        {rdv.professionnelNomComplet ? ` — ${rdv.professionnelNomComplet}` : ""}
+                        {rdv.professionnelNomComplet ? `, ${rdv.professionnelNomComplet}` : ""}
                       </p>
                       <p className="text-[13px] text-encre-attenuee">{rdv.motif}</p>
                     </div>

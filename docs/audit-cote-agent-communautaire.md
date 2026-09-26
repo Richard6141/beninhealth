@@ -26,7 +26,7 @@ périmètre : `agent_communautaire` ne détient aucune permission `read:patient`
 matrice RBAC, et le module ne lit ni n'écrit jamais de dossier `Patient`. Depuis
 F-COM-02 (commit 3e1fd87), le bénéficiaire peut être une fiche `PersonneCommunautaire`
 dédiée (nom, prénom, sexe, date de naissance, village/quartier, chef de ménage,
-détection de doublon) au lieu d'un simple nom déclaré sur le terrain — toujours
+détection de doublon) au lieu d'un simple nom déclaré sur le terrain, toujours
 distincte d'un dossier `Patient`, jamais reliée à un compte `User`. Cette limite reste
 documentée dans le code lui-même, pas seulement dans ce rapport.
 
