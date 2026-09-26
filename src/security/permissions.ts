@@ -149,6 +149,11 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
 
   admin_national: new Set<Permission>([
     'read:analytics',
+    // F-AUD-04 : traiter les demandes de rectification et les signalements
+    // d'acces suspect (role AUDITOR absent de ce depot, routes vers
+    // admin_national, voir src/modules/patient/droits-donnees.ts).
+    'read:demande_personne',
+    'create:traitement_demande_personne',
   ]),
 };
 

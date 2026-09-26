@@ -63,6 +63,7 @@ model User {
   codesVerificationEmail CodeVerificationEmail[]
   revuesAccesUrgence RevueAccesUrgence[]
   alertesRevues HealthAlertReview[]
+  traitementsDemandesPersonnes TraitementDemandePersonne[]
   @@schema("public")
 }
 
@@ -585,6 +586,7 @@ model JournalAudit {
   justification    String
 
   revue RevueAccesUrgence?
+  traitementDemande TraitementDemandePersonne?
   @@schema("public")
 }
 
@@ -858,6 +860,27 @@ model CodePartageDossier {
   consommeLe    DateTime?
   consommeParId String?
   consommePar   ProfessionnelSante? @relation(fields: [consommeParId], references: [id])
+
+  @@schema("public")
+}
+
+// Correspond a F-AUD-04 du pack ("Traiter les demandes des personnes") :
+// decision d'un administrateur sur une demande de rectification
+// (JournalAudit.action = "demande_rectification", voir
+// src/modules/patient/droits-donnees.ts) ou un signalement d'acces suspect
+// (action = "signalement_acces_suspect", voir signalerAccesSuspectAction
+// dans src/modules/patient/actions.ts). Les deux sont deja routees vers
+// admin_national (pas de role AUDITOR dans ce depot). Meme principe que
+// RevueAccesUrgence : jamais une modification de l'entree JournalAudit
+// d'origine, une reponse est un evenement distinct qui la concerne.
+model TraitementDemandePersonne {
+  id             String   @id @default(cuid())
+  journalAuditId String   @unique
+  journalAudit   JournalAudit @relation(fields: [journalAuditId], references: [id])
+  traiteParId    String
+  traitePar      User     @relation(fields: [traiteParId], references: [id])
+  reponse        String
+  date           DateTime @default(now())
 
   @@schema("public")
 }
