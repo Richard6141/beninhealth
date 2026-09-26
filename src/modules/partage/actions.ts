@@ -45,6 +45,9 @@ const MAX_TENTATIVES_PAR_HEURE = 5;
 // RG-CIT-90 : sans caracteres ambigus (pas de 0/O, 1/I/L).
 const ALPHABET_CODE = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
 const LONGUEUR_CODE = 8;
+// Meme alphabet que la generation : une saisie hors alphabet ne peut correspondre a aucun code,
+// inutile de la comparer par bcrypt a tous les codes actifs.
+const FORMAT_CODE = new RegExp(`^[${ALPHABET_CODE}]{${LONGUEUR_CODE}}$`);
 
 function genererCode(): string {
   let code = "";
@@ -273,7 +276,7 @@ export async function consommerCodePartageAction(
       };
     }
 
-    if (!/^[A-Z2-9]{8}$/.test(codeNormalise)) {
+    if (!FORMAT_CODE.test(codeNormalise)) {
       await journaliser({
         utilisateurId: session.userId,
         action: "partage_code_echec",
@@ -313,11 +316,17 @@ export async function consommerCodePartageAction(
       dateConsommation.getTime() + DUREE_CONSENTEMENT_ISSU_CODE_HEURES * 60 * 60 * 1000
     );
 
-    await prisma.$transaction(async (tx) => {
-      await tx.codePartageDossier.update({
-        where: { id: codeTrouve!.id },
+    const accorde = await prisma.$transaction(async (tx) => {
+      // Usage unique meme si deux professionnels saisissent le code en meme temps :
+      // seule la premiere mise a jour trouve encore le code non consomme.
+      const consomme = await tx.codePartageDossier.updateMany({
+        where: { id: codeTrouve!.id, consommeLe: null },
         data: { consommeLe: dateConsommation, consommeParId: professionnel.id },
       });
+
+      if (consomme.count !== 1) {
+        return false;
+      }
 
       await tx.consentement.upsert({
         where: {
@@ -350,7 +359,13 @@ export async function consommerCodePartageAction(
         },
         tx
       );
+
+      return true;
     });
+
+    if (!accorde) {
+      return { error: "Code invalide, expire ou déjà utilisé.", success: false };
+    }
 
     return { error: null, success: true, patientId: codeTrouve.patientId };
   } catch (erreur) {

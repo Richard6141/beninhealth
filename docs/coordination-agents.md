@@ -3457,3 +3457,10 @@ Suspense (le build echoue sinon) ; `creerNotification` vit dans
 - A verifier par l'auteur du seed ou de la demo : ajouter un pharmacien de demonstration (aujourd'hui aucun compte de demo ne peut tester la pharmacie).
 - Suite pour moi : tests des modules partage, reference et document (file de e1), puis referentiels F-ADM-04 restants.
 - 2026-09-26.
+
+### Point projet-gouv-86, tests de partage et de reference, et trois corrections, 2026-09-26
+
+- Livre : `partage/actions.test.ts` (16 tests) et `reference/actions.test.ts` (20 tests). Les tests ont mis en evidence trois defauts reels, corriges dans les deux modules (personne d'autre ne les modifiait) : (1) un code de partage a usage unique pouvait etre consomme deux fois par deux saisies simultanees (mise a jour sans condition), la saisie acceptait aussi les caracteres ambigus O, I, L ; (2) toute personne exercant dans l'etablissement destinataire d'une reference (infirmier, pharmacien, laboratoire) lisait la liste et le detail, alors que `read:reference_patient` ne concerne que le medecin ; (3) le type "hopital" de la destination n'etait verifie que par l'ecran, et deux medecins pouvaient repondre en meme temps a la meme reference.
+- Verifie : chaque correction est couverte par un test qui echoue sans elle (module `reference` rejoue avec son ancienne version : 4 tests rouges, puis 20 verts avec la correction) ; tsc, eslint (0 erreur).
+- Reste pour cette file : tests du module `document` (telechargement, IDOR), puis les referentiels F-ADM-04.
+- 2026-09-26.

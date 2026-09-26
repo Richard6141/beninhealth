@@ -36,6 +36,9 @@ import { can } from "@/security/permissions";
 import { creerNotification } from "@/modules/notification/creer";
 
 const DUREE_ACCES_REFERENCE_JOURS = 30;
+// "Niveau superieur" approxime par le type hopital (voir l'en-tete du module) : applique a la
+// liste des destinations ET a la creation, l'ecran seul ne fait pas autorite.
+const TYPE_ETABLISSEMENT_DESTINATION = "hopital";
 
 const NIVEAUX_URGENCE = ["urgente", "programmee"] as const;
 export type NiveauUrgenceReference = (typeof NIVEAUX_URGENCE)[number];
@@ -133,6 +136,17 @@ function premierMessageErreur(erreur: z.ZodError, messageParDefaut: string): str
   return erreur.issues[0]?.message ?? messageParDefaut;
 }
 
+/**
+ * RBAC de lecture : seuls les roles qui portent read:reference_patient (le
+ * medecin) lisent les references. Etre professionnel de l'etablissement
+ * destinataire ne suffit pas (infirmier, pharmacien, laboratoire).
+ */
+async function peutLireLesReferences(): Promise<boolean> {
+  const session = await getSession();
+
+  return session !== null && session.roles.some((role) => can(role, "read", "reference_patient"));
+}
+
 /** Recupere le profil ProfessionnelSante du titulaire de la session courante, ou null si absent. */
 async function professionnelDeLaSessionCourante() {
   const session = await getSession();
@@ -154,7 +168,7 @@ export async function listEtablissementsDestinationReference(): Promise<Etabliss
 
   const etablissements = await prisma.etablissementSanitaire.findMany({
     where: {
-      type: "hopital",
+      type: TYPE_ETABLISSEMENT_DESTINATION,
       ...(professionnel ? { id: { not: professionnel.etablissementId } } : {}),
     },
     orderBy: { nom: "asc" },
@@ -288,6 +302,10 @@ export async function creerReferenceAction(
       return { error: "Etablissement de destination introuvable.", success: false };
     }
 
+    if (etablissementDestination.type !== TYPE_ETABLISSEMENT_DESTINATION) {
+      return { error: "L'etablissement de destination doit etre un hopital.", success: false };
+    }
+
     const adresseTechnique = await adresseTechniqueCourante();
     const dateCreation = new Date();
     const dateFinAcces = new Date(dateCreation.getTime() + DUREE_ACCES_REFERENCE_JOURS * 24 * 60 * 60 * 1000);
@@ -389,6 +407,10 @@ const INCLUDE_RESUME_REFERENCE = {
 
 /** References envoyees par le medecin connecte, les plus recentes en premier. */
 export async function getReferencesEnvoyees(): Promise<ReferenceResume[]> {
+  if (!(await peutLireLesReferences())) {
+    return [];
+  }
+
   const professionnel = await professionnelDeLaSessionCourante();
 
   if (!professionnel) {
@@ -411,6 +433,10 @@ export async function getReferencesEnvoyees(): Promise<ReferenceResume[]> {
  * getPrescriptionsADelivrer pour un pharmacien).
  */
 export async function getReferencesRecues(): Promise<ReferenceResume[]> {
+  if (!(await peutLireLesReferences())) {
+    return [];
+  }
+
   const professionnel = await professionnelDeLaSessionCourante();
 
   if (!professionnel) {
@@ -429,12 +455,16 @@ export async function getReferencesRecues(): Promise<ReferenceResume[]> {
 /**
  * Detail d'une reference (F-CLI-14), accessible au medecin referent ou a
  * tout medecin de l'etablissement destinataire (Zero Trust : jamais a un
- * tiers). RG-CLI-14x du pack ("jamais le diagnostic ni les autres
- * ordonnances du patient") : ce detail expose uniquement le motif et le
- * resume clinique ecrits par le referent pour cette reference precise,
- * jamais le contenu de la consultation d'origine.
+ * tiers, ni a un autre role du meme etablissement). Ce detail expose le
+ * motif et le resume clinique ecrits par le referent pour cette reference
+ * precise, plus le seul motif de la consultation d'origine : jamais ses
+ * observations, sa conclusion ni ses constantes, ni les ordonnances du patient.
  */
 export async function getDetailReference(referenceId: string): Promise<ReferenceDetail | null> {
+  if (!(await peutLireLesReferences())) {
+    return null;
+  }
+
   const professionnel = await professionnelDeLaSessionCourante();
 
   if (!professionnel) {
@@ -550,9 +580,11 @@ export async function enregistrerContreReferenceAction(
     const adresseTechnique = await adresseTechniqueCourante();
     const dateContreReference = new Date();
 
-    await prisma.$transaction(async (tx) => {
-      await tx.referencePatient.update({
-        where: { id: referenceId },
+    const cloturee = await prisma.$transaction(async (tx) => {
+      // Cloture atomique : si deux medecins repondent en meme temps, seule la
+      // premiere mise a jour trouve encore la reference ouverte.
+      const miseAJour = await tx.referencePatient.updateMany({
+        where: { id: referenceId, statut: "ouverte" },
         data: {
           contreReferenceTexte,
           contreReferenceAuteurId: professionnel.id,
@@ -561,6 +593,10 @@ export async function enregistrerContreReferenceAction(
           dateCloture: dateContreReference,
         },
       });
+
+      if (miseAJour.count !== 1) {
+        return false;
+      }
 
       await journaliser(
         {
@@ -572,7 +608,13 @@ export async function enregistrerContreReferenceAction(
         },
         tx
       );
+
+      return true;
     });
+
+    if (!cloturee) {
+      return { error: "Cette reference a deja ete cloturee.", success: false };
+    }
 
     await creerNotification(
       reference.medecinReferent.userId,
