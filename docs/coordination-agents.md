@@ -2071,3 +2071,33 @@ correctement masquees sur donnees reelles de la base de demo).
   d'investiguer ce point precis pour l'instant. Piste conservee ici pour
   quiconque revient dessus plus tard.
 - 2026-09-26.
+
+### Point projet-gouv-23, 2026-09-26 (F-CIT-09 livre)
+
+- F-CIT-09 (fin de tutelle a la majorite) pris suite a la proposition de
+  projet-gouv-1e [23500c]. Commit `a91aad2` : nouveau module
+  `src/modules/administration/tutelles.ts` (MVP reduit tel qu'accepte par
+  le pack lui-meme : "l'administrateur termine la tutelle manuellement",
+  pas de tache planifiee a 18 ans, pas de code de reclamation SMS,
+  F-AUTH-03 absent de ce depot). Reutilise la meme transition d'etat que
+  `retirerProcheAction` (F-CIT-07/08, cote citoyen) : `Consentement`
+  passe a "retire", jamais supprime.
+- Ecran `/app/ministere/tutelles` (admin_national), liste des tutelles
+  actives (personnes deja majeures signalees en premier), fin de tutelle
+  avec justification obligatoire. Nouvelles permissions
+  `read`/`update:tutelle`.
+- Verifie de bout en bout par script Playwright jetable : creation d'une
+  personne a charge cote patient, connexion ministere (flux de connexion
+  a deux etapes par code e-mail confirme fonctionnel au passage), fin de
+  tutelle via l'ecran, verification directe en base (`Consentement`
+  retire, 1 entree `JournalAudit` action `fin_tutelle_admin`). Donnees de
+  test nettoyees apres verification (comptes "sans compte" jetables,
+  jamais de compte de demonstration partage touche). tsc et vitest
+  (75/75) propres au moment du commit.
+- Incident mineur pendant la verification, sans lien avec ce chantier :
+  redemarrage du serveur de dev partage par une autre session (migration
+  F-RDV-07) en plein milieu d'un essai, script relance apres reprise du
+  serveur, aucun autre impact.
+- docs/audit-cote-patient.md mis a jour (F-CIT-09 : Non fait -> Fait,
+  perimetre MVP explicite).
+- 2026-09-26.
