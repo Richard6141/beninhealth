@@ -66,6 +66,47 @@ describe("saisirResultatExamenAction : saisie structuree par parametre (F-LAB-03
     expect(donnees.resultat).toContain("Glycémie à jeun : 0.9 g/L");
   });
 
+  it("chez un enfant, la plage adulte est marquee et l'hemoglobine utilise le seuil OMS de l'age", async () => {
+    const dateNaissance = new Date();
+    dateNaissance.setFullYear(dateNaissance.getFullYear() - 8);
+    p.examenMedical.findUnique.mockResolvedValue({
+      id: "ex-1",
+      laboratoireId: "labo-etab",
+      statut: "en_cours",
+      typeExamen: REFERENTIEL_EXAMENS.find((e) => e.code === "TAUX_HEMOGLOBINE")!.libelle,
+      patient: { sexe: "M", dateNaissance },
+      resultat: null,
+      commentaireValidation: null,
+    });
+
+    await saisirResultatExamenAction(
+      etatInitial,
+      formulaire({ examenId: "ex-1", parametresJson: JSON.stringify([{ code: "HEMOGLOBINE", valeur: "11.7" }]) })
+    );
+
+    const donnees = p.examenMedical.update.mock.calls[0][0].data;
+    expect(donnees.resultatsParametres[0]).toMatchObject({ indicateur: "N" });
+    expect(donnees.resultatsParametres[0]).not.toHaveProperty("referenceAdulteParDefaut");
+
+    p.examenMedical.findUnique.mockResolvedValue({
+      id: "ex-1",
+      laboratoireId: "labo-etab",
+      statut: "en_cours",
+      typeExamen: libelleGlycemie,
+      patient: { sexe: "M", dateNaissance },
+      resultat: null,
+      commentaireValidation: null,
+    });
+    await saisirResultatExamenAction(
+      etatInitial,
+      formulaire({ examenId: "ex-1", parametresJson: JSON.stringify([{ code: "GLYCEMIE_JEUN", valeur: "0.9" }]) })
+    );
+
+    const enfantGlycemie = p.examenMedical.update.mock.calls[1][0].data;
+    expect(enfantGlycemie.resultatsParametres[0].referenceAdulteParDefaut).toBe(true);
+    expect(enfantGlycemie.resultat).toContain("reference adulte");
+  });
+
   it("une valeur trop haute donne l'indicateur H sans bloquer la saisie", async () => {
     const valeurs = JSON.stringify([{ code: "GLYCEMIE_JEUN", valeur: "1.5" }]);
     await saisirResultatExamenAction(etatInitial, formulaire({ examenId: "ex-1", parametresJson: valeurs }));

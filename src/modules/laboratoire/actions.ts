@@ -43,8 +43,9 @@ import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
 import { estExamenSensible } from "./referentiel-examens-sensibles";
 import {
+  ageEnMois,
   parametresPourExamen,
-  calculerIndicateur,
+  evaluerParametre,
   valeurPhysiologiquementPossible,
   type Sexe,
   type Indicateur,
@@ -60,6 +61,8 @@ export interface ResultatParametre {
   unite: string;
   valeur: number;
   indicateur: Indicateur;
+  /** Patient de moins de 15 ans evalue avec la plage adulte faute de valeur pediatrique sourcee : a interpreter par le medecin. */
+  referenceAdulteParDefaut?: boolean;
 }
 
 /** Etat renvoye par chaque Server Action de ce module, consomme via useActionState. */
@@ -1177,6 +1180,11 @@ export async function saisirResultatExamenAction(
     // libre. Les examens hors de ce perimetre gardent le texte libre,
     // comportement inchange.
     const refParametres = parametresPourExamen(examen.typeExamen);
+    // Age du patient a la date de la saisie (plage pediatrique de l'hemoglobine,
+    // marque "reference adulte" sinon) ; inconnu = plage adulte sans marque.
+    const ageMoisPatient = examen.patient.dateNaissance
+      ? ageEnMois(new Date(examen.patient.dateNaissance), new Date())
+      : null;
     let resultatTexte: string;
     let resultatsParametresSnapshot: ResultatParametre[] | null = null;
 
@@ -1222,8 +1230,13 @@ export async function saisirResultatExamenAction(
           };
         }
 
-        const indicateur = calculerIndicateur(parametre.code, valeurNumerique, examen.patient.sexe as Sexe);
-        if (!indicateur) {
+        const evaluation = evaluerParametre(
+          parametre.code,
+          valeurNumerique,
+          examen.patient.sexe as Sexe,
+          ageMoisPatient
+        );
+        if (!evaluation) {
           return { error: `La valeur de "${parametre.libelle}" est invalide.`, success: false };
         }
 
@@ -1232,13 +1245,17 @@ export async function saisirResultatExamenAction(
           libelle: parametre.libelle,
           unite: parametre.unite,
           valeur: valeurNumerique,
-          indicateur,
+          indicateur: evaluation.indicateur,
+          ...(evaluation.referenceAdulteParDefaut ? { referenceAdulteParDefaut: true } : {}),
         });
       }
 
       resultatsParametresSnapshot = snapshot;
       resultatTexte = snapshot
-        .map((p) => `${p.libelle} : ${p.valeur} ${p.unite} (${p.indicateur})`)
+        .map(
+          (p) =>
+            `${p.libelle} : ${p.valeur} ${p.unite} (${p.indicateur}${p.referenceAdulteParDefaut ? ", reference adulte" : ""})`
+        )
         .join(" ; ");
     } else {
       if (resultat.trim().length === 0) {

@@ -17,11 +17,19 @@
  * valeurs de reference plus long. Les examens non couverts ici restent en
  * resultat texte libre (ExamenMedical.resultat), comportement inchange.
  *
- * Valeurs de reference adulte uniquement (pas d'ajustement par age, seulement
- * par sexe quand la difference est significative) : des plages usuelles de
- * biologie medicale generaliste, pas celles d'un laboratoire de reference
- * precis. A remplacer par un vrai referentiel biologique valide avant tout
- * usage reel.
+ * Valeurs de reference adulte, ajustees par sexe quand la difference est
+ * significative : des plages usuelles de biologie medicale generaliste, pas
+ * celles d'un laboratoire de reference precis. A remplacer par un vrai
+ * referentiel biologique valide avant tout usage reel.
+ *
+ * Age : seule la limite basse de l'hemoglobine est ajustee pour l'enfant,
+ * d'apres les seuils de l'OMS pour le diagnostic de l'anemie (WHO/NMH/NHD/
+ * MNM/11.1, 2011, niveau de la mer) : 11,0 g/dL de 6 a 59 mois, 11,5 g/dL de
+ * 5 a 11 ans, 12,0 g/dL de 12 a 14 ans. La borne haute reste celle de
+ * l'adulte (pas de source pour l'enfant). Pour tout autre parametre, ou
+ * l'hemoglobine avant 6 mois, aucune valeur pediatrique sourcee n'existe ici :
+ * la plage adulte est appliquee ET le resultat est marque
+ * "referenceAdulteParDefaut" (jamais presente comme une norme pediatrique).
  *
  * ExamenMedical.typeExamen stocke le LIBELLE de l'examen (jamais son code),
  * voir referentiel-examens.ts : ce referentiel indexe donc ses entrees par
@@ -161,21 +169,68 @@ export function parametresPourExamen(typeExamenLibelle: string): ParametreExamen
   return PAR_LIBELLE_EXAMEN.get(typeExamenLibelle)?.parametres ?? null;
 }
 
-function plageNormale(parametre: ParametreExamenReferentiel, sexe: Sexe): { min: number; max: number } {
-  return parametre.normalParSexe?.[sexe] ?? { min: parametre.normalMin, max: parametre.normalMax };
+/** Age en mois entiers revolus a une date de reference (jamais negatif). */
+export function ageEnMois(dateNaissance: Date, dateReference: Date): number {
+  let mois =
+    (dateReference.getFullYear() - dateNaissance.getFullYear()) * 12 +
+    (dateReference.getMonth() - dateNaissance.getMonth());
+  if (dateReference.getDate() < dateNaissance.getDate()) mois -= 1;
+  return Math.max(0, mois);
+}
+
+const AGE_ADULTE_MOIS = 15 * 12;
+
+/**
+ * Limite basse de l'hemoglobine (g/dL) pour un enfant, seuils OMS 2011 de
+ * diagnostic de l'anemie ; null hors de 6 a 179 mois (pas de seuil OMS
+ * dans ce module : voir l'en-tete du fichier).
+ */
+function limiteBasseHemoglobineEnfant(ageMois: number): number | null {
+  if (ageMois >= 6 && ageMois < 60) return 11.0;
+  if (ageMois >= 60 && ageMois < 144) return 11.5;
+  if (ageMois >= 144 && ageMois < AGE_ADULTE_MOIS) return 12.0;
+  return null;
+}
+
+function plageNormale(
+  parametre: ParametreExamenReferentiel,
+  sexe: Sexe,
+  ageMois: number | null
+): { min: number; max: number; referenceAdulteParDefaut: boolean } {
+  const adulte = parametre.normalParSexe?.[sexe] ?? { min: parametre.normalMin, max: parametre.normalMax };
+
+  if (ageMois === null || ageMois >= AGE_ADULTE_MOIS) {
+    return { ...adulte, referenceAdulteParDefaut: false };
+  }
+
+  if (parametre.code === "HEMOGLOBINE") {
+    const limiteEnfant = limiteBasseHemoglobineEnfant(ageMois);
+    if (limiteEnfant !== null) {
+      return { min: limiteEnfant, max: adulte.max, referenceAdulteParDefaut: false };
+    }
+  }
+
+  return { ...adulte, referenceAdulteParDefaut: true };
+}
+
+export interface EvaluationParametre {
+  indicateur: Indicateur;
+  /** Vrai si le patient a moins de 15 ans et que la plage adulte a ete appliquee faute de valeur pediatrique sourcee. */
+  referenceAdulteParDefaut: boolean;
 }
 
 /**
- * Calcule l'indicateur (N/L/H/LL/HH) d'une valeur pour un parametre et un
- * sexe donnes. Retourne null si la valeur est hors des limites
+ * Evalue une valeur pour un parametre, un sexe et un age (en mois, null si
+ * inconnu : plage adulte). Retourne null si la valeur est hors des limites
  * physiologiquement possibles (RG-LAB-20 : a rejeter, jamais a afficher avec
  * un indicateur).
  */
-export function calculerIndicateur(
+export function evaluerParametre(
   codeParametre: string,
   valeur: number,
-  sexe: Sexe
-): Indicateur | null {
+  sexe: Sexe,
+  ageMois: number | null = null
+): EvaluationParametre | null {
   const parametre = PAR_CODE_PARAMETRE.get(codeParametre);
   if (!parametre) return null;
 
@@ -183,13 +238,26 @@ export function calculerIndicateur(
     return null;
   }
 
-  const { min, max } = plageNormale(parametre, sexe);
+  const { min, max, referenceAdulteParDefaut } = plageNormale(parametre, sexe, ageMois);
 
-  if (valeur < parametre.critiqueMin) return "LL";
-  if (valeur < min) return "L";
-  if (valeur <= max) return "N";
-  if (valeur <= parametre.critiqueMax) return "H";
-  return "HH";
+  let indicateur: Indicateur;
+  if (valeur < parametre.critiqueMin) indicateur = "LL";
+  else if (valeur < min) indicateur = "L";
+  else if (valeur <= max) indicateur = "N";
+  else if (valeur <= parametre.critiqueMax) indicateur = "H";
+  else indicateur = "HH";
+
+  return { indicateur, referenceAdulteParDefaut };
+}
+
+/** Indicateur seul (N/L/H/LL/HH), ou null si la valeur est hors des limites physiologiquement possibles. */
+export function calculerIndicateur(
+  codeParametre: string,
+  valeur: number,
+  sexe: Sexe,
+  ageMois: number | null = null
+): Indicateur | null {
+  return evaluerParametre(codeParametre, valeur, sexe, ageMois)?.indicateur ?? null;
 }
 
 /** true si la valeur est dans les limites physiologiquement possibles du parametre (RG-LAB-20). */
