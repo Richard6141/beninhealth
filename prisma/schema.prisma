@@ -695,6 +695,38 @@ model PreferenceNotification {
   @@schema("public")
 }
 
+// Correspond a F-NOT-02 du pack ("Envoi de SMS, adaptateur") : boite
+// d'envoi simulee ("sms_outbox" dans le pack), remplie par
+// OutboxSmsProvider (src/modules/notification/sms/provider.ts). Aucun
+// fournisseur SMS reel dans ce depot (HttpSmsProvider est P2 dans le pack
+// lui-meme) : chaque envoi est reellement ecrit ici et consultable
+// (/app/ministere/sms), mais aucun SMS n'atteint reellement un telephone.
+// RG-NOT-02 : le champ `texte` est deja forme (prefixe "BHIP : ", 160
+// caracteres maximum, translitteration) au moment de l'ecriture, jamais
+// reforme a la lecture. `destinataire` est le numero complet (necessaire
+// pour un futur vrai fournisseur) : seul l'affichage (ecran /dev) le
+// masque, jamais la valeur stockee.
+model EnvoiSms {
+  id             String    @id @default(cuid())
+  destinataire   String
+  texte          String
+  // rendez_vous | resultats_documents | traitements | acces_dossier |
+  // informations_generales | securite | codes (les 7 categories de
+  // src/modules/notification/categories.ts, y compris les 2 verrouillees :
+  // un envoi peut concerner une categorie sans preference modifiable).
+  categorie      String
+  // simule | differe (RG-NOT-04 : SMS non urgent envoye entre 21h et 7h,
+  // reporte a 7h00 - la remise effective a 7h n'est pas automatisee dans ce
+  // depot, aucune tache planifiee fiable, voir limite documentee dans
+  // src/modules/notification/sms/envoyer.ts).
+  statut         String    @default("simule")
+  dateProgrammee DateTime?
+  modele         String?
+  cout           Float?
+  dateEnvoi      DateTime  @default(now())
+  @@schema("public")
+}
+
 // Correspond a F-CLI-11 du pack : vaccination administree en etablissement
 // (calendrier PEV, section 18.4). Immuable une fois enregistree (RG-CLI-100) :
 // une erreur de saisie se corrige par un retrait motive, jamais une

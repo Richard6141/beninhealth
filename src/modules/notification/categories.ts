@@ -27,6 +27,9 @@ export type CategorieNotification =
   | "acces_dossier"
   | "informations_generales";
 
+/** Categories RG-NOT-10 (verrouillees) : incluses ici pour F-NOT-02 (RG-NOT-04 : jamais differees), pas pour une preference modifiable. */
+export type CategorieVerrouillee = "securite" | "codes";
+
 export interface DefinitionCategorieNotification {
   code: CategorieNotification;
   libelle: string;
@@ -62,12 +65,14 @@ export const CATEGORIES_MODIFIABLES: DefinitionCategorieNotification[] = [
 ];
 
 /** Catégories RG-NOT-10 : jamais désactivables, aucune ligne en base, toujours affichées verrouillées. */
-export const CATEGORIES_VERROUILLEES = [
+export const CATEGORIES_VERROUILLEES: { code: CategorieVerrouillee; libelle: string; description: string }[] = [
   {
+    code: "securite",
     libelle: "Sécurité",
     description: "Connexion, mot de passe, accès d'urgence à votre dossier.",
   },
   {
+    code: "codes",
     libelle: "Codes",
     description: "Codes de vérification (connexion, partage de dossier).",
   },

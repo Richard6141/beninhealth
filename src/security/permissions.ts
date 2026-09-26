@@ -172,6 +172,10 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     'read:referentiel_vaccinal',
     'create:referentiel_vaccinal',
     'update:referentiel_vaccinal',
+    // F-NOT-02 : boite d'envoi SMS simulee, consultable et testable (voir
+    // src/modules/notification/sms/dev.ts).
+    'read:envoi_sms',
+    'create:envoi_sms',
   ]),
 };
 
