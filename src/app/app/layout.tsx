@@ -205,6 +205,11 @@ const navigationLaboratoire: ElementNavigation[] = [
  */
 const navigationAdminEtablissement: ElementNavigation[] = [
   { label: "Tableau de bord", href: "/app/etablissement", icon: iconeTableauDeBord },
+  {
+    label: "File du jour",
+    href: "/app/etablissement/file-du-jour",
+    icon: <CalendarClock size={tailleIconeNav} aria-hidden="true" />,
+  },
 ];
 
 /** Ministere : SON PROPRE tableau de bord ("/app/ministere", indicateurs nationaux agreges, voir Phase 6). */

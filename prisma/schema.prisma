@@ -279,6 +279,14 @@ model RendezVous {
   motif           String
   statut          String    @default("demande")
   dateCreation    DateTime  @default(now())
+  // F-RDV-04/05 du pack (RG-RDV-33/40) : horodatage de l'arrivee, null tant
+  // que le patient n'est pas arrive. Distingue confirme-pas-arrive
+  // d'arrive-en-attente sans nouveau modele "Visite" (perimetre reduit
+  // documente dans src/modules/facility/file-du-jour.ts). Le statut
+  // "absent" (nouvelle valeur possible de statut, toujours une chaine
+  // libre ici) est pose automatiquement par la tache planifiee du meme
+  // module quand l'heure est depassee de plus d'1h sans arrivee.
+  heureArrivee              DateTime?
 
   consultation Consultation?
   @@schema("public")

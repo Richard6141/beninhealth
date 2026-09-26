@@ -151,6 +151,11 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     'delete:professionnel_sante',
     'read:journal_audit',
     'create:revue_acces_urgence',
+    // F-RDV-04/05 : file du jour et enregistrement de l'arrivee (role
+    // RECEPTIONIST absent de ce depot, route vers admin_etablissement, voir
+    // src/modules/facility/file-du-jour.ts).
+    'read:rendez_vous',
+    'update:rendez_vous',
   ]),
 
   admin_national: new Set<Permission>([
