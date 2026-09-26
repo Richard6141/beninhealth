@@ -199,7 +199,7 @@ function FicheCompte({ fiche }: { fiche: Extract<FicheVerification, { type: "com
     >
       <div className="grid gap-4 sm:grid-cols-2">
         <TuileInfo icon={Stethoscope} label="Rôle" value={libellesRole[fiche.role]} />
-        <TuileInfo icon={Mail} label="Email" value={fiche.email} />
+        {fiche.email ? <TuileInfo icon={Mail} label="Email" value={fiche.email} /> : null}
       </div>
     </Card>
   );

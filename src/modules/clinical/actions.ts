@@ -902,13 +902,46 @@ export async function getHistoriquePatient(
  * deja present cote client, issu du meme chargement de page) : uniquement de
  * la journalisation, donc pas de re-verification du consentement ici.
  */
+async function patientIdDeLElementDHistorique(type: string, id: string): Promise<string | null> {
+  switch (type) {
+    case "consultation":
+      return (await prisma.consultation.findUnique({ where: { id }, select: { patientId: true } }))?.patientId ?? null;
+    case "prescription":
+      return (await prisma.prescription.findUnique({ where: { id }, select: { patientId: true } }))?.patientId ?? null;
+    case "examen":
+      return (await prisma.examenMedical.findUnique({ where: { id }, select: { patientId: true } }))?.patientId ?? null;
+    case "suivi_communautaire":
+      return (await prisma.suiviCommunautaire.findUnique({ where: { id }, select: { patientId: true } }))?.patientId ?? null;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Trace l'ouverture du detail d'un element de l'historique (RG-CLI-80). Ecrit
+ * seulement si l'element existe ET si l'appelant a une base d'acces valide sur
+ * son patient : sinon n'importe quelle session pourrait fabriquer de fausses
+ * lignes "detail ouvert" dans le "Qui a consulte mon dossier" d'un tiers.
+ */
 export async function journaliserOuvertureDetailHistoriqueAction(
   type: TypeEvenementHistorique,
   id: string
 ): Promise<void> {
   const session = await getSession();
 
-  if (!session) {
+  if (!session || typeof id !== "string" || id.length === 0 || id.length > 64) {
+    return;
+  }
+
+  const professionnel = await professionnelDeLaSessionCourante();
+
+  if (!professionnel) {
+    return;
+  }
+
+  const patientId = await patientIdDeLElementDHistorique(type, id);
+
+  if (!patientId || !(await accesPatientAutorise(patientId, professionnel, session.userId))) {
     return;
   }
 
@@ -984,11 +1017,30 @@ export async function getConsultationsDuProfessionnel(): Promise<ConsultationRes
  * soignants - exclu explicitement ici.
  */
 export async function getConsultationsDeLEtablissement(): Promise<ConsultationResume[]> {
-  const professionnel = await professionnelDeLaSessionCourante();
+  const session = await getSession();
+
+  // Seuls les soignants (medecin, infirmier) : un compte d'administration rattache
+  // au meme etablissement n'a aucune raison de lire des constantes et des
+  // conclusions nominatives.
+  if (!session || !session.roles.some((role) => role === "infirmier" || role === "medecin")) {
+    return [];
+  }
+
+  const professionnel = await prisma.professionnelSante.findUnique({ where: { userId: session.userId } });
 
   if (!professionnel) {
     return [];
   }
+
+  // Lecture de donnees de sante nominatives sans consentement individuel : au
+  // minimum, elle laisse une trace (RG-CLI-31, RG-ACC-60).
+  await journaliser({
+    utilisateurId: session.userId,
+    action: "consultation_liste_etablissement",
+    donneeConcernee: `etablissement:${professionnel.etablissementId}`,
+    adresseTechnique: await adresseTechniqueCourante(),
+    justification: "Liste des consultations validees de l'etablissement (suivi par un soignant).",
+  });
 
   const consultations = await prisma.consultation.findMany({
     where: {
@@ -1018,7 +1070,8 @@ export async function getConsultationsDeLEtablissement(): Promise<ConsultationRe
     poidsKg: consultation.poidsKg,
     tailleCm: consultation.tailleCm,
     glycemieGL: consultation.glycemieGL,
-    observations: consultation.observations,
+    // Notes reservees du medecin : jamais renvoyees dans cette liste transversale.
+    observations: "",
     conclusion: consultation.conclusion,
     statut: consultation.statut,
     professionnelNomComplet: nomCompletProfessionnel(consultation.professionnel.user),

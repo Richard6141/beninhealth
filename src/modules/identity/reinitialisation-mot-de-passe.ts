@@ -35,6 +35,18 @@ import { prisma } from "@/lib/prisma";
 import { getEnv } from "@/lib/env";
 import { envoyerEmail } from "@/lib/mail";
 import { journaliser } from "@/modules/audit/journaliser";
+import { enregistrerEvenement, limiteAtteinte, verifierEtIncrementerDebit } from "@/lib/limite-debit";
+import { adresseDeLaRequete } from "./limitation-connexion";
+
+const UNE_HEURE_MS = 60 * 60 * 1000;
+const QUINZE_MINUTES_MS = 15 * 60 * 1000;
+const DEMANDES_MAX_PAR_COMPTE_PAR_HEURE = 3;
+const DEMANDES_MAX_PAR_ADRESSE_PAR_HEURE = 20;
+const ECHECS_MAX_PAR_COMPTE_PAR_QUINZE_MINUTES = 5;
+
+function cleEchecsReinitialisation(email: string): string {
+  return `reinitialisation:echecs:${email.trim().toLowerCase()}`;
+}
 
 const ROUNDS_BCRYPT = 12;
 const DUREE_VALIDITE_CODE_MINUTES = 10;
@@ -186,6 +198,19 @@ export async function demanderReinitialisationMotDePasseAction(
 
   const { email } = validation.data;
 
+  // Au-dela de 3 demandes par heure pour un compte (20 pour une adresse), rien
+  // n'est envoye et la reponse reste identique : sinon cette page servirait a
+  // inonder de courriels la boite d'un tiers.
+  const adresse = await adresseDeLaRequete();
+  const autorise =
+    verifierEtIncrementerDebit(`reinitialisation:demande:compte:${email.toLowerCase()}`, DEMANDES_MAX_PAR_COMPTE_PAR_HEURE, UNE_HEURE_MS).autorise &&
+    (adresse === null ||
+      verifierEtIncrementerDebit(`reinitialisation:demande:adresse:${adresse}`, DEMANDES_MAX_PAR_ADRESSE_PAR_HEURE, UNE_HEURE_MS).autorise);
+
+  if (!autorise) {
+    return { message: MESSAGE_GENERIQUE_DEMANDE, soumis: true };
+  }
+
   try {
     const utilisateur = await prisma.user.findUnique({
       where: { email },
@@ -256,16 +281,24 @@ export async function reinitialiserMotDePasseAction(
 
   const { email, code, nouveauMotDePasse } = validation.data;
 
+  // 5 echecs en 15 minutes : le code a 6 chiffres ne doit pas se deviner par
+  // essais repetes. Meme message que tout autre echec (aucune fuite).
+  if (limiteAtteinte(cleEchecsReinitialisation(email), ECHECS_MAX_PAR_COMPTE_PAR_QUINZE_MINUTES, QUINZE_MINUTES_MS)) {
+    return { error: MESSAGE_GENERIQUE_ECHEC_RESET, success: false };
+  }
+
   try {
     const utilisateur = await prisma.user.findUnique({ where: { email }, include: { roles: true } });
 
     if (!utilisateur || utilisateur.statut !== "actif") {
+      enregistrerEvenement(cleEchecsReinitialisation(email), QUINZE_MINUTES_MS);
       return { error: MESSAGE_GENERIQUE_ECHEC_RESET, success: false };
     }
 
     const codeValide = await verifierEtConsommerCodeReinitialisation(utilisateur.id, code);
 
     if (!codeValide) {
+      enregistrerEvenement(cleEchecsReinitialisation(email), QUINZE_MINUTES_MS);
       return { error: MESSAGE_GENERIQUE_ECHEC_RESET, success: false };
     }
 

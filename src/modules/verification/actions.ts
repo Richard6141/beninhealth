@@ -142,6 +142,11 @@ export async function getMonQrCode(): Promise<{ url: string; dataUrl: string } |
  * Fiche de verification d'un compte, apres scan de son QR code. Voir la
  * docstring de module pour les regles d'acces exactes par type de compte.
  */
+// Types de consentement qui ouvrent la fiche de verification (groupe sanguin,
+// allergies, contacts d'urgence) : un consentement limite a un autre perimetre
+// (documents, examens...) n'y donne pas acces.
+const TYPES_ACCES_FICHE_VERIFICATION = ["dossier_complet", "consultations", "urgence"];
+
 export async function getFicheVerification(cibleUserId: string): Promise<FicheVerification | null> {
   const session = await getSession();
   if (!session) return null;
@@ -175,7 +180,8 @@ export async function getFicheVerification(cibleUserId: string): Promise<FicheVe
       if (
         !consentement ||
         consentement.statut !== "actif" ||
-        (consentement.dateFin !== null && consentement.dateFin <= new Date())
+        (consentement.dateFin !== null && consentement.dateFin <= new Date()) ||
+        !TYPES_ACCES_FICHE_VERIFICATION.includes(consentement.typeAcces)
       ) {
         return null;
       }
@@ -227,6 +233,8 @@ export async function getFicheVerification(cibleUserId: string): Promise<FicheVe
     type: "compte",
     nomComplet: nomComplet(cible),
     role: rolePrincipal,
-    email: cible.email,
+    // L'adresse e-mail d'un compte administratif n'est visible que par lui-meme
+    // et par l'administration nationale, pas par tout utilisateur connecte.
+    email: cible.id === session.userId || session.roles.includes("admin_national") ? cible.email : "",
   };
 }
