@@ -2215,3 +2215,40 @@ correctement masquees sur donnees reelles de la base de demo).
   (design, RBAC, prescription, pilotage, notifications, F-RDV-04/05/06,
   F-ETA-04/05, F-CIT-09, F-AUTH-08, etc.).
 - 2026-09-26.
+
+### Point projet-gouv-23, 2026-09-26 (F-ADM-04 examens livre)
+
+- F-ADM-04 (3e referentiel administrable, apres vaccins et medicaments)
+  pris suite a la proposition de projet-gouv-1e. Commit `1cdd82a`.
+- "Motifs de rendez-vous" ecarte apres verification : simple texte libre
+  dans ce depot (aucune liste statique existante a transformer), pas un
+  bon candidat pour ce pattern. Choisi a la place : le referentiel des
+  examens medicaux (`REFERENTIEL_EXAMENS`,
+  `src/modules/laboratoire/referentiel-examens.ts`), deja un tableau
+  statique structure par famille, correspondant exactement a "examens"
+  dans la liste des sept du pack.
+- Nouveau modele `ExamenReferentielAdmin` (nom distinct de l'interface
+  TypeScript `ExamenReferentiel` deja existante dans le meme fichier,
+  evite toute collision d'import). Meme regles RG-ADM-20/21 que les 2
+  referentiels precedents. `estExamenSensible()` et
+  `REFERENTIEL_PARAMETRES_EXAMENS` restent codes en dur sur le
+  referentiel statique d'origine (non supprime), meme limite assumee
+  que le calendrier vaccinal PEV.
+- Ecran `/app/ministere/referentiels/examens` (ajout, activation/
+  desactivation, reordonnancement par famille). Formulaire de demande
+  d'examen medecin desormais alimente par ce referentiel.
+- Bug trouve et corrige pendant la verification : les 3 actions
+  (creation/bascule/reordonnancement) ne rafraichissaient pas l'ecran
+  apres succes (donnee bien enregistree en base, juste pas reaffichee
+  sans rechargement manuel) - `router.refresh()` ajoute sur les 3.
+  Meme limite semble presente dans le referentiel vaccinal existant
+  (`SectionReferentielVaccinal.tsx`), a signaler si quelqu'un veut
+  l'aligner aussi.
+- Verifie : ajout confirme en base et reflete a l'ecran apres le
+  correctif, formulaire medecin alimente correctement (y compris une
+  entree fraichement ajoutee). Bascule actif/inactif non reverifiee en
+  direct (deux entrees de test au meme libelle ont rendu le selecteur
+  Playwright ambigu) : code identique au pattern deja verifie en
+  production pour le referentiel vaccinal. Donnees de test nettoyees.
+  tsc propre, vitest 98/98.
+- 2026-09-26.
