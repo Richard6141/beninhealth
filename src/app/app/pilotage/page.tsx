@@ -8,6 +8,8 @@ import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { CarteIndicateurNational, texteValeurMasquee } from "./CarteIndicateurNational";
 import { GraphiqueEvolutionHebdomadaire } from "./GraphiqueEvolutionHebdomadaire";
+import { SectionExportPilotage } from "./SectionExportPilotage";
+import { verifierExportPilotageNationalAction } from "@/modules/pilotage/exports";
 
 const PERIODES: { id: PeriodeTableauBord; label: string }[] = [
   { id: "aujourdhui", label: "Aujourd'hui" },
@@ -192,6 +194,11 @@ export default async function PilotagePage({ searchParams }: PilotagePageProps) 
           <Card
             title="Évolution (12 dernières semaines)"
             description="Consultations et cas de paludisme, indépendamment de la période sélectionnée ci-dessus. Les semaines de 1 à 4 cas sont affichées « < 5 »."
+            actions={
+              <Link href="/app/pilotage/tendances" className="text-[13px] font-semibold text-accent hover:underline">
+                Tendances par territoire (F-PIL-04)
+              </Link>
+            }
           >
             <GraphiqueEvolutionHebdomadaire donnees={vue.evolutionHebdomadaire} />
           </Card>
@@ -228,9 +235,12 @@ export default async function PilotagePage({ searchParams }: PilotagePageProps) 
             </div>
           </Card>
 
-          {/* 6. Mention permanente */}
+          {/* 6. Export (F-PIL-05) */}
+          <SectionExportPilotage portee="national" periode={periode} action={verifierExportPilotageNationalAction} />
+
+          {/* 7. Mention permanente */}
           <p className="text-center text-[12px] text-encre-attenuee">
-            Données agrégées et anonymisées — valeurs inférieures à 5 masquées — mise à jour :{" "}
+            Données agrégées et anonymisées (valeurs inférieures à 5 masquées), mise à jour :{" "}
             {vue.dateCalculPlusRecente ? vue.dateCalculPlusRecente.toLocaleString("fr-FR") : "aucun agrégat calculé"}.
           </p>
         </>

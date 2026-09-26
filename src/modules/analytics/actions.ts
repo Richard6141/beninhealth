@@ -67,6 +67,18 @@ export interface StatistiquesNationales {
 /** Statuts possibles d'un RendezVous (voir prisma/schema.prisma). Ordre d'affichage fixe. */
 const STATUTS_RENDEZ_VOUS = ["demande", "confirme", "termine", "annule"] as const;
 
+/**
+ * Filtre Prisma commun a toute agregation de Consultation dans ce module :
+ * exclut les brouillons (jamais valides par le medecin) et les consultations
+ * retirees pour erreur de saisie (RG-CLI-70 du pack) qui restent visibles a
+ * l'ecran (barrees) mais doivent etre exclues des statistiques, comme deja
+ * documente sur le champ saisieParErreur dans prisma/schema.prisma.
+ */
+const CONSULTATIONS_VALIDES: Prisma.ConsultationWhereInput = {
+  statut: { not: "brouillon" },
+  saisieParErreur: false,
+};
+
 /** Une plage de mois calendaire, avec sa cle d'affichage "AAAA-MM". */
 interface PlageMois {
   debut: Date;
@@ -180,7 +192,11 @@ async function calculerRepartitionParEtablissement(): Promise<RepartitionEtablis
   const [etablissements, consultationsParEtablissement, rendezVousParEtablissement, professionnelsParEtablissement] =
     await Promise.all([
       prisma.etablissementSanitaire.findMany({ orderBy: { nom: "asc" } }),
-      prisma.consultation.groupBy({ by: ["etablissementId"], _count: { _all: true } }),
+      prisma.consultation.groupBy({
+        by: ["etablissementId"],
+        where: CONSULTATIONS_VALIDES,
+        _count: { _all: true },
+      }),
       prisma.rendezVous.groupBy({ by: ["etablissementId"], _count: { _all: true } }),
       prisma.professionnelSante.groupBy({ by: ["etablissementId"], _count: { _all: true } }),
     ]);
@@ -241,12 +257,12 @@ export async function getStatistiquesEtablissement(): Promise<StatistiquesEtabli
 
   const [totalConsultations, totalPrescriptions, nombreProfessionnels, rendezVousParStatut, consultationsRecentes] =
     await Promise.all([
-      prisma.consultation.count({ where: { etablissementId } }),
+      prisma.consultation.count({ where: { etablissementId, ...CONSULTATIONS_VALIDES } }),
       prisma.prescription.count({ where: { consultation: { etablissementId } } }),
       prisma.professionnelSante.count({ where: { etablissementId } }),
       rendezVousParStatutPour({ etablissementId }),
       prisma.consultation.findMany({
-        where: { etablissementId, date: { gte: plages[0].debut } },
+        where: { etablissementId, date: { gte: plages[0].debut }, ...CONSULTATIONS_VALIDES },
         select: { date: true },
       }),
     ]);
@@ -295,12 +311,12 @@ export async function getStatistiquesNationales(): Promise<StatistiquesNationale
     prisma.etablissementSanitaire.count(),
     prisma.professionnelSante.count(),
     prisma.patient.count(),
-    prisma.consultation.count(),
+    prisma.consultation.count({ where: CONSULTATIONS_VALIDES }),
     prisma.prescription.count(),
     calculerRepartitionParEtablissement(),
     rendezVousParStatutPour({}),
     prisma.consultation.findMany({
-      where: { date: { gte: plages[0].debut } },
+      where: { date: { gte: plages[0].debut }, ...CONSULTATIONS_VALIDES },
       select: { date: true },
     }),
   ]);

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
+import Link from "next/link";
 import { Pill, Stethoscope, Users } from "lucide-react";
 import {
   listPersonnelEtablissement,
@@ -15,6 +16,8 @@ import { Badge, type BadgeTone } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { GraphiqueConsultationsMensuelles } from "./GraphiqueConsultationsMensuelles";
 import { SectionPilotage } from "./SectionPilotage";
+import { SectionExportPilotage } from "../pilotage/SectionExportPilotage";
+import { verifierExportPilotageEtablissementAction } from "@/modules/pilotage/exports";
 import { ActionsPersonnel } from "./ActionsPersonnel";
 import { FormulaireAjoutPersonnel } from "./FormulaireAjoutPersonnel";
 import { FormulaireChangementMotDePasse } from "./FormulaireChangementMotDePasse";
@@ -233,6 +236,12 @@ function SectionPersonnel({ personnel }: { personnel: MembrePersonnel[] }) {
                     scope="col"
                     className="border-b border-bordure px-3 py-2 text-left font-semibold text-encre-secondaire"
                   >
+                    Agenda
+                  </th>
+                  <th
+                    scope="col"
+                    className="border-b border-bordure px-3 py-2 text-left font-semibold text-encre-secondaire"
+                  >
                     Compte
                   </th>
                   <th
@@ -265,6 +274,14 @@ function SectionPersonnel({ personnel }: { personnel: MembrePersonnel[] }) {
                       </td>
                       <td className="border-b border-bordure px-3 py-2 text-encre-secondaire">
                         {membre.email}
+                      </td>
+                      <td className="border-b border-bordure px-3 py-2">
+                        <Link
+                          href={`/app/etablissement/disponibilites/${membre.userId}`}
+                          className="text-[13px] font-semibold text-accent hover:underline"
+                        >
+                          Disponibilités
+                        </Link>
                       </td>
                       <td className="border-b border-bordure px-3 py-2">
                         <Badge tone={membre.statutCompte === "actif" ? "good" : membre.statutCompte === "suspendu" ? "warning" : "neutral"}>
@@ -341,7 +358,10 @@ export default async function EtablissementPage({ searchParams }: EtablissementP
             Votre compte administrateur n&apos;est actuellement rattaché à aucun établissement de santé.
           </Alert>
         ) : (
-          <SectionPilotage tableauBord={tableauBordPilotage} />
+          <>
+            <SectionPilotage tableauBord={tableauBordPilotage} />
+            <SectionExportPilotage portee="etablissement" periode={periode} action={verifierExportPilotageEtablissementAction} />
+          </>
         )}
       </section>
 
