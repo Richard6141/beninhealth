@@ -3,10 +3,10 @@
  * LECTURE des agregats (jamais au stockage : AgregatQuotidien garde toujours
  * la valeur exacte, RG-PIL-01, pour permettre un recalcul correct plus tard).
  *
- * RG-PIL-02 — une valeur de 1 a 4 est affichee/exportee "< 5" ; un taux
+ * RG-PIL-02 : une valeur de 1 a 4 est affichee/exportee "< 5" ; un taux
  * calcule sur un denominateur < 20 est affiche "effectif insuffisant" ; 0 est
  * affiche 0.
- * RG-PIL-03 — masquage complementaire : dans un tableau avec total, si une
+ * RG-PIL-03 : masquage complementaire : dans un tableau avec total, si une
  * seule cellule d'une ligne est masquee, une deuxieme cellule (la plus
  * petite parmi celles encore visibles) DOIT aussi etre masquee, pour
  * empecher de retrouver la valeur masquee par soustraction du total.
