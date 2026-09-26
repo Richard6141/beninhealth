@@ -1089,6 +1089,10 @@ export async function annulerPrescriptionAction(
       return { error: "Cette prescription est deja annulee.", success: false };
     }
 
+    if (prescription.statut === "arretee") {
+      return { error: "Cette prescription a deja ete arretee.", success: false };
+    }
+
     if (prescription.delivrances.length > 0) {
       return {
         error:
@@ -1146,12 +1150,11 @@ export async function annulerPrescriptionAction(
  * F-PRE-05 du pack, "Arreter" : reservee au medecin auteur, possible
  * seulement apres une delivrance partielle reelle (statut courant
  * "delivree_partiellement"). Interrompt les lignes restantes en faisant
- * passer la prescription au meme statut terminal "annulee" que "Annuler"
- * (ce depot ne modelise pas de statut "arretee" distinct : la consequence
- * pratique est identique, plus aucune delivrance possible ensuite, voir
- * STATUTS_EN_ATTENTE_DE_DELIVRANCE plus bas) ; seul le type d'evenement
- * trace ("arret" plutot que "annulation") et le message au patient
- * distinguent les deux dans l'historique.
+ * passer la prescription au statut terminal "arretee", distinct de
+ * "annulee" (une ordonnance annulee n'a jamais ete delivree, une ordonnance
+ * arretee l'a ete en partie) : plus aucune delivrance possible ensuite, voir
+ * STATUTS_EN_ATTENTE_DE_DELIVRANCE plus bas. Les ordonnances arretees avant
+ * le 2026-09-26 restent stockees "annulee" (evenement "arret" en historique).
  */
 export async function arreterPrescriptionAction(
   prevState: PrescriptionActionState,
@@ -1207,7 +1210,7 @@ export async function arreterPrescriptionAction(
     const adresseTechnique = await adresseTechniqueCourante();
 
     await prisma.$transaction(async (tx) => {
-      await tx.prescription.update({ where: { id: prescription.id }, data: { statut: "annulee" } });
+      await tx.prescription.update({ where: { id: prescription.id }, data: { statut: "arretee" } });
 
       await tx.evenementPrescription.create({
         data: {
@@ -2108,7 +2111,9 @@ export async function delivrerPrescriptionAction(
               ? "Cette prescription a deja ete entierement delivree."
               : prescriptionActuelle.statut === "annulee"
                 ? "Cette prescription est annulee et ne peut pas etre delivree."
-                : "Cette prescription n'est pas dans un etat permettant une delivrance.",
+                : prescriptionActuelle.statut === "arretee"
+                  ? "Cette prescription a ete arretee par le medecin et ne peut plus etre delivree."
+                  : "Cette prescription n'est pas dans un etat permettant une delivrance.",
         };
       }
 
@@ -2419,7 +2424,17 @@ export async function annulerDelivranceAction(
       const aucuneLivraison = delivrance.prescription.lignes.every(
         (ligne) => (livreParLigne.get(ligne.id) ?? 0) === 0
       );
-      const nouveauStatut = toutesCompletes ? "delivree" : aucuneLivraison ? "validee" : "delivree_partiellement";
+      // Une ordonnance annulee ou arretee par le medecin garde son statut : corriger
+      // une delivrance ne doit jamais la rendre a nouveau delivrable.
+      const statutFigeParLeMedecin =
+        delivrance.prescription.statut === "annulee" || delivrance.prescription.statut === "arretee";
+      const nouveauStatut = statutFigeParLeMedecin
+        ? delivrance.prescription.statut
+        : toutesCompletes
+          ? "delivree"
+          : aucuneLivraison
+            ? "validee"
+            : "delivree_partiellement";
 
       await tx.prescription.update({
         where: { id: delivrance.prescriptionId },

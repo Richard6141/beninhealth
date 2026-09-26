@@ -52,5 +52,8 @@ export function statutPrescriptionAffichage(
   if (prescription.statut === "annulee") {
     return { texte: "Annulée", tone: "critical" };
   }
+  if (prescription.statut === "arretee") {
+    return { texte: "Arrêtée", tone: "critical" };
+  }
   return { texte: prescription.statut, tone: "neutral" };
 }

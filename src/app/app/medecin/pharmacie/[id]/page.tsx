@@ -20,6 +20,7 @@ function libelleEtTonStatut(statut: string): { texte: string; tone: BadgeTone } 
   if (statut === "delivree_partiellement") return { texte: "Délivrée en partie", tone: "warning" };
   if (statut === "delivree") return { texte: "Délivrée", tone: "good" };
   if (statut === "annulee") return { texte: "Annulée", tone: "critical" };
+  if (statut === "arretee") return { texte: "Arrêtée", tone: "critical" };
   return { texte: statut, tone: "neutral" };
 }
 

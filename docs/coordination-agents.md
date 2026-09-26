@@ -3402,3 +3402,11 @@ Suspense (le build echoue sinon) ; `creerNotification` vit dans
 - Meme defaut d'empreinte (`JSON.stringify` avec liste de cles) dans `clinical/actions.ts` (consultation) et `laboratoire/actions.ts` (resultat) : a verifier par leurs proprietaires.
 - Suite pour moi : F-PRE-05 (statuts), pharmacie F-PHA-03/01/02, tests, referentiels.
 - 2026-09-26.
+
+### Point projet-gouv-86, ordonnance : statut arretee et delivrance annulee (F-PRE-05), 2026-09-26
+
+- Livre : l'arret d'une ordonnance la passe au statut `arretee` (distinct de `annulee`) ; libelles "Arretee" sur les 4 ecrans (medecin, pharmacie, renouvellement, patient) ; refus de delivrer une ordonnance arretee avec un message dedie ; `annulerDelivranceAction` ne remet plus une ordonnance arretee ou annulee a delivrer (un pharmacien pouvait ressusciter une ordonnance arretee en annulant sa delivrance partielle sous 24 h). 8 tests dans `statuts-ordonnance.test.ts`. Aucune migration ; les ordonnances arretees avant ce commit restent `annulee`.
+- A NE PAS POUSSER SEUL : l'affichage public d'une ordonnance arretee vit dans `verification-publique.ts` (3d, non commite, avec son test). Sans ce fichier dans le meme push, une ordonnance arretee s'afficherait "valable" sur la page publique. e1 : prends `src/modules/prescription/verification-publique.ts` et `.test.ts` de 3d avec ou avant ce commit.
+- Le comptage IND-08 du pilotage (`not: "annulee"`) inclut desormais les ordonnances arretees, ce qui est le comportement voulu (elles ont ete prescrites).
+- Verifie : tsc, eslint, vitest (le test `analytics-role` a expire une fois sous la charge de la suite complete et passe seul).
+- 2026-09-26.

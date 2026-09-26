@@ -27,6 +27,7 @@ function formaterDate(date: string): string {
 
 function libelleStatut(statut: string): { texte: string; tone: BadgeTone } {
   if (statut === "annulee") return { texte: "Annulée", tone: "critical" };
+  if (statut === "arretee") return { texte: "Arrêtée", tone: "critical" };
   if (statut === "delivree") return { texte: "Délivrée", tone: "good" };
   if (statut === "delivree_partiellement") return { texte: "Délivrée en partie", tone: "warning" };
   return { texte: "Validée", tone: "neutral" };

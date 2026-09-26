@@ -31,6 +31,7 @@ function libelleStatut(statut: string): { texte: string; tone: BadgeTone } {
   if (cle === "delivree_partiellement") return { texte: "Délivrée en partie", tone: "warning" };
   if (cle === "delivree") return { texte: "Délivrée", tone: "good" };
   if (cle === "annulee") return { texte: "Annulée", tone: "critical" };
+  if (cle === "arretee") return { texte: "Arrêtée", tone: "critical" };
   return { texte: statut, tone: "neutral" };
 }
 
