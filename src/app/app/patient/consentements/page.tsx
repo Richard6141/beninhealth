@@ -56,7 +56,7 @@ export default async function ConsentementsPage() {
           <ArrowLeft size={14} aria-hidden="true" />
           Retour au tableau de bord
         </Link>
-        <h1 className="text-[28px] font-black text-encre">
+        <h1 className="text-[28px] font-bold text-titre">
           Gérer mes autorisations d&apos;accès
         </h1>
         <p className="max-w-2xl text-[15px] text-encre-secondaire">

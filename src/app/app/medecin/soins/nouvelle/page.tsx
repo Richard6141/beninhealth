@@ -78,7 +78,7 @@ export default async function NouvellePriseEnChargePage({
         <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-accent">
           Espace infirmier
         </p>
-        <h1 className="text-[28px] font-black text-encre">Prise en charge infirmiere</h1>
+        <h1 className="text-[28px] font-bold text-titre">Prise en charge infirmiere</h1>
         <p className="max-w-2xl text-[15px] text-encre-secondaire">
           Constantes vitales, priorite de tri et note de soins avant la
           consultation medicale.

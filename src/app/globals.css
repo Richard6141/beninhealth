@@ -3,54 +3,74 @@
 :root {
   color-scheme: light;
 
-  --plan: #f4f5f9;
+  /* Neutres (charte institutionnelle stricte, remplace la base "fundlab"). */
+  --plan: #eef2f6;
   --surface: #ffffff;
-  --surface-appui: #eceef5;
-  --encre: #090e1e;
-  --encre-secondaire: #3f4a63;
-  --encre-attenuee: #5c6680;
-  --bordure: #dde0ea;
-  --bordure-forte: #bdc3d5;
+  --surface-appui: #eef2f6;
+  --titre: #0a2a4a;
+  --encre: #1d2530;
+  --encre-secondaire: #525d69;
+  /* Valeur deriveee : la charte ne donne que deux tons de texte (principal,
+     secondaire), celui-ci comble le palier "attenue" (metadonnees, legendes)
+     deja utilise dans le code. A ajuster si une valeur officielle est fournie. */
+  --encre-attenuee: #7c8794;
+  /* La charte ne donne qu'une seule couleur de bordure : les deux paliers
+     historiques ("bordure" / "bordure-forte") sont volontairement fondus sur
+     cette meme valeur plutot que d'en inventer une seconde. */
+  --bordure: #dbe2ea;
+  --bordure-forte: #dbe2ea;
 
-  /* Couleur institutionnelle du ministere de la Sante du Benin : vert du
-     drapeau national, coherent avec le blason du logo officiel. Remplace
-     l'ancien accent marine herite de la base "fundlab". */
-  --accent: #00aa55;
-  --accent-fonce: #00863f;
-  --accent-clair: #00aa5530;
-
-  /* Marine institutionnelle : couleur des boutons primaires (Button,
-     variant="primary") et de l'en-tete de l'espace authentifie, a cote du
-     vert institutionnel utilise pour les liens/icones/badges. */
+  /* Marine : seule couleur d'action de l'interface (boutons, liens, icones
+     actives, anneau de focus, en-tete). Remplace l'ancien vert institutionnel
+     "fundlab" (#00aa55), qui ne subsiste nulle part dans l'interface. */
   --marine: #0a3764;
-  --marine-fonce: #082d52;
-  --marine-clair: #0a376420;
+  --marine-fonce: #082b4f;
+  --marine-clair: #e8eef6;
 
-  --statut-bon: #0ea572;
-  --statut-bon-clair: #0ea57214;
-  --statut-vigilance: #d97706;
-  --statut-vigilance-clair: #d9770617;
-  --statut-critique: #dc2626;
-  --statut-critique-clair: #dc262612;
-  --info: #2563eb;
-  --info-clair: #2563eb12;
+  /* --accent alias --marine : conserve tous les usages existants de bg-accent
+     / text-accent / outline-accent dans l'app (icones, badges, nav active,
+     focus) sans devoir toucher chaque fichier appelant. */
+  --accent: var(--marine);
+  --accent-fonce: var(--marine-fonce);
+  --accent-clair: var(--marine-clair);
 
-  /* Decorative, usage restreint (ex. reflet de la barre de progression) :
-     alignee sur l'accent institutionnel plutot que sur l'ancien turquoise,
-     pour rester coherente avec l'identite verte du ministere. */
-  --marque-turquoise: var(--accent);
-  --marque-turquoise-fonce: var(--accent-fonce);
+  /* Statuts : cinq tons (la charte distingue Alerte de Critique). Les
+     variantes "-clair" ne servent jamais de texte, seulement de fond. */
+  --statut-bon: #287d3c;
+  --statut-bon-clair: #287d3c14;
+  --statut-vigilance: #82540f;
+  --statut-vigilance-clair: #82540f17;
+  --statut-alerte: #b7410e;
+  --statut-alerte-clair: #b7410e16;
+  --statut-critique: #8b1e2d;
+  --statut-critique-clair: #8b1e2d12;
+  --info: #1e5a8a;
+  --info-clair: #1e5a8a12;
 
-  --ombre-carte: 0 1px 2px rgba(20, 20, 20, 0.04);
+  /* Couleurs du drapeau : reservees au filet du bloc d'identite du ministere
+     (Sidebar), jamais utilisees comme accent d'interface ni en bandeau. */
+  --drapeau-vert: #008751;
+  --drapeau-jaune: #fcd116;
+  --drapeau-rouge: #e8112d;
 
-  --radius-carte: 16px;
-  --radius-champ: 8px;
+  /* Aucune ombre : les cartes et panneaux flottants se delimitent par une
+     bordure fine, jamais par une ombre portee. */
+  --ombre-carte: none;
+
+  /* Angles faibles, quatre paliers seulement : 2 px (etiquettes, badges),
+     3 px (controles de formulaire, d'ou le nom historique "champ"), 4 px
+     (cartes, boutons), 6 px (boites flottantes : modales, menus, infobulles). */
+  --radius-badge: 2px;
+  --radius-champ: 3px;
+  --radius-carte: 4px;
+  --radius-flottant: 6px;
 }
 
 @theme inline {
   --color-plan: var(--plan);
   --color-surface: var(--surface);
   --color-surface-appui: var(--surface-appui);
+  --color-titre: var(--titre);
   --color-encre: var(--encre);
   --color-encre-secondaire: var(--encre-secondaire);
   --color-encre-attenuee: var(--encre-attenuee);
@@ -66,14 +86,19 @@
   --color-bon-clair: var(--statut-bon-clair);
   --color-vigilance: var(--statut-vigilance);
   --color-vigilance-clair: var(--statut-vigilance-clair);
+  --color-alerte: var(--statut-alerte);
+  --color-alerte-clair: var(--statut-alerte-clair);
   --color-critique: var(--statut-critique);
   --color-critique-clair: var(--statut-critique-clair);
   --color-info: var(--info);
   --color-info-clair: var(--info-clair);
-  --color-marque-turquoise: var(--marque-turquoise);
-  --color-marque-turquoise-fonce: var(--marque-turquoise-fonce);
-  --radius-carte: 16px;
-  --radius-champ: 8px;
+  --color-drapeau-vert: var(--drapeau-vert);
+  --color-drapeau-jaune: var(--drapeau-jaune);
+  --color-drapeau-rouge: var(--drapeau-rouge);
+  --radius-badge: 2px;
+  --radius-champ: 3px;
+  --radius-carte: 4px;
+  --radius-flottant: 6px;
 }
 
 body {
@@ -82,16 +107,24 @@ body {
 }
 
 /* Titres (h1-h6) et libelles "kicker" en majuscules : police institutionnelle
-   Montserrat. Le corps de texte reste en Roboto, applique par defaut sur le
+   Montserrat, couleur titre dediee (plus sombre que le texte courant) par
+   defaut. Place dans @layer base : une classe Tailwind explicite (ex.
+   text-white sur le titre d'une modale a fond marine) doit rester prioritaire
+   sur cette couleur par defaut, alors qu'une regle hors calque l'aurait
+   emportee sur toutes les utilities malgre leur specificite plus elevee. Le
+   corps de texte est egalement en Montserrat, applique par defaut sur le
    body via next/font dans layout.tsx. */
-h1,
-h2,
-h3,
-h4,
-h5,
-h6,
-.kicker {
-  font-family: var(--font-montserrat), sans-serif;
+@layer base {
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  .kicker {
+    font-family: var(--font-montserrat), sans-serif;
+    color: var(--titre);
+  }
 }
 
 /* Conteneur de page pleine largeur : l'espace applicatif dispose deja d'un
@@ -102,10 +135,12 @@ h6,
   margin-inline: auto;
 }
 
-/* Chiffres alignes : a poser sur toute valeur numerique affichee en colonne
-   ou cote a cote (montants, scores, dates) pour qu'ils ne dansent pas d'une
-   ligne a l'autre. */
+/* Chiffres alignes et police a chasse fixe : a poser sur toute valeur
+   numerique affichee en colonne ou cote a cote (montants, scores, dates), et
+   sur les codes / identifiants / coordonnees GPS, pour qu'ils ne dansent pas
+   d'une ligne a l'autre et se lisent comme des donnees, pas du texte. */
 .chiffres {
+  font-family: var(--font-jetbrains-mono), ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
 }
 
@@ -116,11 +151,10 @@ h6,
 }
 
 /*
-  Animations nommees necessaires aux composants (tiroir de modale, reflet de
-  la barre de progression de navigation, ondulation du squelette de
-  chargement), voir le tableau de mouvement de la base de design. Les
-  utilitaires .anim-* appliquent ces animations ; elles sont toutes coupees
-  d'un bloc plus bas sous prefers-reduced-motion.
+  Animations nommees necessaires aux composants (tiroir de modale, squelette
+  de chargement). Aucun degrade n'est utilise : le squelette pulse en opacite
+  plutot que de faire glisser un degrade, conformement a l'interdiction stricte
+  des degrades. Toutes sont coupees sous prefers-reduced-motion plus bas.
 */
 @keyframes tiroir-droite {
   from {
@@ -140,21 +174,13 @@ h6,
   }
 }
 
-@keyframes reflet-nav {
-  0% {
-    transform: translateX(-120%);
-  }
+@keyframes squelette-pulse {
+  0%,
   100% {
-    transform: translateX(220%);
+    opacity: 1;
   }
-}
-
-@keyframes squelette-onde {
-  0% {
-    background-position: -150% 0;
-  }
-  100% {
-    background-position: 150% 0;
+  50% {
+    opacity: 0.5;
   }
 }
 
@@ -166,12 +192,8 @@ h6,
   animation: tiroir-bas 0.24s ease-out;
 }
 
-.anim-reflet-nav {
-  animation: reflet-nav 1.1s ease-in-out infinite;
-}
-
-.anim-squelette-onde {
-  animation: squelette-onde 1.4s ease-in-out infinite;
+.anim-squelette-pulse {
+  animation: squelette-pulse 1.4s ease-in-out infinite;
 }
 
 /* Mouvement fonctionnel, jamais decoratif : toutes les animations du
@@ -202,6 +224,7 @@ h6,
     --plan: #ffffff;
     --surface: #ffffff;
     --surface-appui: #ffffff;
+    --titre: #000000;
     --encre: #000000;
     --encre-secondaire: #000000;
     --encre-attenuee: #262626;

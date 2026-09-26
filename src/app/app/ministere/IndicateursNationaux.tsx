@@ -26,7 +26,7 @@ function TuileStat({
         <span className="text-[12px] font-semibold uppercase tracking-[0.06em] text-encre-attenuee">
           {label}
         </span>
-        <span className="chiffres text-[20px] font-black text-encre">{value}</span>
+        <span className="chiffres text-[20px] font-bold text-encre">{value}</span>
       </div>
     </div>
   );

@@ -297,7 +297,7 @@ export default async function ConsultationsProfessionnelPage() {
           <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-accent">
             Espace professionnel
           </p>
-          <h1 className="text-[28px] font-black text-encre">
+          <h1 className="text-[28px] font-bold text-titre">
             {estInfirmier ? "Consultations de l'etablissement" : "Mes consultations"}
           </h1>
           <p className="max-w-2xl text-[15px] text-encre-secondaire">

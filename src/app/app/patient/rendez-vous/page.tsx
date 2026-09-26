@@ -57,7 +57,7 @@ export default async function RendezVousPage() {
           <ArrowLeft size={14} aria-hidden="true" />
           Retour au tableau de bord
         </Link>
-        <h1 className="text-[28px] font-black text-encre">Mes rendez-vous</h1>
+        <h1 className="text-[28px] font-bold text-titre">Mes rendez-vous</h1>
         <p className="max-w-2xl text-[15px] text-encre-secondaire">
           Consultez vos rendez-vous à venir et passés, et prenez un nouveau
           rendez-vous auprès d&apos;un établissement de santé.

@@ -236,7 +236,7 @@ export default async function VerificationPage({ params }: VerificationPageProps
         <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-accent">
           Vérification d&apos;identité
         </p>
-        <h1 className="text-[28px] font-black text-encre">{fiche.nomComplet}</h1>
+        <h1 className="text-[28px] font-bold text-titre">{fiche.nomComplet}</h1>
       </header>
 
       {fiche.type === "patient" ? <FichePatient fiche={fiche} /> : null}

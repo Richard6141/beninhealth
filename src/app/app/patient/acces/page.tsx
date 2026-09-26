@@ -28,7 +28,7 @@ export default async function AccesPage() {
           <ArrowLeft size={14} aria-hidden="true" />
           Retour au tableau de bord
         </Link>
-        <h1 className="text-[28px] font-black text-encre">Qui a consulté mon dossier</h1>
+        <h1 className="text-[28px] font-bold text-titre">Qui a consulté mon dossier</h1>
         <p className="max-w-2xl text-[15px] text-encre-secondaire">
           L&apos;historique de tous les accès à votre dossier par un
           professionnel de santé, en dehors de vos propres consultations.

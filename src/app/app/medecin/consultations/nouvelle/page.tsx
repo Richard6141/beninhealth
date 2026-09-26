@@ -62,7 +62,7 @@ export default async function NouvelleConsultationPage({
         <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-accent">
           Espace professionnel
         </p>
-        <h1 className="text-[28px] font-black text-encre">Nouvelle consultation</h1>
+        <h1 className="text-[28px] font-bold text-titre">Nouvelle consultation</h1>
         <p className="max-w-2xl text-[15px] text-encre-secondaire">
           Choisissez un patient vous ayant accorde un acces a son dossier,
           puis enregistrez le compte-rendu de la consultation.

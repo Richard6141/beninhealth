@@ -55,7 +55,7 @@ export function GraphiqueConsultationsMensuelles({
               <div
                 title={`${libelleComplet} : ${point.total} consultation${point.total > 1 ? "s" : ""}`}
                 style={{ height: apparu ? `${Math.max(pourcentage, point.total > 0 ? 2 : 0)}%` : "0%" }}
-                className="w-full max-w-[32px] rounded-t-[4px] bg-accent transition-[height] duration-500 ease-out motion-reduce:transition-none"
+                className="w-full max-w-[32px] bg-accent transition-[height] duration-500 ease-out motion-reduce:transition-none"
               />
             </div>
           );

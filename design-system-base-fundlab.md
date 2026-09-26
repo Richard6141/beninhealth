@@ -1,444 +1,267 @@
-# Base de design : identité visuelle (couleurs, finitions, mouvement)
+# Base de design : identité institutionnelle (Bénin Health Intelligence Platform)
 
-Extrait du projet **chalandise** (Business Check-up, Powered by FUND.lab),
-`C:\Users\HP\Documents\test FUND.lab\chalandise`. Ce document ne décrit **ni
-structure de page, ni positionnement, ni organisation d'écran** : uniquement
-le langage visuel réutilisable ailleurs, quel que soit le sujet ou la mise en
-page du nouveau projet. Sources : `src/app/globals.css` et les composants de
-`src/composants/ui/`.
+Charte stricte du Bénin Health Intelligence Platform. Remplace intégralement
+l'ancienne base "fundlab" (accent vert, rayons 8/16px, ombre sur les cartes,
+Lato/Roboto) : ce document est désormais la seule source de vérité graphique
+du projet, citée depuis `CLAUDE.md`. Source : bloc de charte transmis par
+l'Agent Produit (2026-09-25), appliqué à la lettre — toute valeur non fournie
+par la charte d'origine est signalée explicitement comme **dérivée** plutôt
+que recopiée en silence.
 
-Nouveau projet différent : reprendre les *principes* (palette réduite,
-rayons à deux paliers, mouvement discret, la couleur jamais seule) plutôt que
-recopier les valeurs telles quelles, sauf si l'identité de marque doit rester
-proche de celle-ci.
+## 0. Principe d'identité
 
-## 1. Principes directeurs
+Une seule marque visible : celle du ministère commanditaire. Aucun logo
+propre au produit ne s'y ajoute (le logo décoratif "BHIP" de l'ancienne base
+a été retiré des icônes PWA). L'en-tête, le pied de page et les icônes
+d'application portent les armoiries et le nom de l'institution. Le nom du
+produit reste réservé aux titres de page et aux métadonnées techniques
+(texte, jamais graphique).
 
-- **Sobriété institutionnelle** : fonds presque blancs, une seule couleur
-  d'accent sombre (marine), pas de dégradés ni de gros aplats colorés en
-  dehors d'un seul usage décoratif assumé (voir §3.4).
-- **La couleur n'est jamais le seul signal.** Un statut (bon / à vérifier /
-  bloquant / information) est toujours accompagné d'un libellé écrit en
-  toutes lettres. Voir §8.4 pour le patron exact.
-- **Deux paliers d'arrondi seulement** (carte / champ), pas une échelle de
-  dix valeurs.
-- **Une seule ombre**, très discrète, réservée aux cartes.
-- **Mouvement fonctionnel, jamais décoratif** : chaque animation existe pour
-  une raison précise (signaler un chargement, adoucir un changement d'écran,
-  faire entrer un panneau). Toujours coupée par `prefers-reduced-motion`.
-- **Accessibilité non négociable** : focus clavier toujours visible, rôles
-  ARIA posés, contraste des couleurs de statut vérifié (4,5:1 minimum sur les
-  fonds où elles sont utilisées en texte).
-- **Feuille de style d'impression dédiée** : un rapport imprimé n'est pas une
-  capture de l'écran (voir §11).
+## 1. Couleurs
 
-## 2. Palette de couleurs
+Toutes les couleurs vivent en variables CSS dans `:root` (`src/app/globals.css`),
+puis sont exposées comme couleurs Tailwind via `@theme inline`, utilisables en
+classes `bg-*`, `text-*`, `border-*`, `outline-*`.
 
-Toutes les couleurs vivent en variables CSS dans `:root`, puis sont
-exposées comme couleurs Tailwind via `@theme inline` (`--color-*`), donc
-utilisables en classes `bg-*`, `text-*`, `border-*`.
-
-### 2.1 Neutres
+### 1.1 Neutres et texte
 
 | Rôle | Variable | Valeur | Usage |
 | --- | --- | --- | --- |
-| Fond de page | `--plan` | `#f4f5f9` | Fond `<html>`, jamais utilisé pour une carte |
+| Fond de bande / page | `--plan` | `#eef2f6` | Fond `<html>`, panneaux secondaires |
 | Surface | `--surface` | `#ffffff` | Fond des cartes, champs, modales |
-| Surface d'appui | `--surface-appui` | `#eceef5` | Fond des panneaux secondaires, pistes de barre de progression, onglets inactifs |
-| Texte principal | `--encre` | `#090e1e` | Quasi noir, jamais un vrai `#000` |
-| Texte secondaire | `--encre-secondaire` | `#3f4a63` | Descriptions, sous-titres |
-| Texte atténué | `--encre-attenuee` | `#5c6680` | Métadonnées, légendes, texte facultatif |
-| Bordure | `--bordure` | `#dde0ea` | Séparateurs, contours de carte |
-| Bordure forte | `--bordure-forte` | `#bdc3d5` | Contours de champ de formulaire |
+| Surface d'appui | `--surface-appui` | `#eef2f6` | Même valeur que le fond de bande : la charte ne donne qu'un seul gris neutre |
+| Titres | `--titre` | `#0a2a4a` | Couleur des `h1`-`h6` et des titres de carte, distincte du texte courant |
+| Texte principal | `--encre` | `#1d2530` | Corps de texte |
+| Texte secondaire | `--encre-secondaire` | `#525d69` | Descriptions, sous-titres |
+| Texte atténué | `--encre-attenuee` | `#7c8794` | **Dérivé** — métadonnées, légendes ; la charte ne fournit que deux tons de texte, celui-ci comble le 3ᵉ palier déjà utilisé dans le code |
+| Bordure | `--bordure` | `#dbe2ea` | Séparateurs, contours de carte |
+| Bordure forte | `--bordure-forte` | `#dbe2ea` | **Fondue sur la même valeur** — la charte ne donne qu'une seule couleur de bordure, pas de second palier "fort" |
 
-### 2.2 Accent (couleur de marque principale)
+### 1.2 Marine (seule couleur d'action)
 
 | Variable | Valeur | Usage |
 | --- | --- | --- |
-| `--accent` | `#0c1a45` (marine) | Boutons pleins, liens, icônes actives, anneau de focus |
-| `--accent-fonce` | `#070e24` | État survol/actif d'un bouton plein |
-| `--accent-clair` | `#0c1a451a` (marine à 10 % d'opacité) | Fond de badge, pastille de sélection, cercle d'icône |
+| `--marine` | `#0a3764` | Boutons pleins, liens, icônes actives, en-tête, anneau de focus |
+| `--marine-fonce` | `#082b4f` | Survol des boutons pleins, pied de page (aplat foncé) |
+| `--marine-clair` | `#e8eef6` | Fond doux : badges, pastille de sélection, fond de panneau mis en avant |
 
-### 2.3 Couleurs de statut
+`--accent` / `--accent-fonce` / `--accent-clair` **alias** `--marine` et ses
+variantes : tout le code applicatif qui utilisait déjà `bg-accent`,
+`text-accent`, `outline-accent` (icônes encerclées, nav active, focus...)
+hérite automatiquement de la couleur marine sans qu'un seul fichier d'écran
+ait dû être modifié. Il n'existe plus aucun vert d'accent dans l'interface.
 
-Quatre statuts seulement, chacun avec une variante pleine (texte/icône) et
-une variante claire (fond de badge ou de bandeau) :
+### 1.3 Statuts
+
+Cinq tons, chacun avec une variante pleine (texte/icône) et une variante
+claire (fond de badge ou de bandeau, jamais utilisée comme texte) :
 
 | Statut | Plein | Clair | Sens |
 | --- | --- | --- | --- |
-| Bon / validé | `--statut-bon` `#0ea572` | `--statut-bon-clair` `#0ea57214` | Succès, situation favorable |
-| Vigilance | `--statut-vigilance` `#d97706` | `--statut-vigilance-clair` `#d9770617` | À vérifier, avertissement non bloquant |
-| Critique | `--statut-critique` `#dc2626` | `--statut-critique-clair` `#dc262612` | Bloquant, erreur |
-| Information | `--info` `#2563eb` | `--info-clair` `#2563eb12` | Neutre informatif, aide |
+| Succès | `--statut-bon` `#287d3c` | `--statut-bon-clair` `#287d3c14` | Validé, situation favorable |
+| Vigilance | `--statut-vigilance` `#82540f` | `--statut-vigilance-clair` `#82540f17` | À vérifier, avertissement non bloquant |
+| Alerte | `--statut-alerte` `#b7410e` | `--statut-alerte-clair` `#b7410e16` | Escalade intermédiaire entre vigilance et critique (ex. badges de gravité) |
+| Critique | `--statut-critique` `#8b1e2d` | `--statut-critique-clair` `#8b1e2d12` | Bloquant, erreur |
+| Information | `--info` `#1e5a8a` | `--info-clair` `#1e5a8a12` | Neutre informatif, aide |
 
-Règle de contraste : chaque couleur pleine dépasse 4,5:1 sur les fonds où
-elle sert de texte. Les variantes claires ne servent **jamais** de texte,
-seulement de fond derrière la couleur pleine ou l'encre.
+Le composant `Alert` (bandeau de statut) garde exactement ses quatre niveaux
+historiques — `BLOQUANT` (critique), `ATTENTION` (vigilance), `INFORMATION`,
+`VALIDÉ` (succès) — inchangés depuis la base précédente et déjà conformes au
+patron de la charte (voir §5.4). Le 5ᵉ ton, **Alerte**, est disponible comme
+tonalité de `Badge` (`tone="alert"`) pour les cas où une gravité intermédiaire
+a du sens (ex. résultat de laboratoire hors norme mais non critique) ; il n'a
+pas été appliqué rétroactivement à un badge ou bandeau existant — c'est un
+choix sémantique écran par écran, pas un remplacement mécanique.
 
-### 2.4 Couleur de marque décorative (à n'utiliser qu'avec parcimonie)
+### 1.4 Couleurs du drapeau (usage strictement limité)
 
-| Variable | Valeur | Usage |
-| --- | --- | --- |
-| `--marque-turquoise` | `#34bed5` | États de sélection d'un contrôle personnalisé (carte radio cochée), reflet de la barre de progression de navigation |
-| `--marque-turquoise-fonce` | `#1a9db8` | Variante plus soutenue du dégradé |
+| Variable | Valeur |
+| --- | --- |
+| `--drapeau-vert` | `#008751` |
+| `--drapeau-jaune` | `#fcd116` |
+| `--drapeau-rouge` | `#e8112d` |
 
-**Règle explicite du projet source, à reprendre si la teinte décorative
-choisie est claire :** cette couleur n'est volontairement **jamais** utilisée
-en texte plein ni en fond de bouton plein, parce que sa luminosité ne passe
-pas le contraste 4,5:1 (ni en texte sur blanc, ni en texte blanc dessus).
-Elle reste cantonnée aux teintes claires (10 % d'opacité) et à un usage
-décoratif ponctuel (dégradé de barre de chargement).
+Ces trois couleurs ne servent **qu'au filet du bloc d'identité du ministère**
+(le mince trait tricolore sous le logo dans `Sidebar.tsx`). Jamais en
+bandeau, jamais comme accent d'interface, jamais ailleurs.
 
-### 2.5 Bloc CSS à copier tel quel (à adapter aux nouvelles couleurs)
+## 2. Typographie
 
-```css
-:root {
-  color-scheme: light;
+- **Montserrat** pour tout le texte, chargée via `next/font/google` dans
+  `src/app/layout.tsx` (poids 400/600/700) : titres en graisse 700,
+  sous-titres en 600, corps en 400 à 16px, libellés de navigation en
+  capitales de 12px graisse 600. Remplace l'ancien Roboto : plus aucune
+  police n'est chargée en dehors de Montserrat et JetBrains Mono.
+- **JetBrains Mono** pour les codes, coordonnées GPS et identifiants
+  (chiffres tabulaires), via la classe utilitaire `.chiffres`
+  (`font-variant-numeric: tabular-nums` + police à chasse fixe). À poser sur
+  toute valeur numérique affichée en colonne ou côte à côte (montants,
+  scores, dates, identifiants `BJ-SANTE-...`).
+- Poids maximal 700 partout (`font-bold`) : l'ancien `font-black` (900), non
+  prévu par la charte, a été retiré de tout le code (39 fichiers) au profit
+  de `font-bold`, avec la couleur `text-titre` sur les titres de page `h1`.
 
-  --plan: #f4f5f9;
-  --surface: #ffffff;
-  --surface-appui: #eceef5;
-  --encre: #090e1e;
-  --encre-secondaire: #3f4a63;
-  --encre-attenuee: #5c6680;
-  --bordure: #dde0ea;
-  --bordure-forte: #bdc3d5;
+## 3. Rayons d'arrondi
 
-  --accent: #0c1a45;
-  --accent-fonce: #070e24;
-  --accent-clair: #0c1a451a;
-
-  --statut-bon: #0ea572;
-  --statut-bon-clair: #0ea57214;
-  --statut-vigilance: #d97706;
-  --statut-vigilance-clair: #d9770617;
-  --statut-critique: #dc2626;
-  --statut-critique-clair: #dc262612;
-  --info: #2563eb;
-  --info-clair: #2563eb12;
-
-  --marque-turquoise: #34bed5;
-  --marque-turquoise-fonce: #1a9db8;
-
-  --ombre-carte: 0 1px 2px rgba(20, 20, 20, 0.04);
-
-  --radius-carte: 16px;
-  --radius-champ: 8px;
-}
-
-@theme inline {
-  --color-plan: var(--plan);
-  --color-surface: var(--surface);
-  --color-surface-appui: var(--surface-appui);
-  --color-encre: var(--encre);
-  --color-encre-secondaire: var(--encre-secondaire);
-  --color-encre-attenuee: var(--encre-attenuee);
-  --color-bordure: var(--bordure);
-  --color-bordure-forte: var(--bordure-forte);
-  --color-accent: var(--accent);
-  --color-accent-fonce: var(--accent-fonce);
-  --color-accent-clair: var(--accent-clair);
-  --color-bon: var(--statut-bon);
-  --color-bon-clair: var(--statut-bon-clair);
-  --color-vigilance: var(--statut-vigilance);
-  --color-vigilance-clair: var(--statut-vigilance-clair);
-  --color-critique: var(--statut-critique);
-  --color-critique-clair: var(--statut-critique-clair);
-  --color-info: var(--info);
-  --color-info-clair: var(--info-clair);
-  --color-marque-turquoise: var(--marque-turquoise);
-  --color-marque-turquoise-fonce: var(--marque-turquoise-fonce);
-  --radius-carte: 16px;
-  --radius-champ: 8px;
-}
-```
-
-## 3. Typographie
-
-- **Police** : Lato (variable Next.js `next/font/google`), avec repli
-  `Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue',
-  Arial, sans-serif`. Graisses chargées : 300, 400, 700, 900.
-- **Échelle de tailles** (jetons déclarés, en cours de convergence dans le
-  projet source ; à appliquer strictement dans un nouveau projet) :
-
-| Jeton | Taille | Usage |
-| --- | --- | --- |
-| `--texte-legende` | 12px | Kickers, en-têtes de tableau, libellés courts |
-| `--texte-petit` | 13px | Texte secondaire, aide, métadonnées |
-| `--texte-corps` | 15px | Texte courant, labels de champ |
-| `--texte-souligne` | 17px | Valeurs mises en avant |
-| `--texte-titre-section` | 20px | Titres de carte |
-| `--texte-titre-page` | 28px | Titre de page (`h1`) |
-
-- **Chiffres alignés** : classe utilitaire `.chiffres` (`font-variant-numeric:
-  tabular-nums`), posée sur toute valeur numérique affichée en colonne ou
-  côte à côte (montants, scores, dates), pour que les chiffres ne dansent pas
-  d'une ligne à l'autre.
-- **Kicker** : petite étiquette au-dessus d'un titre, `12px`, graisse 600,
-  lettres espacées (`tracking: 0.14em`), majuscules, en couleur d'accent.
-
-## 4. Rayons d'arrondi
-
-Deux paliers seulement, jamais une valeur arbitraire à côté :
+Quatre paliers seulement, chacun avec un usage précis — c'est le changement
+le plus visible par rapport à l'ancienne base (deux paliers, 8px/16px) :
 
 | Jeton | Valeur | Usage |
 | --- | --- | --- |
-| `--radius-carte` | 16px | Cartes, panneaux, modales |
-| `--radius-champ` | 8px | Champs de formulaire, boutons, pastilles, badges |
+| `--radius-badge` | 2px | Étiquettes, badges (pastilles, tag "BLOQUANT" dans `Alert`) |
+| `--radius-champ` | 3px | Contrôles de formulaire (`TextField`, `SelectField`) — le nom du jeton vient de "champ" et n'a pas changé, seule sa valeur a été resserrée |
+| `--radius-carte` | 4px | Cartes **et** boutons (la charte les regroupe dans le même palier) : `Card`, `Button`, `IconButton`, liens de navigation de la `Sidebar` |
+| `--radius-flottant` | 6px | Boîtes flottantes : `Modal` (dialogue/tiroir), menu déroulant `AvatarMenu`, bulle de `Tooltip` |
 
-Un sous-élément dans un composant à `--radius-carte` reprend parfois
-`calc(var(--radius-champ) - 4px)` pour rester visuellement imbriqué sans
-dépasser le rayon du parent (ex. l'onglet actif dans une barre d'onglets).
+Aucune valeur arbitraire en dehors de ces quatre paliers.
 
-## 5. Élévation
+## 4. Élévation : aucune ombre
 
-Une seule ombre dans tout le projet, très discrète :
+Les cartes et les panneaux flottants (modales, menus déroulants, infobulles)
+se délimitent **par une bordure fine, jamais par une ombre**. `--ombre-carte`
+vaut désormais `none` dans `globals.css` : les classes `shadow-[var(--ombre-carte)]`
+existantes dans tout le code (19 emplacements avant cette révision) restent
+en place mais ne produisent plus aucun effet — c'est le seul endroit à
+modifier pour retirer l'ombre de toute l'application.
 
-```css
---ombre-carte: 0 1px 2px rgba(20, 20, 20, 0.04);
-```
+## 5. Composants — règles
 
-Réservée aux cartes et aux panneaux flottants (modales, menus déroulants).
-Jamais de grosse ombre portée, jamais plusieurs paliers d'élévation : la
-hiérarchie visuelle se fait par la couleur de fond (`--surface` sur
-`--plan` ou `--surface-appui`) et la bordure, pas par l'ombre.
+### 5.1 En-tête
 
-## 6. Mouvement et transitions
+Bande blanche (identité du ministère, connexion) puis barre de navigation
+marine en capitales, fixe au défilement. **Décision produit (tranchée,
+2026-09-25)** : l'espace authentifié garde sa navigation latérale (`Sidebar`,
+adaptée à 8 rôles avec des menus de 1 à 7 liens) plutôt que la bande blanche
++ barre horizontale décrite par la charte, jugée coûteuse à reconstruire
+pour un gain incertain sur une application authentifiée. La barre marine
+unique en haut (compte utilisateur) reste inchangée.
 
-Principe : chaque animation a un rôle précis, dure peu (200 à 700 ms), et
-**toutes** sont neutralisées sous `prefers-reduced-motion: reduce` (soit par
-la classe utilitaire Tailwind `motion-reduce:`, soit par une règle média
-dédiée juste sous le `@keyframes`).
+### 5.2 Pied de page
 
-| Cas d'usage | Effet | Durée / easing |
-| --- | --- | --- |
-| Changement de sous-écran (une question qui en remplace une autre) | Fondu + léger glissement vertical (6px) | `0.32s ease-out` |
-| Panneau coulissant depuis le bord (menu mobile, tiroir latéral) | Glissement horizontal depuis -100% | `0.22s-0.24s ease-out` |
-| Panneau coulissant depuis le bas (feuille mobile) | Glissement vertical depuis 100% | `0.24s ease-out` |
-| Remplissage d'une barre de progression | Largeur animée | `duration-500 ease-out` (Tailwind) |
-| Barre de chargement de navigation (haut d'écran) | Largeur + reflet qui glisse en boucle + fondu de sortie | largeur `0.6s cubic-bezier(0.22,0.61,0.36,1)`, reflet `1.1s ease-in-out infini`, sortie `opacity 0.22s ease-in` |
-| Squelette de chargement (placeholder de contenu) | Dégradé qui glisse en boucle | `1.4s ease-in-out infini` |
-| Apparition d'un bloc au défilement (ex. graphique) | Fondu + léger zoom (95% → 100%) | `duration-700 ease-out`, déclenché une seule fois via `IntersectionObserver` (seuil 25% visible) |
-| Survol / changement d'état d'un bouton, onglet, champ | Couleur uniquement | `transition-colors` (valeur par défaut Tailwind, ~150ms) |
+Aplat marine foncé (`--marine-fonce`), identité en clair, liens, mention
+légale. Appliqué dans `src/app/app/layout.tsx` : fond `bg-marine-fonce`,
+logo blanc du ministère (`public/logo-header-blanc.png`, auparavant orphelin
+et inutilisé), mention légale en texte clair.
 
-Aucune animation de rebond, d'élastique ou d'exagération : tout reste
-`ease-out` ou `ease-in-out`, jamais de `cubic-bezier` avec dépassement sauf le
-seul cas de la barre de chargement ci-dessus (choisi pour donner un effet de
-décélération franche en fin de course).
+### 5.3 Navigation
 
-## 7. Composants et leur finition visuelle
+- Libellés de navigation en capitales, 12px, graisse 600 (`Sidebar.tsx`).
+- Onglets (`Tabs.tsx`) : soulignés, capitales, jamais de piste en pilule —
+  trait actif marine de 2px sous l'onglet sélectionné, texte atténué sinon.
+  La variante mobile "barre basse à pictogrammes" décrite par la charte n'a
+  pas d'équivalent construit : `Tabs` reste un composant générique, pas un
+  patron de navigation d'application entière.
 
-Uniquement l'apparence et les états ; aucune indication sur où ils sont
-placés dans une page.
+### 5.4 Cartes
 
-### 7.1 Boutons
+Fond `--surface`, bordure `--bordure` 1px, rayon `--radius-carte` (4px),
+**sans ombre**, padding généreux. Déjà conforme dans `Card.tsx` avant cette
+révision à l'exception du rayon et de l'ombre.
 
-- Base commune : coins à `--radius-champ`, graisse 600, transition de couleur
-  uniquement, curseur désactivé + opacité 50% quand `disabled`.
-- Quatre variantes :
-  - **Primaire** : fond `--accent`, texte blanc, survol `--accent-fonce`.
-  - **Secondaire** : bordure `--bordure-forte`, fond `--surface`, texte
-    `--encre`, survol fond `--surface-appui`.
-  - **Discret** : pas de bordure, texte couleur d'accent, survol fond
-    `--accent-clair`.
-  - **Danger** : bordure et texte `--statut-critique`, survol fond
-    `--statut-critique-clair`.
-- Trois tailles (hauteur minimale, pas de largeur imposée) : petite 36px,
-  normale 44px, grande 48px.
-- Une icône (lucide-react, 16px) peut précéder ou suivre le libellé, jamais
-  seule sans texte sauf bouton strictement icône (voir 7.9).
+### 5.5 Étiquettes / badges
 
-### 7.2 Cartes
+Rectangles à angle `--radius-badge` (2px), jamais en pastille arrondie.
+Toujours un texte à l'intérieur (`Badge.tsx`), six tons + le nouveau ton
+"alerte" (§1.3).
 
-- Fond `--surface`, bordure `--bordure` 1px, rayon `--radius-carte`, ombre
-  `--ombre-carte`, padding généreux (16px mobile, 24px à partir de `sm`).
-- Un en-tête optionnel (titre + description courte + zone d'actions à
-  droite) séparé du corps par un espacement, jamais par un filet.
-- Peut être posée sur un fond `--plan` (cas courant) ou sur un fond
-  `--surface-appui` légèrement teinté pour créer un panneau englobant plus
-  large avec des cartes blanches qui « flottent » dedans.
+### 5.6 Alertes / bandeaux de statut
 
-### 7.3 Pastilles / badges
+Patron exact de la charte, déjà implémenté dans `Alert.tsx` avant cette
+révision : bordure + fond clair du ton concerné, étiquette encadrée en
+majuscules avant le titre (`BLOQUANT`/`ATTENTION`/`INFORMATION`/`VALIDÉ`),
+`role="alert"` pour le critique, `role="status"` sinon.
 
-- Forme : `--radius-champ`, padding horizontal serré, texte 12-13px graisse
-  600.
-- Six tons disponibles, chacun fond clair + texte plein correspondant :
-  neutre (gris), accent, bon, vigilance, critique, information.
-- Toujours un texte à l'intérieur ; la pastille ne porte jamais qu'une pastille
-  de couleur sans mot.
+### 5.7 Champs de formulaire
 
-### 7.4 Alertes / bandeaux de statut
+Hauteur minimale 44px, bordure `--bordure-forte`, rayon `--radius-champ`
+(3px), texte 16px. Étiquette au-dessus, astérisque rouge si obligatoire,
+mention "(facultatif)" sinon. Aide liée par `aria-describedby`, erreur en
+`role="alert"`. Unité affichée en incrustation, jamais un champ séparé.
+Inchangé dans sa structure (déjà conforme), seul le rayon a changé.
 
-Patron exact du principe « la couleur n'est jamais seule » : un bandeau avec
-bordure + fond clair du ton concerné, puis, **avant le titre**, une petite
-étiquette encadrée en majuscules qui nomme le niveau en toutes lettres :
-`BLOQUANT`, `ATTENTION`, `INFORMATION`, `VALIDÉ`. Le rôle ARIA suit le
-niveau (`role="alert"` pour le critique, `role="status"` pour les autres).
+### 5.8 Formulaires en étapes
 
-```
-[BLOQUANT]  Titre de l'alerte
-Texte explicatif sur une ligne en dessous, en couleur neutre.
-```
+« Étape 2 sur 3 : Libellé » en toutes lettres, barre plate segmentée, jamais
+de pastilles numérotées décoratives. **Aucun composant de ce type n'existe
+dans le code actuel** — règle documentée pour le jour où un formulaire long
+sera construit.
 
-### 7.5 Champs de formulaire
+### 5.9 État vide
 
-- Contrôle texte / nombre : hauteur minimale 44px, bordure `--bordure-forte`,
-  rayon `--radius-champ`, fond `--surface`, texte 16px (empêche le zoom
-  automatique sur mobile), anneau d'accent au focus, bordure critique si en
-  erreur (`aria-invalid`).
-- Étiquette au-dessus du champ, 18px, graisse 600 ; astérisque rouge si
-  obligatoire, sinon mention « (facultatif) » en petit texte atténué à côté
-  du libellé (jamais l'inverse : le facultatif est explicite, pas
-  l'obligatoire seul).
-- Aide contextuelle : texte 13px sous l'étiquette, liée au champ par
-  `aria-describedby`, jamais cachée uniquement dans une infobulle si
-  l'information est indispensable à la compréhension.
-- Message d'erreur : 13px, couleur critique, sous le contrôle, `role="alert"`.
-- Champ nombre : unité affichée en incrustation à droite du champ (ex. « km »,
-  « % », « FCFA »), jamais un champ séparé.
-- Sélecteur natif (`<select>`) : même look que le champ texte, chevron en
-  image de fond plutôt que la flèche native du navigateur.
+Encadré bordé sur fond gris léger, sans motif ni illustration décorative.
+Non audité écran par écran dans cette révision (voir journal de suivi).
 
-### 7.6 Sélecteurs personnalisés (choix uniques stylés)
+### 5.10 Graphiques
 
-Deux patrons, selon le nombre d'options :
+Aplats à angles droits, pas de dégradé ni d'effet 3D. Non audité écran par
+écran dans cette révision — au moins un écran de graphiques existe
+(`src/app/app/ministere/IndicateursNationaux.tsx`), à revoir.
 
-- **Peu d'options, chacune avec un contexte** (tranche de valeur, mode de
-  déplacement...) : chaque option devient une carte cliquable pleine largeur
-  (radio caché, `sr-only`), avec un petit rond qui se remplit en couleur
-  décorative (turquoise) quand sélectionné, bordure et fond qui changent
-  ensemble.
-- **Notation sur une échelle courte** (0 à 3, avec repères concrets par
-  niveau) : rangée de boutons égaux dans un même cadre, séparés par un filet
-  interne, l'option active en fond `--accent-clair` + texte `--accent`.
+### 5.11 Fenêtres modales
 
-Jamais l'apparence native d'un `<input type="radio">` ou `<input
-type="checkbox">` visible à l'écran : toujours redessinée.
+Basées sur `<dialog>` natif + `showModal()`. Boîte `--radius-flottant` (6px),
+bordure, sans ombre. Bouton de fermeture rond, icône X. Inchangé dans sa
+structure, rayon migré vers le palier "boîtes flottantes".
 
-### 7.7 Onglets
+### 5.12 Chargement
 
-- Piste en fond `--surface-appui`, coins `--radius-champ`, padding 4px.
-- Onglet actif : fond `--surface`, ombre `--ombre-carte`, texte couleur
-  d'accent. Onglet inactif : texte atténué, survol texte plein, pas de fond.
-- Navigation clavier gauche/droite en plus du clic (rôle ARIA `tablist`
-  complet).
+Le squelette de chargement (`Skeleton.tsx`) utilisait un dégradé glissant en
+boucle ; remplacé par une pulsation d'opacité en aplat (`anim-squelette-pulse`)
+pour respecter l'interdiction stricte des dégradés. La barre de progression
+de navigation (`NavigationProgressBar.tsx`) a perdu son dégradé turquoise et
+son reflet animé : elle est désormais un aplat marine uni.
 
-### 7.8 Infobulle
+## 6. À éviter systématiquement
 
-- Icône ronde « i » minuscule (16px), bordure `--bordure-forte`, devient
-  couleur d'accent au survol/focus.
-- Contenu affiché en pur CSS (pas de JavaScript), déclenché par `:hover` et
-  `:focus-within` uniquement (jamais seulement au clic, pour rester
-  accessible au clavier) : carte flottante `--surface`, bordure, ombre,
-  texte 12,5px.
+- Sur-titres colorés au-dessus des titres, formules d'accroche marketing.
+- Pastilles numérotées décoratives, fiches flottantes à ombre portée.
+- **Dégradés, nulle part** — y compris dans les animations de chargement
+  (voir §5.12). Transparences sur photo, animations d'entrée.
+- Grands blancs sans filet ni bande ; angles très arrondis (`rounded-full`
+  reste réservé aux éléments réellement circulaires : avatars, icônes
+  encerclées, pastille de trigger d'infobulle).
+- Bandeau tricolore en en-tête — le drapeau n'apparaît que dans le filet du
+  bloc d'identité (§1.4).
+- Tout logo ou monogramme propre au produit, quelle que soit la page.
 
-### 7.9 Bouton icône seul
+## 7. Accessibilité et mouvement (transversal, non fourni par la charte visuelle, conservé de la base précédente)
 
-- Carré 36px, bordure `--bordure-forte`, coins `--radius-champ`, icône
-  centrée. `title` et `aria-label` systématiquement identiques et
-  obligatoires (jamais un bouton muet). Variante danger : survol bordure et
-  fond critique clair.
+- Anneau de focus visible sur tout élément interactif, en couleur marine
+  (`outline: 2px solid var(--marine)`), uniquement via `:focus-visible`.
+- Rôles ARIA posés systématiquement : `role="alert"`/`role="status"` selon
+  la gravité, `role="tablist"/"tab"/"tabpanel"`, `aria-describedby`,
+  `aria-live` sur les zones qui changent sans rechargement.
+- `prefers-reduced-motion: reduce` respecté par toutes les animations,
+  sans exception (`src/app/globals.css`).
+- Feuille de style d'impression dédiée (`@media print`) : fond blanc pur,
+  texte noir pur, cartes redevenues de simples sections, titres en police à
+  empattements, couleurs porteuses de sens conservées.
 
-### 7.10 Fenêtres modales
+## 8. Journal de suivi
 
-- Basées sur l'élément natif `<dialog>` + `showModal()` : piégeage du focus,
-  touche Échap, fond assombri (`backdrop`, `--encre` à 40% d'opacité) fournis
-  par le navigateur, jamais réimplémentés à la main.
-- Boîte centrée : fond `--surface`, bordure `--bordure`, rayon
-  `--radius-carte`, ombre `--ombre-carte`, deux largeurs possibles (étroite
-  pour une confirmation, large pour un formulaire).
-- Variante tiroir (panneau latéral ou panneau du bas sur mobile) : même
-  boîte mais collée à un bord (`margin: 0` sur ce bord, rayon retiré côté
-  collé), avec l'animation de glissement correspondante (§6).
-- Bouton de fermeture : rond, icône « X » 16px, en haut à droite, jamais de
-  simple texte « Fermer » comme seule sortie (le clic sur le fond et Échap
-  fonctionnent toujours aussi).
+Cette base a été appliquée aux tokens globaux, à l'intégralité de la
+bibliothèque `src/components/ui/`, et à un audit écran par écran de
+`src/app/app/**`.
 
-### 7.11 Avatar
+### Tranché
 
-- Rond, initiales (une ou deux lettres) plutôt qu'une photo par défaut,
-  couleur de fond choisie de façon déterministe à partir du nom (même
-  personne = toujours la même couleur), parmi une petite palette de tons
-  clairs (accent, bon, vigilance, information).
+- **Structure de l'en-tête** (2026-09-25) : la navigation latérale
+  (`Sidebar`) est conservée plutôt que la bande blanche + barre marine
+  horizontale décrite par la charte (voir §5.1).
+- **Audit écran par écran** : rayons arbitraires corrigés (barres de
+  graphique `ministere`/`etablissement`, boutons de filtre segmentés de
+  `ListeExamensLaboratoire`/`ListeRendezVous`/`ListeRendezVousProfessionnel`,
+  chip d'identifiant santé sur `patient/page.tsx`) ; nouveau composant
+  `EtatVide` (§5.9) créé et déployé sur les ~30 emplacements d'état vide
+  recensés. Aucune ombre, aucun dégradé, aucun vert résiduel trouvé ailleurs
+  dans `src/app/app/**`. Pages de connexion et d'inscription vérifiées :
+  déjà conformes (n'assemblent que des composants `ui/` déjà migrés).
 
-### 7.12 Chargement (squelette + barre de navigation)
+### Encore ouvert
 
-- **Squelette** : rectangles gris avec un dégradé qui glisse en boucle,
-  reprenant exactement la taille du contenu final pour qu'aucun saut de mise
-  en page ne survienne à l'arrivée des vraies données. Toujours
-  `aria-hidden`, l'annonce d'attente se fait une seule fois au niveau du
-  conteneur (`role="status"`).
-- **Barre de progression de navigation** : filet de 3px tout en haut de
-  l'écran, dégradé turquoise avec reflet animé, se déclenche au clic sur un
-  lien interne et se termine dès que la page affichée a changé.
-
-## 8. Accessibilité (transversal, pas un chapitre à part dans le projet source)
-
-- Anneau de focus visible sur tout élément interactif :
-  `outline: 2px solid var(--accent); outline-offset: 2px; border-radius:
-  6px;`, uniquement via `:focus-visible` (jamais au simple clic à la souris).
-- Rôles ARIA posés systématiquement : `role="alert"` / `role="status"` selon
-  la gravité, `role="tablist"/"tab"/"tabpanel"`, `role="radiogroup"`,
-  `aria-describedby` pour relier aide et erreur à un champ, `aria-live`
-  sur les zones qui changent sans rechargement (état d'enregistrement,
-  progression).
-- Aucune information portée par la couleur seule (voir §2.3 et §7.4).
-- `prefers-reduced-motion: reduce` respecté par **toutes** les animations
-  du document, sans exception.
-
-## 9. Icônes
-
-- Bibliothèque **lucide-react** exclusivement (icônes au trait, pas de
-  pictos remplis ni d'émoji dans l'interface).
-- Tailles : 14px (très petit contexte, infobulle), 16px (cas courant, dans
-  un bouton ou à côté d'un libellé), 20px (mise en avant, en-tête de
-  panneau).
-- Toujours `aria-hidden="true"` quand l'icône accompagne un texte (le texte
-  porte le sens) ; jamais d'icône seule cliquable sans `aria-label` sur son
-  conteneur.
-- Habillage optionnel : icône dans un rond de couleur douce
-  (`bg-<statut>-clair`, `text-<statut>`), 36-40px de diamètre, pour donner du
-  poids visuel à un indicateur sans utiliser une grosse icône brute.
-
-## 10. Impression
-
-Feuille de style dédiée (`@media print`), pensée comme un document, pas
-comme une capture d'écran :
-
-- Fond blanc pur, texte noir pur (les nuances d'encre du web ne servent
-  qu'à l'écran).
-- Les cartes perdent bordure, ombre, fond et rayon : elles redeviennent de
-  simples sections séparées par un filet fin (`0.5pt solid #ccc`), avec
-  une marge de respiration entre elles.
-- Les titres passent en police à empattements (Georgia / Times New Roman)
-  pour une lecture « éditoriale », différente du sans-serif utilisé à
-  l'écran.
-- Les couleurs porteuses de sens (pastilles, jauges) sont explicitement
-  conservées (`print-color-adjust: exact`) : le reste de la mise en forme
-  s'efface, pas l'information.
-- Tout ce qui n'a de sens qu'à l'écran (navigation, boutons, boussole,
-  panneaux) porte une classe `sans-impression` et disparaît totalement à
-  l'impression ; l'inverse (`seulement-impression`) existe pour un en-tête
-  de document qui n'apparaît qu'au format papier.
-- Les animations de révélation au défilement sont neutralisées (l'élément
-  est toujours visible, jamais figé à son état de départ invisible).
-- Format A4, marges 16mm/14mm.
-
-## 11. Reprendre cette base dans un nouveau projet
-
-1. Copier le bloc CSS du §2.5 dans le nouveau projet, changer uniquement
-   `--accent` (et ses deux variantes) pour la nouvelle couleur
-   institutionnelle ; garder si possible les quatre couleurs de statut
-   telles quelles (déjà vérifiées côté contraste).
-2. Garder les deux paliers de rayon et l'ombre unique : ce sont eux qui
-   donnent l'impression de cohérence, pas la couleur.
-3. Recréer les composants de base sous forme de petites fonctions
-   indépendantes (Bouton, Carte, Pastille, Alerte, Champ, Infobulle, Modale)
-   plutôt que de dupliquer leurs classes CSS à chaque usage : c'est ce qui
-   permet de changer un ton dans un seul fichier plus tard.
-4. Reprendre le tableau de durées/effets du §6 tel quel : les mêmes minutages
-   fonctionnent indépendamment du sujet de l'application.
-5. Ne pas oublier la feuille d'impression si le nouveau projet produit des
-   documents destinés à être imprimés ou exportés en PDF : c'est un chapitre
-   qu'on oublie facilement en début de projet et qui coûte cher à ajouter
-   après coup.
+- **Ton "Alerte"** (§1.3) : disponible (`Badge tone="alert"`,
+  `--statut-alerte`) mais pas encore adopté par un écran existant, à décider
+  cas par cas (ex. un résultat de laboratoire hors norme mais non critique).
+- **Graphiques** (§5.10) : seuls les deux graphiques en barres de
+  `ministere`/`etablissement` ont été audités et corrigés (angles droits).
+  Aucun autre graphique n'existe ailleurs dans le code à ce jour.

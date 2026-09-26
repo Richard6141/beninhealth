@@ -74,7 +74,7 @@ export async function DashboardCommunautaire() {
     <div className="mx-auto flex w-full max-w-[1100px] flex-col gap-8 px-4 py-8 sm:px-6 lg:px-8">
       <header className="flex flex-col gap-4 rounded-carte border border-bordure bg-surface px-6 py-6 shadow-[var(--ombre-carte)] sm:flex-row sm:items-start sm:justify-between sm:px-8">
         <div className="flex flex-col gap-2">
-          <h1 className="text-[28px] font-black text-encre">
+          <h1 className="text-[28px] font-bold text-titre">
             {salutation()}
             {profil ? `, ${profil.prenom}` : ""}
           </h1>
@@ -101,7 +101,7 @@ export async function DashboardCommunautaire() {
               <span className="text-[12px] font-semibold uppercase tracking-[0.06em] text-encre-attenuee">
                 Visites ce mois-ci
               </span>
-              <span className="chiffres text-[22px] font-black text-encre">
+              <span className="chiffres text-[22px] font-bold text-encre">
                 {visitesCeMois.length}
               </span>
             </div>
@@ -114,7 +114,7 @@ export async function DashboardCommunautaire() {
               <span className="text-[12px] font-semibold uppercase tracking-[0.06em] text-encre-attenuee">
                 Total des visites
               </span>
-              <span className="chiffres text-[22px] font-black text-encre">{visites.length}</span>
+              <span className="chiffres text-[22px] font-bold text-encre">{visites.length}</span>
             </div>
           </div>
         </div>

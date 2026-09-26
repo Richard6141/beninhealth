@@ -26,7 +26,7 @@ export default async function PharmaciePage() {
         <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-accent">
           Pharmacie
         </p>
-        <h1 className="text-[28px] font-black text-encre">Prescriptions à délivrer</h1>
+        <h1 className="text-[28px] font-bold text-titre">Prescriptions à délivrer</h1>
         <p className="max-w-2xl text-[15px] text-encre-secondaire">
           Toutes les prescriptions validées en attente de délivrance, tous
           patients confondus.

@@ -114,7 +114,7 @@ export default async function HistoriquePatientPage({ params, searchParams }: Hi
         <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-accent">
           Espace professionnel
         </p>
-        <h1 className="text-[28px] font-black text-encre">Historique complet</h1>
+        <h1 className="text-[28px] font-bold text-titre">Historique complet</h1>
         <p className="max-w-2xl text-[15px] text-encre-secondaire">
           Chronologie de tous les événements cliniques de ce patient, du plus récent au plus ancien.
         </p>

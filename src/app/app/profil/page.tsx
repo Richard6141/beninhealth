@@ -36,7 +36,7 @@ export default async function ProfilPage() {
         <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-accent">
           Mon compte
         </p>
-        <h1 className="text-[28px] font-black text-encre">Mon profil</h1>
+        <h1 className="text-[28px] font-bold text-titre">Mon profil</h1>
         <p className="max-w-2xl text-[15px] text-encre-secondaire">
           Gérez vos informations personnelles, votre photo de profil et votre
           mot de passe.

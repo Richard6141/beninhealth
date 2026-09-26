@@ -113,7 +113,7 @@ export default async function PatientDetailPage({ params }: PatientDetailPagePro
               {resume.identifiantSante} · {resume.age} an{resume.age > 1 ? "s" : ""} ·{" "}
               {resume.sexe === "F" ? "Féminin" : "Masculin"}
             </p>
-            <h1 className="text-[28px] font-black text-encre">{resume.nomComplet}</h1>
+            <h1 className="text-[28px] font-bold text-titre">{resume.nomComplet}</h1>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-encre-secondaire">
               <span className="flex items-center gap-1.5">
                 <UserRound size={14} aria-hidden="true" />

@@ -58,7 +58,7 @@ export default async function NouveauDocumentPage({ searchParams }: NouveauDocum
         <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-accent">
           Espace professionnel
         </p>
-        <h1 className="text-[28px] font-black text-encre">Ajouter un document medical</h1>
+        <h1 className="text-[28px] font-bold text-titre">Ajouter un document medical</h1>
         <p className="max-w-2xl text-[15px] text-encre-secondaire">
           Ajoutez un document au dossier d&apos;un patient : compte rendu,
           resultat, imagerie, courrier ou certificat.

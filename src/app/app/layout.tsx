@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import Image from "next/image";
 import {
   ArrowRightLeft,
   Building2,
@@ -6,6 +7,7 @@ import {
   ClipboardList,
   FlaskConical,
   FolderOpen,
+  Gauge,
   History,
   Hospital,
   LayoutDashboard,
@@ -191,6 +193,11 @@ const navigationPharmacien: ElementNavigation[] = [
     href: "/app/medecin/pharmacie",
     icon: <Pill size={tailleIconeNav} aria-hidden="true" />,
   },
+  {
+    label: "Historique des délivrances",
+    href: "/app/medecin/pharmacie/historique",
+    icon: <History size={tailleIconeNav} aria-hidden="true" />,
+  },
 ];
 
 /** Laboratoire : file d'examens a traiter uniquement, jamais l'espace clinique medecin. */
@@ -230,6 +237,16 @@ const navigationAdminNational: ElementNavigation[] = [
     icon: <Building2 size={tailleIconeNav} aria-hidden="true" />,
   },
   {
+    label: "Pilotage",
+    href: "/app/pilotage",
+    icon: <Gauge size={tailleIconeNav} aria-hidden="true" />,
+  },
+  {
+    label: "Journal d'audit",
+    href: "/app/ministere/audit",
+    icon: <History size={tailleIconeNav} aria-hidden="true" />,
+  },
+  {
     label: "Établissements",
     href: "/app/ministere/etablissements",
     icon: <Hospital size={tailleIconeNav} aria-hidden="true" />,
@@ -245,11 +262,6 @@ const navigationAdminNational: ElementNavigation[] = [
     icon: <Pill size={tailleIconeNav} aria-hidden="true" />,
   },
   {
-    label: "Tutelles",
-    href: "/app/ministere/tutelles",
-    icon: <UserX size={tailleIconeNav} aria-hidden="true" />,
-  },
-  {
     label: "Référentiel des examens",
     href: "/app/ministere/referentiels/examens",
     icon: <FlaskConical size={tailleIconeNav} aria-hidden="true" />,
@@ -263,6 +275,11 @@ const navigationAdminNational: ElementNavigation[] = [
     label: "Doublons patients",
     href: "/app/ministere/doublons",
     icon: <Merge size={tailleIconeNav} aria-hidden="true" />,
+  },
+  {
+    label: "Tutelles",
+    href: "/app/ministere/tutelles",
+    icon: <UserX size={tailleIconeNav} aria-hidden="true" />,
   },
   {
     label: "Paramètres",
@@ -346,8 +363,17 @@ export default async function EspaceAuthentifieLayout({
           </VerrouillageInactivite>
         </main>
 
-        <footer className="sans-impression shrink-0 border-t border-bordure bg-surface px-4 py-3 text-center text-[12px] text-encre-attenuee sm:px-6">
-          © {new Date().getFullYear()} Ministère de la Santé, République du Bénin.
+        <footer className="sans-impression flex shrink-0 flex-wrap items-center justify-between gap-3 bg-marine-fonce px-4 py-3 sm:px-6">
+          <Image
+            src="/logo-header-blanc.png"
+            alt="Ministere de la Sante, Republique du Benin"
+            width={106}
+            height={30}
+            className="h-6 w-auto"
+          />
+          <p className="text-[12px] text-white/70">
+            © {new Date().getFullYear()} Ministère de la Santé, République du Bénin.
+          </p>
         </footer>
       </div>
     </div>

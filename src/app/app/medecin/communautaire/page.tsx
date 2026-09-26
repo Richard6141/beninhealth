@@ -98,7 +98,7 @@ export default async function CommunautairePage() {
         <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-accent">
           Suivi communautaire
         </p>
-        <h1 className="text-[28px] font-black text-encre">Mes visites de terrain</h1>
+        <h1 className="text-[28px] font-bold text-titre">Mes visites de terrain</h1>
         <p className="max-w-2xl text-[15px] text-encre-secondaire">
           Enregistrez vos visites (vaccination, dépistage, suivi de grossesse,
           sensibilisation) et retrouvez votre historique complet.

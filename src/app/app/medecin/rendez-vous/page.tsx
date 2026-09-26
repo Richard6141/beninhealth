@@ -43,7 +43,7 @@ export default async function RendezVousProfessionnelPage() {
           <ArrowLeft size={14} aria-hidden="true" />
           Retour au tableau de bord
         </Link>
-        <h1 className="text-[28px] font-black text-encre">Mes rendez-vous</h1>
+        <h1 className="text-[28px] font-bold text-titre">Mes rendez-vous</h1>
         <p className="max-w-2xl text-[15px] text-encre-secondaire">
           Confirmez ou annulez les demandes de rendez-vous, et demarrez une
           consultation directement depuis un rendez-vous confirme.

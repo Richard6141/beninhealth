@@ -28,7 +28,7 @@ export default async function NotificationsPage() {
           <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-accent">
             Notifications
           </p>
-          <h1 className="text-[28px] font-black text-encre">Mes notifications</h1>
+          <h1 className="text-[28px] font-bold text-titre">Mes notifications</h1>
           <p className="max-w-2xl text-[15px] text-encre-secondaire">
             Rendez-vous confirmés, résultats d&apos;examens disponibles et autres
             événements concernant votre espace.

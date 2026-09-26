@@ -77,7 +77,7 @@ export function GraphiqueConsultationsMensuelles({
                 aria-hidden="true"
                 title={`${libelleMoisCourt(point.mois)} : ${point.total} consultation${point.total > 1 ? "s" : ""}`}
                 style={{ height: `${hauteurPourcent}%` }}
-                className="w-full max-w-[28px] rounded-t-[4px] bg-accent"
+                className="w-full max-w-[28px] bg-accent"
               />
             </div>
           );

@@ -219,7 +219,7 @@ export function ListeRendezVous({ rendezVous }: ListeRendezVousProps) {
                 aria-checked={actif}
                 onClick={() => setFiltreStatut(option.id)}
                 className={cn(
-                  "rounded-[calc(var(--radius-champ)-4px)] px-3 py-1.5 text-[13px] font-semibold transition-colors motion-reduce:transition-none",
+                  "rounded-champ px-3 py-1.5 text-[13px] font-semibold transition-colors motion-reduce:transition-none",
                   actif
                     ? "bg-surface text-accent shadow-[var(--ombre-carte)]"
                     : "text-encre-attenuee hover:text-encre"

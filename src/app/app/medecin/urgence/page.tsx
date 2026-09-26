@@ -27,7 +27,7 @@ export default function AccesUrgencePage() {
           <ShieldAlert size={16} aria-hidden="true" />
           Acces d&apos;urgence
         </p>
-        <h1 className="text-[28px] font-black text-encre">Bris de glace</h1>
+        <h1 className="text-[28px] font-bold text-titre">Bris de glace</h1>
         <p className="max-w-xl text-[15px] text-encre-secondaire">
           Reserve aux situations ou le patient est incapable de consentir. Chaque acces est trace,
           controle et limite dans le temps.

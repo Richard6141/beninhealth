@@ -20,6 +20,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { EtatVide } from "@/components/ui/EtatVide";
 import { IconButton } from "@/components/ui/IconButton";
 import { Modal, type ModalHandle } from "@/components/ui/Modal";
 import { NavigationProgressBar } from "@/components/ui/NavigationProgressBar";
@@ -78,6 +79,13 @@ const statuts = [
     classe: "bg-vigilance-clair",
     bordure: true,
   },
+  { nom: "Alerte", jeton: "--statut-alerte", classe: "bg-alerte" },
+  {
+    nom: "Alerte claire",
+    jeton: "--statut-alerte-clair",
+    classe: "bg-alerte-clair",
+    bordure: true,
+  },
   { nom: "Critique", jeton: "--statut-critique", classe: "bg-critique" },
   {
     nom: "Critique clair",
@@ -94,17 +102,10 @@ const statuts = [
   },
 ];
 
-const decoratives = [
-  {
-    nom: "Marque turquoise",
-    jeton: "--marque-turquoise",
-    classe: "bg-marque-turquoise",
-  },
-  {
-    nom: "Marque turquoise foncée",
-    jeton: "--marque-turquoise-fonce",
-    classe: "bg-marque-turquoise-fonce",
-  },
+const drapeau = [
+  { nom: "Vert du drapeau", jeton: "--drapeau-vert", classe: "bg-drapeau-vert" },
+  { nom: "Jaune du drapeau", jeton: "--drapeau-jaune", classe: "bg-drapeau-jaune" },
+  { nom: "Rouge du drapeau", jeton: "--drapeau-rouge", classe: "bg-drapeau-rouge" },
 ];
 
 const departements = [
@@ -166,6 +167,7 @@ const ongletsExemple = [
 const iconesStatut = [
   { icon: CheckCircle2, tone: "good" as const, label: "Bon" },
   { icon: AlertTriangle, tone: "warning" as const, label: "Vigilance" },
+  { icon: AlertCircle, tone: "alert" as const, label: "Alerte" },
   { icon: AlertCircle, tone: "critical" as const, label: "Critique" },
   { icon: Info, tone: "info" as const, label: "Information" },
 ];
@@ -173,6 +175,7 @@ const iconesStatut = [
 const iconeToneClasses: Record<string, string> = {
   good: "bg-bon-clair text-bon",
   warning: "bg-vigilance-clair text-vigilance",
+  alert: "bg-alerte-clair text-alerte",
   critical: "bg-critique-clair text-critique",
   info: "bg-info-clair text-info",
 };
@@ -200,7 +203,7 @@ export default function Home() {
               Fondation, phase 1
             </p>
           </div>
-          <h1 className="text-[28px] font-black text-encre">
+          <h1 className="text-[28px] font-bold text-titre">
             Guide de style : Bénin Health Intelligence Platform
           </h1>
           <p className="max-w-2xl text-[15px] text-encre-secondaire">
@@ -214,14 +217,14 @@ export default function Home() {
           <h2 id="titre-couleurs" className="text-[20px] font-bold text-encre">
             Couleurs
           </h2>
-          <Card description="Neutres, accent, statuts et couleur décorative, tels que définis dans la base de design.">
+          <Card description="Neutres, accent, statuts et couleurs du drapeau, tels que définis dans la charte institutionnelle.">
             <div className="flex flex-col gap-6">
               <PaletteGroupe titre="Neutres" nuances={nuances} />
               <PaletteGroupe titre="Accent (marine)" nuances={accents} />
               <PaletteGroupe titre="Statuts" nuances={statuts} />
               <PaletteGroupe
-                titre="Décorative (usage restreint)"
-                nuances={decoratives}
+                titre="Drapeau (filet du bloc d'identité uniquement)"
+                nuances={drapeau}
               />
             </div>
           </Card>
@@ -231,19 +234,19 @@ export default function Home() {
           <h2 id="titre-typo" className="text-[20px] font-bold text-encre">
             Typographie
           </h2>
-          <Card description="Échelle de tailles Lato et alignement des chiffres (classe .chiffres).">
+          <Card description="Montserrat pour tout le texte, JetBrains Mono pour les chiffres alignés (classe .chiffres).">
             <div className="flex flex-col gap-3">
-              <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-accent">
+              <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-marine">
                 Kicker, 12px, graisse 600
               </p>
               <p className="text-[12px] text-encre">Légende, 12px</p>
               <p className="text-[13px] text-encre">Texte petit, 13px</p>
-              <p className="text-[15px] text-encre">Texte de corps, 15px</p>
+              <p className="text-[16px] text-encre">Texte de corps, 16px</p>
               <p className="text-[17px] text-encre">Texte souligné, 17px</p>
               <p className="text-[20px] font-bold text-encre">
                 Titre de section, 20px
               </p>
-              <p className="text-[28px] font-black text-encre">
+              <p className="text-[28px] font-bold text-titre">
                 Titre de page, 28px
               </p>
               <div className="mt-2 flex flex-wrap gap-6 border-t border-bordure pt-4">
@@ -355,6 +358,7 @@ export default function Home() {
               <Badge tone="accent">Accent</Badge>
               <Badge tone="good">Bon</Badge>
               <Badge tone="warning">Vigilance</Badge>
+              <Badge tone="alert">Alerte</Badge>
               <Badge tone="critical">Critique</Badge>
               <Badge tone="info">Information</Badge>
             </div>
@@ -485,6 +489,18 @@ export default function Home() {
                 <Avatar name="Bio Tchané" />
               </div>
             </div>
+          </Card>
+        </section>
+
+        <section aria-labelledby="titre-etat-vide" className="flex flex-col gap-4">
+          <h2 id="titre-etat-vide" className="text-[20px] font-bold text-encre">
+            État vide
+          </h2>
+          <Card description="Encadré bordé sur fond gris léger, sans motif ni illustration décorative.">
+            <EtatVide
+              titre="Aucun rendez-vous"
+              description="Aucun rendez-vous ne correspond à ce filtre pour le moment."
+            />
           </Card>
         </section>
 

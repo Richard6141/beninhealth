@@ -70,7 +70,7 @@ export default async function SoinsPage() {
         <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-accent">
           Espace infirmier
         </p>
-        <h1 className="text-[28px] font-black text-encre">Prise en charge infirmiere</h1>
+        <h1 className="text-[28px] font-bold text-titre">Prise en charge infirmiere</h1>
         <p className="max-w-2xl text-[15px] text-encre-secondaire">
           Patients confirmes pour aujourd&apos;hui dont les constantes n&apos;ont pas encore ete prises.
         </p>
