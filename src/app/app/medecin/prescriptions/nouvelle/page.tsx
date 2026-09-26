@@ -7,6 +7,7 @@ import {
 } from "@/modules/prescription/actions";
 import { Alert } from "@/components/ui/Alert";
 import { FormulairePrescription } from "./FormulairePrescription";
+import { RenouvellementPrescription } from "./RenouvellementPrescription";
 import { SelecteurConsultation } from "./SelecteurConsultation";
 
 interface NouvellePrescriptionPageProps {
@@ -59,7 +60,7 @@ export default async function NouvellePrescriptionPage({
         <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-accent">
           Espace professionnel
         </p>
-        <h1 className="text-[28px] font-black text-encre">Nouvelle prescription</h1>
+        <h1 className="text-[28px] font-bold text-titre">Nouvelle prescription</h1>
         {consultations.length > 0 ? (
           <SelecteurConsultation consultations={consultations} />
         ) : (
@@ -98,7 +99,7 @@ export default async function NouvellePrescriptionPage({
         <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-accent">
           Espace professionnel
         </p>
-        <h1 className="text-[28px] font-black text-encre">Nouvelle prescription</h1>
+        <h1 className="text-[28px] font-bold text-titre">Nouvelle prescription</h1>
         <p className="max-w-2xl text-[15px] text-encre-secondaire">
           Consultation de {consultation.patientNomComplet} : {consultation.motif}
         </p>
@@ -111,10 +112,18 @@ export default async function NouvellePrescriptionPage({
         </Alert>
       ) : null}
 
+      <RenouvellementPrescription
+        consultationId={consultation.id}
+        anciennesPrescriptions={consultation.anciennesPrescriptions}
+      />
+
       <FormulairePrescription
         consultationId={consultation.id}
         medicaments={medicaments}
         patientAllergies={consultation.patientAllergies}
+        patientDateNaissanceISO={consultation.patientDateNaissanceISO}
+        patientSexe={consultation.patientSexe}
+        patientGrossesseEnCours={consultation.patientGrossesseEnCours}
         patientTraitementsActifs={consultation.patientTraitementsActifs}
       />
     </div>

@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/Badge";
 import type { BadgeTone } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { cn } from "@/lib/cn";
+import { ActionsPrescription } from "./ActionsPrescription";
 
 /** Bouton de navigation stylise comme un Button primaire, rendu comme un lien unique. */
 function LienNouvellePrescription() {
@@ -26,9 +27,10 @@ function LienNouvellePrescription() {
 
 function libelleStatut(statut: string): { texte: string; tone: BadgeTone } {
   const cle = statut.trim().toLowerCase();
-  if (cle === "active" || cle === "en_cours") return { texte: "Active", tone: "info" };
-  if (cle === "delivree") return { texte: "Delivree", tone: "good" };
-  if (cle === "annulee") return { texte: "Annulee", tone: "critical" };
+  if (cle === "validee") return { texte: "Validée", tone: "info" };
+  if (cle === "delivree_partiellement") return { texte: "Délivrée en partie", tone: "warning" };
+  if (cle === "delivree") return { texte: "Délivrée", tone: "good" };
+  if (cle === "annulee") return { texte: "Annulée", tone: "critical" };
   return { texte: statut, tone: "neutral" };
 }
 
@@ -86,6 +88,20 @@ function CartePrescription({ prescription }: { prescription: PrescriptionResume 
             {prescription.instructions}
           </p>
         ) : null}
+
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-bordure pt-3">
+          <Link
+            href={`/app/medecin/prescriptions/nouvelle?consultationId=${encodeURIComponent(prescription.consultationId)}`}
+            className="text-[13px] font-semibold text-accent hover:underline"
+          >
+            Renouveler
+          </Link>
+          <ActionsPrescription
+            prescriptionId={prescription.id}
+            peutEtreAnnulee={prescription.peutEtreAnnulee}
+            peutEtreArretee={prescription.peutEtreArretee}
+          />
+        </div>
       </div>
     </Card>
   );
@@ -114,7 +130,7 @@ export default async function PrescriptionsProfessionnelPage() {
           <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-accent">
             Espace professionnel
           </p>
-          <h1 className="text-[28px] font-black text-encre">Mes prescriptions</h1>
+          <h1 className="text-[28px] font-bold text-titre">Mes prescriptions</h1>
           <p className="max-w-2xl text-[15px] text-encre-secondaire">
             Historique des prescriptions que vous avez etablies, les plus
             recentes en premier.

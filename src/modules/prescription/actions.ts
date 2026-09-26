@@ -24,6 +24,7 @@
 
 import { headers } from "next/headers";
 import { createHash } from "node:crypto";
+import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
@@ -41,6 +42,12 @@ import {
   libelleAvertissement,
   type LigneComparable,
 } from "./controles-doublons";
+import {
+  ageMinimumNonAtteint,
+  libelleAgeMinimum,
+  grossesseIncompatible,
+  dureeAntibiotiqueExcessive,
+} from "./controles-securite";
 import {
   MOTIFS_NON_DELIVRANCE_VALEURS,
   LONGUEUR_MIN_MOTIF_ANNULATION_DELIVRANCE,
@@ -74,6 +81,11 @@ export interface MedicamentOption {
   // src/modules/prescription/referentiel-allergies.ts. La verification
   // serveur ci-dessous reste la seule autorite reelle.
   classeTherapeutique: string;
+  // F-PRE-02, controles "age" et "grossesse" (src/modules/prescription/controles-securite.ts),
+  // meme principe que classeTherapeutique ci-dessus : disponibles cote client
+  // pour un retour immediat, la verification serveur reste seule autorite.
+  ageMinimumMois: number | null;
+  contreIndiqueGrossesse: boolean;
 }
 
 /** Detail d'une ligne de prescription, enrichi des informations du medicament. */
@@ -91,6 +103,10 @@ export interface LignePrescriptionDetail {
 /** Resume d'une prescription, pret a afficher cote ecran patient ou professionnel. */
 export interface PrescriptionResume {
   id: string;
+  // F-PRE-05 : utilise cote medecin pour construire le lien "Renouveler"
+  // (redirige vers /app/medecin/prescriptions/nouvelle avec cette meme
+  // consultation, deja possedee par ce medecin).
+  consultationId: string;
   date: string; // ISO
   statut: string;
   // Numero d'ordonnance lisible (F-PRE-04 du pack), format RX-<annee>-<sequence 4 chiffres>.
@@ -101,6 +117,11 @@ export interface PrescriptionResume {
   patientNomComplet: string | null; // rempli cote professionnel
   patientIdentifiantSante: string | null; // rempli cote professionnel
   consultationMotif: string;
+  // F-PRE-05 du pack : vrai uniquement sur la liste "mes prescriptions" du
+  // medecin auteur (jamais cote patient ni pharmacien, qui n'agissent pas sur
+  // ces boutons), voir getPrescriptionsDuProfessionnel.
+  peutEtreAnnulee: boolean;
+  peutEtreArretee: boolean;
 }
 
 /** Ligne soumise depuis le formulaire de creation, avant validation zod. */
@@ -129,14 +150,34 @@ const schemaLigneSoumise = z.object({
   // justification obligatoire (20 caracteres minimum), trace en audit.
   forcerAlerteAllergie: z.coerce.boolean().optional().default(false),
   justificationForcage: z.string().trim().optional().default(""),
+  // F-PRE-02, controles "age" et "grossesse" : meme niveau Bloquant que
+  // l'allergie ci-dessus. Reutilisent justificationForcage (une seule
+  // justification par ligne, meme si plusieurs alertes bloquantes se
+  // declenchent en meme temps) plutot qu'un champ dedie par controle :
+  // simplification assumee pour ne pas multiplier les champs de formulaire.
+  forcerAlerteAge: z.coerce.boolean().optional().default(false),
+  forcerAlerteGrossesse: z.coerce.boolean().optional().default(false),
   // F-PRE-02 : avertissement "doublon" ou "meme classe" (niveau Avertissement,
   // pas Bloquant) : une simple confirmation suffit, pas de justification.
   confirmerAvertissement: z.coerce.boolean().optional().default(false),
+  // F-PRE-02 : avertissement "duree" (> 30 jours pour un antibiotique), meme
+  // niveau Avertissement que ci-dessus.
+  confirmerAvertissementDuree: z.coerce.boolean().optional().default(false),
 });
 
 const schemaCreationPrescription = z.object({
   consultationId: z.string().trim().min(1, "La consultation est obligatoire."),
   instructions: z.string().trim().optional().default(""),
+  // RG-PRE-30 du pack : la signature (ici confondue avec la creation, voir
+  // le commentaire au-dessus de creerPrescriptionAction) exige une
+  // re-authentification. Perimetre reduit assume : toujours redemandee
+  // (pas de fenetre de grace de 5 minutes depuis la derniere authentification
+  // forte, qui demanderait de tracer cet instant quelque part), et un seul
+  // essai par soumission (pas de compteur de 3 echecs -> deconnexion : ce
+  // depot n'a pas de compteur d'echecs persistant hors session, contrairement
+  // au verrouillage d'ecran F-AUTH-08 qui, lui, vit entierement cote client
+  // le temps d'un seul montage de composant).
+  motDePasseSignature: z.string().min(1, "Le mot de passe est obligatoire pour signer l'ordonnance."),
   lignes: z
     .array(schemaLigneSoumise)
     .min(1, "Au moins un medicament est obligatoire dans la prescription."),
@@ -236,6 +277,7 @@ async function professionnelDeLaSessionCourante() {
 function versPrescriptionResume(
   prescription: {
     id: string;
+    consultationId: string;
     date: Date;
     statut: string;
     numero: string;
@@ -253,10 +295,13 @@ function versPrescriptionResume(
     medecinNomComplet: string | null;
     patientNomComplet: string | null;
     patientIdentifiantSante: string | null;
+    peutEtreAnnulee: boolean;
+    peutEtreArretee: boolean;
   }
 ): PrescriptionResume {
   return {
     id: prescription.id,
+    consultationId: prescription.consultationId,
     date: prescription.date.toISOString(),
     statut: prescription.statut,
     numero: prescription.numero,
@@ -275,12 +320,15 @@ function versPrescriptionResume(
     medecinNomComplet: options.medecinNomComplet,
     patientNomComplet: options.patientNomComplet,
     patientIdentifiantSante: options.patientIdentifiantSante,
+    peutEtreAnnulee: options.peutEtreAnnulee,
+    peutEtreArretee: options.peutEtreArretee,
   };
 }
 
-/** Liste tout le catalogue de medicaments, trie par nom. */
+/** Liste le catalogue de medicaments actifs, trie par nom (F-ADM-04 : un medicament desactive par le ministere disparait du selecteur de creation). */
 export async function listMedicaments(): Promise<MedicamentOption[]> {
   const medicaments = await prisma.medicament.findMany({
+    where: { actif: true },
     orderBy: { nom: "asc" },
   });
 
@@ -291,6 +339,8 @@ export async function listMedicaments(): Promise<MedicamentOption[]> {
     dosage: medicament.dosage,
     forme: medicament.forme,
     classeTherapeutique: medicament.classeTherapeutique,
+    ageMinimumMois: medicament.ageMinimumMois,
+    contreIndiqueGrossesse: medicament.contreIndiqueGrossesse,
   }));
 }
 
@@ -320,8 +370,72 @@ export async function getMesPrescriptions(): Promise<PrescriptionResume[]> {
       medecinNomComplet: nomCompletProfessionnel(prescription.medecinPrescripteur.user),
       patientNomComplet: null,
       patientIdentifiantSante: null,
+      // F-PRE-05 : le patient ne dispose d'aucun de ces boutons, seul le
+      // medecin auteur agit sur sa propre liste (getPrescriptionsDuProfessionnel).
+      peutEtreAnnulee: false,
+      peutEtreArretee: false,
     })
   );
+}
+
+/**
+ * Pour une prescription du patient connecte, les medicaments dont il manque
+ * encore une quantite (F-PHA-03 / CA-2 : le patient doit voir la ligne
+ * manquante identifiee sur une prescription "delivree_partiellement"), soit
+ * la quantite prescrite moins la somme des LigneDelivrance non annulees pour
+ * chaque ligne. Zero Trust : ne renvoie rien pour une prescription qui
+ * n'appartient pas au patient connecte (jamais confiance dans le seul
+ * prescriptionId transmis).
+ */
+export async function getLignesEnAttente(
+  prescriptionId: string
+): Promise<{ medicamentNom: string; quantiteRestante: number }[]> {
+  const patient = await patientDeLaSessionCourante();
+
+  if (!patient) {
+    return [];
+  }
+
+  const identifiantNettoye = prescriptionId.trim();
+
+  if (identifiantNettoye.length === 0) {
+    return [];
+  }
+
+  const prescription = await prisma.prescription.findUnique({
+    where: { id: identifiantNettoye },
+    include: {
+      lignes: {
+        include: {
+          medicament: true,
+          lignesDelivrees: { where: { delivrance: { annulee: false } } },
+        },
+      },
+    },
+  });
+
+  if (!prescription || prescription.patientId !== patient.id) {
+    return [];
+  }
+
+  return prescription.lignes
+    .map((ligne) => {
+      const quantiteDejaLivree = ligne.lignesDelivrees.reduce(
+        (somme, ligneDelivree) => somme + ligneDelivree.quantiteDelivree,
+        0
+      );
+      return { medicamentNom: ligne.medicament.nom, quantiteRestante: ligne.quantite - quantiteDejaLivree };
+    })
+    .filter((ligne) => ligne.quantiteRestante > 0);
+}
+
+/** Une ancienne prescription du patient, telle que proposee au renouvellement (F-PRE-05). */
+export interface PrescriptionAncienneResume {
+  id: string;
+  numero: string;
+  date: string; // ISO
+  statut: string;
+  lignes: { medicamentNom: string; dosage: string; forme: string }[];
 }
 
 /**
@@ -335,12 +449,24 @@ export async function getConsultationPourPrescription(consultationId: string): P
   motif: string;
   patientNomComplet: string;
   patientAllergies: string[];
+  // F-PRE-02, controles "age" et "grossesse" : memes donnees que cote
+  // serveur dans creerPrescriptionAction, exposees ici pour un retour
+  // immediat a l'ecran (src/modules/prescription/controles-securite.ts).
+  patientDateNaissanceISO: string;
+  patientSexe: string;
+  patientGrossesseEnCours: boolean;
   // F-PRE-02 : medicaments des ordonnances actives du patient, pour
   // l'avertissement "doublon"/"meme classe" affiche cote client avant meme
   // la soumission (le serveur reste la seule autorite reelle, voir
   // creerPrescriptionAction).
   patientTraitementsActifs: LigneComparable[];
   dejaPrescription: boolean;
+  // F-PRE-05 du pack, "Renouveler" : anciennes prescriptions de ce patient,
+  // pour proposer de reprendre les memes lignes plutot que de les ressaisir.
+  // Ouvert a tout medecin atteignant cet ecran (deja verifie plus haut que la
+  // consultation lui appartient, donc qu'il a un acces reel a ce patient),
+  // pas seulement l'auteur d'origine de l'ancienne prescription.
+  anciennesPrescriptions: PrescriptionAncienneResume[];
 } | null> {
   const professionnel = await professionnelDeLaSessionCourante();
 
@@ -381,13 +507,44 @@ export async function getConsultationPourPrescription(consultationId: string): P
     }))
   );
 
+  // F-PRE-05, "Renouveler" : les dernieres prescriptions de ce patient, tous
+  // medecins confondus (l'acces a cette consultation vaut deja acces reel au
+  // patient, verifie plus haut). Bornee a un nombre raisonnable, la plus
+  // recente en premier, meme principe que getHistoriquePatient (pagination)
+  // sans en reprendre la complexite ici.
+  const NOMBRE_MAX_ANCIENNES_PRESCRIPTIONS = 20;
+  const anciennesPrescriptionsBrutes = await prisma.prescription.findMany({
+    where: { patientId: consultation.patientId },
+    include: { lignes: { include: { medicament: true } } },
+    orderBy: { date: "desc" },
+    take: NOMBRE_MAX_ANCIENNES_PRESCRIPTIONS,
+  });
+
+  const anciennesPrescriptions: PrescriptionAncienneResume[] = anciennesPrescriptionsBrutes.map(
+    (prescription) => ({
+      id: prescription.id,
+      numero: prescription.numero,
+      date: prescription.date.toISOString(),
+      statut: prescription.statut,
+      lignes: prescription.lignes.map((ligne) => ({
+        medicamentNom: ligne.medicament.nom,
+        dosage: ligne.medicament.dosage,
+        forme: ligne.medicament.forme,
+      })),
+    })
+  );
+
   return {
     id: consultation.id,
     motif: consultation.motif,
     patientNomComplet: nomComplet(consultation.patient.user),
     patientAllergies: parseListeJSON(consultation.patient.allergies),
+    patientDateNaissanceISO: consultation.patient.dateNaissance.toISOString(),
+    patientSexe: consultation.patient.sexe,
+    patientGrossesseEnCours: consultation.patient.grossesseEnCours,
     patientTraitementsActifs,
     dejaPrescription: consultation.prescriptions.length > 0,
+    anciennesPrescriptions,
   };
 }
 
@@ -434,6 +591,7 @@ export async function creerPrescriptionAction(
   const validation = schemaCreationPrescription.safeParse({
     consultationId: texte(formData, "consultationId"),
     instructions: texte(formData, "instructions"),
+    motDePasseSignature: texte(formData, "motDePasseSignature"),
     lignes: lignesBrutes,
   });
 
@@ -444,7 +602,26 @@ export async function creerPrescriptionAction(
     };
   }
 
-  const { consultationId, instructions, lignes } = validation.data;
+  const { consultationId, instructions, motDePasseSignature, lignes } = validation.data;
+
+  // RG-PRE-30 : re-authentification obligatoire avant signature. Verifiee
+  // ici, avant tout le reste (controles cliniques, transaction), pour ne
+  // jamais laisser croire qu'une prescription a ete "presque" signee.
+  const utilisateurConnecte = await prisma.user.findUnique({ where: { id: session.userId } });
+  const motDePasseValide =
+    utilisateurConnecte !== null &&
+    (await bcrypt.compare(motDePasseSignature, utilisateurConnecte.motDePasseHash));
+
+  if (!motDePasseValide) {
+    await journaliser({
+      utilisateurId: session.userId,
+      action: "signature_prescription_mot_de_passe_invalide",
+      donneeConcernee: `consultation:${consultationId}`,
+      adresseTechnique: await adresseTechniqueCourante(),
+      justification: "Tentative de signature de prescription avec un mot de passe incorrect (RG-PRE-30).",
+    });
+    return { error: "Mot de passe incorrect. La prescription n'a pas ete signee.", success: false };
+  }
 
   // F-PRE-03 : "voie" ou "frequence" a "autre" exige la precision en texte
   // libre correspondante (deja verifie cote formulaire, revalide ici, Zero
@@ -533,6 +710,24 @@ export async function creerPrescriptionAction(
       lignesDejaRetenues.push(candidate);
     }
 
+    // F-PRE-02 : controle de securite "duree" (niveau Avertissement, pas
+    // Bloquant, meme famille que doublon/meme classe ci-dessus) : duree de
+    // traitement superieure a 30 jours pour un antibiotique.
+    for (const ligne of lignes) {
+      const medicament = medicamentParId.get(ligne.medicamentId);
+      if (!medicament) continue;
+
+      if (
+        dureeAntibiotiqueExcessive(medicament, ligne.dureeTraitementJours) &&
+        !ligne.confirmerAvertissementDuree
+      ) {
+        return {
+          error: `${medicament.nom} : duree de traitement de ${ligne.dureeTraitementJours} jours superieure a 30 jours pour un antibiotique. Confirmez si vous souhaitez maintenir cette duree, ou reduisez-la.`,
+          success: false,
+        };
+      }
+    }
+
     // F-PRE-02 / RG-PRE-10 : controle de securite allergie <-> medicament,
     // sur la DCI et sur la classe therapeutique (referentiel-allergies.ts).
     // Bloquant : soit la ligne est retiree par le medecin, soit il force
@@ -566,6 +761,75 @@ export async function creerPrescriptionAction(
         lignesForcees.push({
           medicamentNom: medicament.nom,
           allergie,
+          justification: ligne.justificationForcage,
+        });
+      }
+    }
+
+    // F-PRE-02 : controle de securite "age", medicament marque contre-indique
+    // avant un age minimum dans le referentiel (controles-securite.ts).
+    // Bloquant, meme mecanisme de forcage justifie que l'allergie ci-dessus.
+    const lignesForceesAge: { medicamentNom: string; ageMinimumMois: number; justification: string }[] = [];
+
+    if (patient) {
+      for (const ligne of lignes) {
+        const medicament = medicamentParId.get(ligne.medicamentId);
+        if (!medicament) continue;
+
+        const ageMinimumMois = ageMinimumNonAtteint(medicament, patient);
+        if (ageMinimumMois === null) continue;
+
+        if (!ligne.forcerAlerteAge) {
+          return {
+            error: `Alerte age bloquante : ${medicament.nom} est contre-indique avant ${libelleAgeMinimum(ageMinimumMois)}. Retirez cette ligne ou forcez la prescription avec une justification.`,
+            success: false,
+          };
+        }
+
+        if (ligne.justificationForcage.length < LONGUEUR_MIN_JUSTIFICATION_FORCAGE) {
+          return {
+            error: `La justification du forcage de l'alerte age sur ${medicament.nom} doit comporter au moins ${LONGUEUR_MIN_JUSTIFICATION_FORCAGE} caracteres.`,
+            success: false,
+          };
+        }
+
+        lignesForceesAge.push({
+          medicamentNom: medicament.nom,
+          ageMinimumMois,
+          justification: ligne.justificationForcage,
+        });
+      }
+    }
+
+    // F-PRE-02 : controle de securite "grossesse", medicament marque
+    // contre-indique pendant la grossesse et patiente avec grossesse en
+    // cours declaree (controles-securite.ts). Bloquant, meme mecanisme de
+    // forcage justifie que l'allergie et l'age ci-dessus.
+    const lignesForceesGrossesse: { medicamentNom: string; justification: string }[] = [];
+
+    if (patient) {
+      for (const ligne of lignes) {
+        const medicament = medicamentParId.get(ligne.medicamentId);
+        if (!medicament) continue;
+
+        if (!grossesseIncompatible(medicament, patient)) continue;
+
+        if (!ligne.forcerAlerteGrossesse) {
+          return {
+            error: `Alerte grossesse bloquante : ${medicament.nom} est contre-indique pendant la grossesse, or la patiente a une grossesse en cours declaree. Retirez cette ligne ou forcez la prescription avec une justification.`,
+            success: false,
+          };
+        }
+
+        if (ligne.justificationForcage.length < LONGUEUR_MIN_JUSTIFICATION_FORCAGE) {
+          return {
+            error: `La justification du forcage de l'alerte grossesse sur ${medicament.nom} doit comporter au moins ${LONGUEUR_MIN_JUSTIFICATION_FORCAGE} caracteres.`,
+            success: false,
+          };
+        }
+
+        lignesForceesGrossesse.push({
+          medicamentNom: medicament.nom,
           justification: ligne.justificationForcage,
         });
       }
@@ -642,6 +906,50 @@ export async function creerPrescriptionAction(
         );
       }
 
+      for (const ligneForcee of lignesForceesAge) {
+        await tx.evenementPrescription.create({
+          data: {
+            prescriptionId: prescriptionCreee.id,
+            type: "forcage_alerte_age",
+            utilisateurId: session.userId,
+            commentaire: `Alerte age (< ${libelleAgeMinimum(ligneForcee.ageMinimumMois)}) forcee pour ${ligneForcee.medicamentNom} : ${ligneForcee.justification}`,
+          },
+        });
+
+        await journaliser(
+          {
+            utilisateurId: session.userId,
+            action: "forcage_alerte_age",
+            donneeConcernee: `prescription:${prescriptionCreee.id}`,
+            adresseTechnique,
+            justification: `Alerte age (< ${libelleAgeMinimum(ligneForcee.ageMinimumMois)}) forcee pour ${ligneForcee.medicamentNom} : ${ligneForcee.justification}`,
+          },
+          tx
+        );
+      }
+
+      for (const ligneForcee of lignesForceesGrossesse) {
+        await tx.evenementPrescription.create({
+          data: {
+            prescriptionId: prescriptionCreee.id,
+            type: "forcage_alerte_grossesse",
+            utilisateurId: session.userId,
+            commentaire: `Alerte grossesse forcee pour ${ligneForcee.medicamentNom} : ${ligneForcee.justification}`,
+          },
+        });
+
+        await journaliser(
+          {
+            utilisateurId: session.userId,
+            action: "forcage_alerte_grossesse",
+            donneeConcernee: `prescription:${prescriptionCreee.id}`,
+            adresseTechnique,
+            justification: `Alerte grossesse forcee pour ${ligneForcee.medicamentNom} : ${ligneForcee.justification}`,
+          },
+          tx
+        );
+      }
+
       await journaliser(
         {
           utilisateurId: session.userId,
@@ -668,6 +976,496 @@ export async function creerPrescriptionAction(
   }
 }
 
+const LONGUEUR_MIN_MOTIF_ANNULATION_PRESCRIPTION = 10;
+
+const schemaAnnulationOuArretPrescription = z.object({
+  prescriptionId: z.string().trim().min(1, "La prescription est obligatoire."),
+  motif: z
+    .string()
+    .trim()
+    .min(
+      LONGUEUR_MIN_MOTIF_ANNULATION_PRESCRIPTION,
+      `Le motif doit comporter au moins ${LONGUEUR_MIN_MOTIF_ANNULATION_PRESCRIPTION} caracteres.`
+    ),
+});
+
+/**
+ * F-PRE-05 du pack, "Annuler" : reservee au medecin auteur (Zero Trust,
+ * verifie en base sur medecinPrescripteurId, jamais suppose du seul role),
+ * possible seulement si aucune delivrance n'a jamais eu lieu pour cette
+ * prescription (meme une delivrance depuis annulee compte : un pharmacien a
+ * deja agi dessus, ce n'est plus "jamais commencee" ; utilisez "Arreter"
+ * dans ce cas a la place). Motif obligatoire, jamais transmis au patient
+ * (meme principe que les observations internes du medecin, defense en
+ * profondeur), seulement trace dans EvenementPrescription et JournalAudit.
+ */
+export async function annulerPrescriptionAction(
+  prevState: PrescriptionActionState,
+  formData: FormData
+): Promise<PrescriptionActionState> {
+  const session = await getSession();
+
+  if (!session) {
+    return { error: "Session expiree. Veuillez vous reconnecter.", success: false };
+  }
+
+  if (!session.roles.some((role) => can(role, "update", "prescription"))) {
+    return { error: "Action reservee aux medecins.", success: false };
+  }
+
+  const validation = schemaAnnulationOuArretPrescription.safeParse({
+    prescriptionId: texte(formData, "prescriptionId"),
+    motif: texte(formData, "motif"),
+  });
+
+  if (!validation.success) {
+    return {
+      error: premierMessageErreur(validation.error, "Donnees d'annulation invalides."),
+      success: false,
+    };
+  }
+
+  const { prescriptionId, motif } = validation.data;
+
+  try {
+    const professionnel = await professionnelDeLaSessionCourante();
+
+    if (!professionnel) {
+      return { error: "Aucun profil professionnel associe a ce compte.", success: false };
+    }
+
+    const prescription = await prisma.prescription.findUnique({
+      where: { id: prescriptionId },
+      include: { patient: true, delivrances: { select: { id: true } } },
+    });
+
+    if (!prescription || prescription.medecinPrescripteurId !== professionnel.id) {
+      return { error: "Cette prescription est introuvable.", success: false };
+    }
+
+    if (prescription.statut === "annulee") {
+      return { error: "Cette prescription est deja annulee.", success: false };
+    }
+
+    if (prescription.delivrances.length > 0) {
+      return {
+        error:
+          "Cette prescription a deja fait l'objet d'une delivrance : utilisez \"Arreter\" pour interrompre le reste, l'annulation totale n'est plus possible.",
+        success: false,
+      };
+    }
+
+    const adresseTechnique = await adresseTechniqueCourante();
+
+    await prisma.$transaction(async (tx) => {
+      await tx.prescription.update({ where: { id: prescription.id }, data: { statut: "annulee" } });
+
+      await tx.evenementPrescription.create({
+        data: {
+          prescriptionId: prescription.id,
+          type: "annulation",
+          utilisateurId: session.userId,
+          commentaire: motif,
+        },
+      });
+
+      await journaliser(
+        {
+          utilisateurId: session.userId,
+          action: "annulation",
+          donneeConcernee: `prescription:${prescription.id}`,
+          adresseTechnique,
+          justification: motif,
+        },
+        tx
+      );
+    });
+
+    await creerNotification(
+      prescription.patient.userId,
+      "prescription",
+      `Votre ordonnance ${prescription.numero} a ete annulee par votre medecin.`,
+      "/app/patient/prescriptions"
+    );
+
+    revalidatePath("/app/medecin/prescriptions");
+
+    return { error: null, success: true };
+  } catch (erreur) {
+    console.error("Erreur lors de l'annulation de la prescription :", erreur);
+    return {
+      error: "Une erreur est survenue lors de l'annulation. Veuillez reessayer.",
+      success: false,
+    };
+  }
+}
+
+/**
+ * F-PRE-05 du pack, "Arreter" : reservee au medecin auteur, possible
+ * seulement apres une delivrance partielle reelle (statut courant
+ * "delivree_partiellement"). Interrompt les lignes restantes en faisant
+ * passer la prescription au meme statut terminal "annulee" que "Annuler"
+ * (ce depot ne modelise pas de statut "arretee" distinct : la consequence
+ * pratique est identique, plus aucune delivrance possible ensuite, voir
+ * STATUTS_EN_ATTENTE_DE_DELIVRANCE plus bas) ; seul le type d'evenement
+ * trace ("arret" plutot que "annulation") et le message au patient
+ * distinguent les deux dans l'historique.
+ */
+export async function arreterPrescriptionAction(
+  prevState: PrescriptionActionState,
+  formData: FormData
+): Promise<PrescriptionActionState> {
+  const session = await getSession();
+
+  if (!session) {
+    return { error: "Session expiree. Veuillez vous reconnecter.", success: false };
+  }
+
+  if (!session.roles.some((role) => can(role, "update", "prescription"))) {
+    return { error: "Action reservee aux medecins.", success: false };
+  }
+
+  const validation = schemaAnnulationOuArretPrescription.safeParse({
+    prescriptionId: texte(formData, "prescriptionId"),
+    motif: texte(formData, "motif"),
+  });
+
+  if (!validation.success) {
+    return {
+      error: premierMessageErreur(validation.error, "Donnees d'arret invalides."),
+      success: false,
+    };
+  }
+
+  const { prescriptionId, motif } = validation.data;
+
+  try {
+    const professionnel = await professionnelDeLaSessionCourante();
+
+    if (!professionnel) {
+      return { error: "Aucun profil professionnel associe a ce compte.", success: false };
+    }
+
+    const prescription = await prisma.prescription.findUnique({
+      where: { id: prescriptionId },
+      include: { patient: true },
+    });
+
+    if (!prescription || prescription.medecinPrescripteurId !== professionnel.id) {
+      return { error: "Cette prescription est introuvable.", success: false };
+    }
+
+    if (prescription.statut !== "delivree_partiellement") {
+      return {
+        error: "Seule une prescription delivree en partie peut etre arretee.",
+        success: false,
+      };
+    }
+
+    const adresseTechnique = await adresseTechniqueCourante();
+
+    await prisma.$transaction(async (tx) => {
+      await tx.prescription.update({ where: { id: prescription.id }, data: { statut: "annulee" } });
+
+      await tx.evenementPrescription.create({
+        data: {
+          prescriptionId: prescription.id,
+          type: "arret",
+          utilisateurId: session.userId,
+          commentaire: motif,
+        },
+      });
+
+      await journaliser(
+        {
+          utilisateurId: session.userId,
+          action: "arret",
+          donneeConcernee: `prescription:${prescription.id}`,
+          adresseTechnique,
+          justification: motif,
+        },
+        tx
+      );
+    });
+
+    await creerNotification(
+      prescription.patient.userId,
+      "prescription",
+      `Votre ordonnance ${prescription.numero} : la delivrance des medicaments restants a ete arretee par votre medecin.`,
+      "/app/patient/prescriptions"
+    );
+
+    revalidatePath("/app/medecin/prescriptions");
+
+    return { error: null, success: true };
+  } catch (erreur) {
+    console.error("Erreur lors de l'arret de la prescription :", erreur);
+    return {
+      error: "Une erreur est survenue lors de l'arret. Veuillez reessayer.",
+      success: false,
+    };
+  }
+}
+
+const schemaRenouvellementPrescription = z.object({
+  prescriptionId: z.string().trim().min(1, "La prescription a renouveler est obligatoire."),
+  consultationId: z.string().trim().min(1, "La consultation est obligatoire."),
+  // RG-PRE-30 : meme exigence de re-authentification que creerPrescriptionAction,
+  // un renouvellement cree lui aussi une prescription "validee" (voir la
+  // docstring plus bas).
+  motDePasseSignature: z.string().min(1, "Le mot de passe est obligatoire pour signer l'ordonnance."),
+});
+
+/**
+ * F-PRE-05 du pack, "Renouveler" : cree une nouvelle prescription "validee",
+ * rattachee a une consultation du medecin connecte (deja verifiee comme lui
+ * appartenant par getConsultationPourPrescription, reappliquee ici Zero
+ * Trust), en copiant les lignes de l'ancienne (meme medicament, meme
+ * posologie deja composee, meme quantite et duree). Ouvert a "tout medecin
+ * ayant un acces valide au patient" (le pack) via cette meme regle : atteindre
+ * cet ecran avec une consultation a soi pour ce patient EST l'acces valide,
+ * pas necessairement l'auteur de l'ancienne prescription.
+ *
+ * Perimetre reduit assume : contrairement a creerPrescriptionAction (formulaire
+ * interactif ou une alerte bloquante peut etre forcee avec justification),
+ * le renouvellement est non interactif et refuse purement et simplement des
+ * qu'un controle de securite (F-PRE-02 : allergie, age, grossesse, doublon,
+ * duree) se declenche sur une ligne copiee, en renvoyant vers la creation
+ * manuelle plutot que de forcer silencieusement quoi que ce soit. La
+ * posologie n'est jamais redecomposee en champs structures (dose/unite/voie/
+ * frequence, voir posologie.ts) : la chaine deja composee de l'ancienne ligne
+ * est recopiee telle quelle, une prescription copiee n'ayant pas besoin d'un
+ * nouveau passage par le formulaire structure.
+ */
+export async function renouvelerPrescriptionAction(
+  prevState: PrescriptionActionState,
+  formData: FormData
+): Promise<PrescriptionActionState> {
+  const session = await getSession();
+
+  if (!session) {
+    return { error: "Session expiree. Veuillez vous reconnecter.", success: false };
+  }
+
+  if (!session.roles.some((role) => can(role, "create", "prescription"))) {
+    return { error: "Action reservee aux medecins.", success: false };
+  }
+
+  const validation = schemaRenouvellementPrescription.safeParse({
+    prescriptionId: texte(formData, "prescriptionId"),
+    consultationId: texte(formData, "consultationId"),
+    motDePasseSignature: texte(formData, "motDePasseSignature"),
+  });
+
+  if (!validation.success) {
+    return {
+      error: premierMessageErreur(validation.error, "Donnees de renouvellement invalides."),
+      success: false,
+    };
+  }
+
+  const { prescriptionId, consultationId, motDePasseSignature } = validation.data;
+
+  const utilisateurConnecte = await prisma.user.findUnique({ where: { id: session.userId } });
+  const motDePasseValide =
+    utilisateurConnecte !== null &&
+    (await bcrypt.compare(motDePasseSignature, utilisateurConnecte.motDePasseHash));
+
+  if (!motDePasseValide) {
+    await journaliser({
+      utilisateurId: session.userId,
+      action: "signature_prescription_mot_de_passe_invalide",
+      donneeConcernee: `prescription:${prescriptionId}`,
+      adresseTechnique: await adresseTechniqueCourante(),
+      justification: "Tentative de signature d'un renouvellement de prescription avec un mot de passe incorrect (RG-PRE-30).",
+    });
+    return { error: "Mot de passe incorrect. Le renouvellement n'a pas ete signe.", success: false };
+  }
+
+  try {
+    const professionnel = await prisma.professionnelSante.findUnique({
+      where: { userId: session.userId },
+    });
+
+    if (!professionnel) {
+      return { error: "Aucun profil professionnel associe a ce compte.", success: false };
+    }
+
+    const consultation = await prisma.consultation.findUnique({ where: { id: consultationId } });
+
+    if (!consultation || consultation.professionnelId !== professionnel.id) {
+      return { error: "Cette consultation est introuvable.", success: false };
+    }
+
+    const ancienne = await prisma.prescription.findUnique({
+      where: { id: prescriptionId },
+      include: { lignes: { include: { medicament: true } }, patient: true },
+    });
+
+    if (!ancienne || ancienne.patientId !== consultation.patientId) {
+      return {
+        error: "Cette ordonnance ne correspond pas au patient de cette consultation.",
+        success: false,
+      };
+    }
+
+    if (ancienne.lignes.length === 0) {
+      return { error: "Cette ordonnance n'a plus aucune ligne a renouveler.", success: false };
+    }
+
+    // F-PRE-02, non interactif (voir docstring) : les memes controles que
+    // creerPrescriptionAction, appliques a chaque ligne copiee. Le premier
+    // declenche renvoie vers la creation manuelle.
+    const patient = ancienne.patient;
+    const allergiesPatient = parseListeJSON(patient.allergies);
+
+    // L'ancienne prescription elle-meme est exclue de "deja active" : sinon
+    // renouveler une prescription encore validee/partiellement delivree
+    // declencherait systematiquement un faux avertissement "doublon" contre
+    // elle-meme (ses propres lignes, copiees a l'identique).
+    const prescriptionsActives = await prisma.prescription.findMany({
+      where: {
+        patientId: patient.id,
+        statut: { in: ["validee", "delivree_partiellement"] },
+        id: { not: ancienne.id },
+      },
+      include: { lignes: { include: { medicament: true } } },
+    });
+    const traitementsActifs: LigneComparable[] = prescriptionsActives.flatMap((prescription) =>
+      prescription.lignes.map((ligne) => ({
+        principeActif: ligne.medicament.principeActif,
+        classeTherapeutique: ligne.medicament.classeTherapeutique,
+      }))
+    );
+    const lignesDejaRetenues: LigneComparable[] = [...traitementsActifs];
+
+    for (const ligne of ancienne.lignes) {
+      const medicament = ligne.medicament;
+
+      const allergie = allergieCorrespondante(medicament, allergiesPatient);
+      if (allergie) {
+        return {
+          error: `Renouvellement impossible : alerte allergie bloquante sur ${medicament.nom} ("${allergie}"). Creez une nouvelle prescription manuellement pour revoir cette ligne.`,
+          success: false,
+        };
+      }
+
+      const ageMinimumMois = ageMinimumNonAtteint(medicament, patient);
+      if (ageMinimumMois !== null) {
+        return {
+          error: `Renouvellement impossible : ${medicament.nom} est contre-indique avant ${libelleAgeMinimum(ageMinimumMois)}. Creez une nouvelle prescription manuellement pour revoir cette ligne.`,
+          success: false,
+        };
+      }
+
+      if (grossesseIncompatible(medicament, patient)) {
+        return {
+          error: `Renouvellement impossible : ${medicament.nom} est contre-indique pendant la grossesse. Creez une nouvelle prescription manuellement pour revoir cette ligne.`,
+          success: false,
+        };
+      }
+
+      if (dureeAntibiotiqueExcessive(medicament, ligne.dureeTraitementJours)) {
+        return {
+          error: `Renouvellement impossible : duree de traitement de ${ligne.dureeTraitementJours} jours superieure a 30 jours pour ${medicament.nom} (antibiotique). Creez une nouvelle prescription manuellement pour ajuster.`,
+          success: false,
+        };
+      }
+
+      const candidate: LigneComparable = {
+        principeActif: medicament.principeActif,
+        classeTherapeutique: medicament.classeTherapeutique,
+      };
+      if (avertissementPourLigne(candidate, lignesDejaRetenues)) {
+        return {
+          error: `Renouvellement impossible : ${medicament.nom} declenche une alerte doublon/meme classe. Creez une nouvelle prescription manuellement pour confirmer ou ajuster.`,
+          success: false,
+        };
+      }
+      lignesDejaRetenues.push(candidate);
+    }
+
+    const adresseTechnique = await adresseTechniqueCourante();
+    const dateCreation = new Date();
+    const empreinteContenu = calculerEmpreintePrescription({
+      instructions: ancienne.instructions,
+      lignes: ancienne.lignes.map((ligne) => ({
+        medicamentId: ligne.medicamentId,
+        posologie: ligne.posologie,
+        quantite: ligne.quantite,
+        dureeTraitementJours: ligne.dureeTraitementJours,
+      })),
+    });
+
+    const nouvelleId = await prisma.$transaction(async (tx) => {
+      const numero = await genererNumeroOrdonnance(tx, dateCreation);
+
+      const nouvelle = await tx.prescription.create({
+        data: {
+          consultationId: consultation.id,
+          medecinPrescripteurId: professionnel.id,
+          patientId: ancienne.patientId,
+          date: dateCreation,
+          statut: "validee",
+          numero,
+          empreinteContenu,
+          instructions: ancienne.instructions,
+          lignes: {
+            create: ancienne.lignes.map((ligne) => ({
+              medicamentId: ligne.medicamentId,
+              posologie: ligne.posologie,
+              quantite: ligne.quantite,
+              dureeTraitementJours: ligne.dureeTraitementJours,
+              nonSubstituable: ligne.nonSubstituable,
+            })),
+          },
+        },
+      });
+
+      await tx.evenementPrescription.create({
+        data: {
+          prescriptionId: nouvelle.id,
+          type: "renouvellement",
+          utilisateurId: session.userId,
+          commentaire: `Renouvellement de l'ordonnance ${ancienne.numero}`,
+        },
+      });
+
+      await journaliser(
+        {
+          utilisateurId: session.userId,
+          action: "creation",
+          donneeConcernee: `prescription:${nouvelle.id}`,
+          adresseTechnique,
+          justification: `Renouvellement de l'ordonnance ${ancienne.numero} pour le patient ${ancienne.patientId}`,
+        },
+        tx
+      );
+
+      return nouvelle.id;
+    });
+
+    void nouvelleId;
+
+    await creerNotification(
+      ancienne.patient.userId,
+      "prescription",
+      `Une nouvelle ordonnance a ete ajoutee a votre dossier (renouvellement de ${ancienne.numero}).`,
+      "/app/patient/prescriptions"
+    );
+
+    revalidatePath(`/app/medecin/prescriptions/nouvelle`);
+
+    return { error: null, success: true };
+  } catch (erreur) {
+    console.error("Erreur lors du renouvellement de la prescription :", erreur);
+    return {
+      error: "Une erreur est survenue lors du renouvellement. Veuillez reessayer.",
+      success: false,
+    };
+  }
+}
+
 /**
  * Recupere les prescriptions creees par le professionnel connecte (derive de
  * getSession() -> ProfessionnelSante lie), de la plus recente a la plus
@@ -686,6 +1484,7 @@ export async function getPrescriptionsDuProfessionnel(): Promise<PrescriptionRes
       consultation: true,
       patient: { include: { user: true } },
       lignes: { include: { medicament: true } },
+      delivrances: { select: { id: true } },
     },
     orderBy: { date: "desc" },
   });
@@ -695,6 +1494,14 @@ export async function getPrescriptionsDuProfessionnel(): Promise<PrescriptionRes
       medecinNomComplet: null,
       patientNomComplet: nomComplet(prescription.patient.user),
       patientIdentifiantSante: prescription.patient.identifiantSante,
+      // F-PRE-05 du pack : "Annuler" seulement si aucune delivrance n'a
+      // jamais eu lieu (meme une delivrance depuis annulee compte : un
+      // pharmacien a deja agi sur cette prescription, ce n'est plus un
+      // simple "jamais commencee"). "Arreter" seulement apres une delivrance
+      // partielle reelle (statut courant), les deux reserves a l'auteur (déjà
+      // garanti ici, cette liste est filtree sur medecinPrescripteurId).
+      peutEtreAnnulee: prescription.statut === "validee" && prescription.delivrances.length === 0,
+      peutEtreArretee: prescription.statut === "delivree_partiellement",
     })
   );
 }
@@ -848,6 +1655,10 @@ export async function getPrescriptionsADelivrer(recherche?: string): Promise<Pre
       medecinNomComplet: null,
       patientNomComplet: nomComplet(prescription.patient.user),
       patientIdentifiantSante: prescription.patient.identifiantSante,
+      // F-PRE-05 : le pharmacien n'annule ni n'arrete une prescription (reserve
+      // au medecin auteur), seulement la delivrance elle-meme (voir plus bas).
+      peutEtreAnnulee: false,
+      peutEtreArretee: false,
     })
   );
 }

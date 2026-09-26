@@ -19,6 +19,12 @@ import {
   type LigneComparable,
 } from "@/modules/prescription/controles-doublons";
 import {
+  ageMinimumNonAtteint,
+  libelleAgeMinimum,
+  grossesseIncompatible,
+  dureeAntibiotiqueExcessive,
+} from "@/modules/prescription/controles-securite";
+import {
   UNITES_POSOLOGIE,
   VOIES_POSOLOGIE,
   FREQUENCES_POSOLOGIE,
@@ -70,6 +76,9 @@ interface LigneFormulaire {
   forcerAlerteAllergie: boolean;
   justificationForcage: string;
   confirmerAvertissement: boolean;
+  forcerAlerteAge: boolean;
+  forcerAlerteGrossesse: boolean;
+  confirmerAvertissementDuree: boolean;
 }
 
 function ligneVide(cle: number): LigneFormulaire {
@@ -87,6 +96,9 @@ function ligneVide(cle: number): LigneFormulaire {
     forcerAlerteAllergie: false,
     justificationForcage: "",
     confirmerAvertissement: false,
+    forcerAlerteAge: false,
+    forcerAlerteGrossesse: false,
+    confirmerAvertissementDuree: false,
   };
 }
 
@@ -127,6 +139,9 @@ export interface FormulairePrescriptionProps {
   consultationId: string;
   medicaments: MedicamentOption[];
   patientAllergies: string[];
+  patientDateNaissanceISO: string;
+  patientSexe: string;
+  patientGrossesseEnCours: boolean;
   patientTraitementsActifs: LigneComparable[];
 }
 
@@ -142,6 +157,9 @@ export function FormulairePrescription({
   consultationId,
   medicaments,
   patientAllergies,
+  patientDateNaissanceISO,
+  patientSexe,
+  patientGrossesseEnCours,
   patientTraitementsActifs,
 }: FormulairePrescriptionProps) {
   const [state, formAction, pending] = useActionState(
@@ -149,7 +167,9 @@ export function FormulairePrescription({
     etatInitial
   );
   const [lignes, setLignes] = useState<LigneFormulaire[]>([ligneVide(0)]);
+  const [motDePasseSignature, setMotDePasseSignature] = useState("");
   const prochaineCleRef = useRef(1);
+  const patientDateNaissance = new Date(patientDateNaissanceISO);
 
   const optionsMedicaments = medicaments.map((medicament) => ({
     value: medicament.id,
@@ -208,6 +228,24 @@ export function FormulairePrescription({
     );
   }
 
+  function basculerForcageAge(cle: number, valeur: boolean) {
+    setLignes((actuelles) =>
+      actuelles.map((ligne) => (ligne.cle === cle ? { ...ligne, forcerAlerteAge: valeur } : ligne))
+    );
+  }
+
+  function basculerForcageGrossesse(cle: number, valeur: boolean) {
+    setLignes((actuelles) =>
+      actuelles.map((ligne) => (ligne.cle === cle ? { ...ligne, forcerAlerteGrossesse: valeur } : ligne))
+    );
+  }
+
+  function basculerConfirmationDuree(cle: number, valeur: boolean) {
+    setLignes((actuelles) =>
+      actuelles.map((ligne) => (ligne.cle === cle ? { ...ligne, confirmerAvertissementDuree: valeur } : ligne))
+    );
+  }
+
   /** Allergie du patient correspondant au medicament choisi pour cette ligne, ou null (F-PRE-02). */
   function allergieDeLaLigne(medicamentId: string): string | null {
     const medicament = medicaments.find((candidat) => candidat.id === medicamentId);
@@ -235,6 +273,28 @@ export function FormulairePrescription({
     return avertissementPourLigne(medicament, autresLignes);
   }
 
+  /** Age minimum (en mois) non atteint pour le medicament choisi sur cette ligne, ou null (F-PRE-02). */
+  function ageMinimumDeLaLigne(medicamentId: string): number | null {
+    const medicament = medicaments.find((candidat) => candidat.id === medicamentId);
+    if (!medicament) return null;
+    return ageMinimumNonAtteint(medicament, { dateNaissance: patientDateNaissance });
+  }
+
+  /** Vrai si le medicament choisi sur cette ligne est contre-indique pour la grossesse en cours de la patiente. */
+  function grossesseIncompatibleDeLaLigne(medicamentId: string): boolean {
+    const medicament = medicaments.find((candidat) => candidat.id === medicamentId);
+    if (!medicament) return false;
+    return grossesseIncompatible(medicament, { sexe: patientSexe, grossesseEnCours: patientGrossesseEnCours });
+  }
+
+  /** Vrai si la duree de traitement saisie depasse 30 jours pour un antibiotique (F-PRE-02). */
+  function dureeExcessiveDeLaLigne(ligne: LigneFormulaire): boolean {
+    const medicament = medicaments.find((candidat) => candidat.id === ligne.medicamentId);
+    const duree = Number(ligne.dureeTraitementJours);
+    if (!medicament || Number.isNaN(duree)) return false;
+    return dureeAntibiotiqueExcessive(medicament, duree);
+  }
+
   const blocageAllergieNonResolu = lignes.some((ligne) => {
     const allergie = allergieDeLaLigne(ligne.medicamentId);
     if (!allergie) return false;
@@ -248,6 +308,26 @@ export function FormulairePrescription({
     const avertissement = avertissementDeLaLigne(ligne.cle, ligne.medicamentId);
     return avertissement !== null && !ligne.confirmerAvertissement;
   });
+
+  const blocageAgeNonResolu = lignes.some((ligne) => {
+    if (ageMinimumDeLaLigne(ligne.medicamentId) === null) return false;
+    return (
+      !ligne.forcerAlerteAge ||
+      ligne.justificationForcage.trim().length < LONGUEUR_MIN_JUSTIFICATION_FORCAGE
+    );
+  });
+
+  const blocageGrossesseNonResolu = lignes.some((ligne) => {
+    if (!grossesseIncompatibleDeLaLigne(ligne.medicamentId)) return false;
+    return (
+      !ligne.forcerAlerteGrossesse ||
+      ligne.justificationForcage.trim().length < LONGUEUR_MIN_JUSTIFICATION_FORCAGE
+    );
+  });
+
+  const blocageDureeNonResolu = lignes.some(
+    (ligne) => dureeExcessiveDeLaLigne(ligne) && !ligne.confirmerAvertissementDuree
+  );
 
   // F-PRE-03 : dose renseignee et positive, et precision "autre" fournie
   // quand voie/frequence vaut "autre" (revalide de toute facon cote serveur).
@@ -268,6 +348,9 @@ export function FormulairePrescription({
         forcerAlerteAllergie,
         justificationForcage,
         confirmerAvertissement,
+        forcerAlerteAge,
+        forcerAlerteGrossesse,
+        confirmerAvertissementDuree,
       }) => ({
         medicamentId,
         dose,
@@ -281,6 +364,9 @@ export function FormulairePrescription({
         forcerAlerteAllergie,
         justificationForcage,
         confirmerAvertissement,
+        forcerAlerteAge,
+        forcerAlerteGrossesse,
+        confirmerAvertissementDuree,
       })
     )
   );
@@ -525,6 +611,88 @@ export function FormulairePrescription({
                   </div>
                 );
               })()}
+
+              {(() => {
+                const ageMinimumMois = ageMinimumDeLaLigne(ligne.medicamentId);
+                if (ageMinimumMois === null) return null;
+
+                return (
+                  <div className="flex flex-col gap-3">
+                    <Alert level="critical" title="Alerte age bloquante">
+                      Ce medicament est contre-indique avant{" "}
+                      {libelleAgeMinimum(ageMinimumMois)}. Retirez cette ligne,
+                      ou forcez la prescription ci-dessous avec une
+                      justification (tracee dans le journal d&apos;audit).
+                    </Alert>
+                    <label className="flex items-center gap-2 text-[13px] font-semibold text-encre">
+                      <input
+                        type="checkbox"
+                        checked={ligne.forcerAlerteAge}
+                        onChange={(event) => basculerForcageAge(ligne.cle, event.target.checked)}
+                      />
+                      Forcer cette prescription malgre l&apos;alerte
+                    </label>
+                    {ligne.forcerAlerteAge ? (
+                      <TextField
+                        label="Justification du forcage"
+                        required
+                        hint={`Au moins ${LONGUEUR_MIN_JUSTIFICATION_FORCAGE} caracteres, visible dans l'audit.`}
+                        value={ligne.justificationForcage}
+                        onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                          modifierJustification(ligne.cle, event.target.value)
+                        }
+                      />
+                    ) : null}
+                  </div>
+                );
+              })()}
+
+              {grossesseIncompatibleDeLaLigne(ligne.medicamentId) ? (
+                <div className="flex flex-col gap-3">
+                  <Alert level="critical" title="Alerte grossesse bloquante">
+                    Ce medicament est contre-indique pendant la grossesse, or
+                    la patiente a une grossesse en cours declaree. Retirez
+                    cette ligne, ou forcez la prescription ci-dessous avec une
+                    justification (tracee dans le journal d&apos;audit).
+                  </Alert>
+                  <label className="flex items-center gap-2 text-[13px] font-semibold text-encre">
+                    <input
+                      type="checkbox"
+                      checked={ligne.forcerAlerteGrossesse}
+                      onChange={(event) => basculerForcageGrossesse(ligne.cle, event.target.checked)}
+                    />
+                    Forcer cette prescription malgre l&apos;alerte
+                  </label>
+                  {ligne.forcerAlerteGrossesse ? (
+                    <TextField
+                      label="Justification du forcage"
+                      required
+                      hint={`Au moins ${LONGUEUR_MIN_JUSTIFICATION_FORCAGE} caracteres, visible dans l'audit.`}
+                      value={ligne.justificationForcage}
+                      onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                        modifierJustification(ligne.cle, event.target.value)
+                      }
+                    />
+                  ) : null}
+                </div>
+              ) : null}
+
+              {dureeExcessiveDeLaLigne(ligne) ? (
+                <div className="flex flex-col gap-3">
+                  <Alert level="warning" title="Avertissement">
+                    Duree de traitement superieure a 30 jours pour un
+                    antibiotique.
+                  </Alert>
+                  <label className="flex items-center gap-2 text-[13px] font-semibold text-encre">
+                    <input
+                      type="checkbox"
+                      checked={ligne.confirmerAvertissementDuree}
+                      onChange={(event) => basculerConfirmationDuree(ligne.cle, event.target.checked)}
+                    />
+                    Confirmer malgre l&apos;avertissement
+                  </label>
+                </div>
+              ) : null}
             </div>
           ))}
         </div>
@@ -539,6 +707,22 @@ export function FormulairePrescription({
           hint="Instructions generales pour le patient ou le pharmacien (facultatif)."
         />
 
+        {/*
+          RG-PRE-30 du pack : la signature exige une re-authentification.
+          Perimetre reduit assume (voir schemaCreationPrescription cote
+          serveur) : toujours redemandee, un seul essai par soumission.
+        */}
+        <TextField
+          label="Mot de passe (signature de l'ordonnance)"
+          name="motDePasseSignature"
+          type="password"
+          required
+          autoComplete="current-password"
+          hint="Confirmez votre identite pour signer cette prescription."
+          value={motDePasseSignature}
+          onChange={(event: ChangeEvent<HTMLInputElement>) => setMotDePasseSignature(event.target.value)}
+        />
+
         <Button
           type="submit"
           variant="primary"
@@ -547,10 +731,14 @@ export function FormulairePrescription({
             pending ||
             blocageAllergieNonResolu ||
             blocageAvertissementNonResolu ||
-            blocagePosologieIncomplete
+            blocagePosologieIncomplete ||
+            blocageAgeNonResolu ||
+            blocageGrossesseNonResolu ||
+            blocageDureeNonResolu ||
+            motDePasseSignature.length === 0
           }
         >
-          {pending ? "Enregistrement en cours..." : "Enregistrer la prescription"}
+          {pending ? "Signature en cours..." : "Signer la prescription"}
         </Button>
       </form>
     </Card>
