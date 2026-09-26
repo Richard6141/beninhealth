@@ -499,3 +499,70 @@ une nouvelle session sans contexte.
     page, export + fermeture), corrigé côté script, pas côté produit.
   - tsc et vitest (63/63) propres sur l'arbre complet au moment du commit.
 - 2026-09-26.
+
+### Point projet-gouv-ae, 2026-09-26 (demande directe de l'utilisateur)
+
+- Bug live remonte directement par l'utilisateur, corrige immediatement :
+  "Body exceeded 1 MB limit" sur `/app/profil` (televersement d'avatar).
+  Cause : `experimental.serverActions.bodySizeLimit` jamais configure, limite
+  par defaut de Next.js (1 Mo) plus basse que celle deja annoncee par l'UI de
+  l'avatar (3 Mo, `TAILLE_MAX_AVATAR_OCTETS`). `next.config.ts` : releve a
+  4 Mo.
+- Tache confiee **directement par l'utilisateur**, avec les identifiants
+  Cloudinary fournis en clair dans le chat (ajoutes uniquement a `.env`,
+  jamais recopies ni dans un commit ni dans une reponse) : migrer toutes les
+  images de la plateforme vers Cloudinary. Confirme explicitement que ceci
+  couvre a la fois les avatars et les documents medicaux.
+- Fait et verifie de bout en bout (tsc propre, vitest 63/63, verification
+  reelle via script direct : upload d'avatar puis rechargement complet de la
+  page confirmant l'URL Cloudinary persistee ; upload d'un document de test
+  puis telechargement via `/api/documents/[id]` confirmant statut 200,
+  `Content-Type`/`Content-Disposition` corrects et signature `%PDF` reelle
+  dans le corps recu) :
+  - Nouveau point d'entree unique `src/lib/cloudinary.ts` : televersement
+    public (avatars) et prive/"authenticated" (documents medicaux),
+    generation d'URL de telechargement signee, suppression. Plus aucune
+    image stockee localement (`public/uploads/avatars`,
+    `private-uploads/documents` retires du code, plus utilises).
+  - `src/modules/identity/actions.ts` (`televerserAvatarAction`) et
+    `src/modules/document/actions.ts` (`ajouterDocumentAction`,
+    `retirerDocumentAction` inchangee) migres vers Cloudinary.
+    `src/modules/document/stockage-fichiers.ts` ne garde que la detection de
+    type par signature binaire (RG-CLI-110 inchangee) et une nouvelle
+    fonction `extensionDepuisTypeMime`.
+  - RG-CLI-112 preserve a l'identique : `/api/documents/[id]` continue de
+    reverifier Zero Trust avant de servir un document, l'URL Cloudinary
+    signee n'est jamais exposee au navigateur (recuperee serveur a serveur,
+    seuls les octets sont renvoyes par la route elle-meme).
+  - Bug Cloudinary decouvert et corrige en cours de route, a documenter pour
+    toute session future qui toucherait a nouveau ce fichier :
+    `cloudinary.url(publicId, {sign_url: true, expires_at, ...})` (signature
+    d'URL de livraison CDN classique) renvoie systematiquement 401 "deny or
+    ACL failure" sur les ressources de type "authenticated" de ce compte,
+    verifie manuellement avec/sans format, avec/sans version reelle,
+    avec une duree de validite longue : aucune variation ne change le
+    resultat. `cloudinary.utils.private_download_url(publicId, format, {...})`
+    (API de telechargement prive dediee, domaine `api.cloudinary.com` plutot
+    que `res.cloudinary.com`) fonctionne correctement et est utilisee a la
+    place dans `genererUrlSigneeCloudinary`.
+  - `next.config.ts` : `res.cloudinary.com` whiteliste dans
+    `images.remotePatterns` (bug distinct decouvert en testant : sans cette
+    entree, `next/image` renvoie une erreur 500 sur toute page affichant un
+    avatar Cloudinary, y compris `AvatarMenu` dans le layout authentifie
+    racine, donc quasiment toutes les pages).
+  - `.env.example` et `src/lib/env.ts` : section/champs Cloudinary documentes
+    (facultatifs, pas dans `VARIABLES_OBLIGATOIRES_EN_PRODUCTION`, memes
+    principe que les autres integrations externes de ce depot). Vraies
+    valeurs deja dans `.env` local (jamais committe).
+  - Commit isole via la meme methode que les autres chantiers de ce soir
+    (`git apply --cached` sur des hunks isoles pour ne prendre que mes lignes
+    dans les fichiers partages avec d'autres sessions ; `src/modules/identity/actions.ts`
+    en particulier melangeait mon migration d'avatar avec un chantier de
+    connexion en deux etapes par code e-mail d'une autre session, isole avec
+    succes). Deja committe (`bf47f06`).
+- Documentation mise a jour en consequence :
+  `docs/audit-cote-medecin.md` (F-PRE-03, calendrier vaccinal), et
+  `docs/audit-cote-pharmacien.md` (F-PHA-02) pour refleter des commits recents
+  d'autres sessions, sans lien direct avec Cloudinary mais fait dans la meme
+  session avant ce chantier.
+- 2026-09-26.

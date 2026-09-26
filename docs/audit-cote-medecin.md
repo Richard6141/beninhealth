@@ -24,13 +24,13 @@ puis une troisième passe qui a recroisé F-CLI-09 à F-CLI-14 avec le code
 | F-CLI-08 Addendum / correction après validation | **Fait** | Addendum (texte + motif, daté et signé, visible sous la consultation) et retrait pour saisie par erreur (motif obligatoire + ré-authentification par mot de passe, RG-AUTH-53) tous deux implémentés, fenêtre de 12 mois après validation (RG-CLI-70) basée sur `dateValidation`. Consultation retirée : reste visible barrée pour le médecin et le patient (RG-CIT-22), exclue des statistiques via le flag `saisieParErreur`. |
 | F-CLI-09 Consulter l'historique complet (P0) | **Fait** | `getHistoriquePatient` + `/app/medecin/patients/[id]/historique` : chronologie fusionnée (consultations, prescriptions, examens, visites communautaires), filtres type/période/établissement, pagination à 25 éléments, panneau latéral de détail (`Modal variant="drawer-right"`). RG-CLI-80 : une entrée `JournalAudit` par affichage de page, une entrée distincte par ouverture de détail (`journaliserOuvertureDetailHistoriqueAction`). Non fait : vaccinations et documents comme événements de la chronologie (F-CLI-11/13 ont leur propre section sur la fiche patient plutôt qu'intégrés ici, voir leurs lignes). |
 | F-CLI-10 Accès d'urgence / bris de glace (P1) | **Fait** (périmètre réduit, honnête) | `src/modules/urgence/actions.ts` + `/app/medecin/urgence` : identification par identifiant santé, motif, justification (20 à 500 caractères), **vraie** ré-authentification TOTP (réutilise la MFA existante, refuse si elle n'est pas activée sur le compte plutôt que de simuler le contrôle). Ouvre un `Consentement` `typeAcces: "urgence"` de 4h (RG-CLI-93 : refus si un accès urgence est déjà actif, refus aussi si un accès normal valide existe déjà, l'urgence n'étant faite que pour l'absence de consentement). RG-CLI-90 (5 accès/24h) vérifié et testé. RG-CLI-91 (exclusion des données sensibles) appliqué dans `getHistoriquePatient` (examens `sensible` exclus entièrement) ; bandeau rouge avec expiration sur la fiche patient (CA-2/CA-3, expiration réutilise le mécanisme déjà existant de `dateFin`). L'accès apparaît en rouge en tête, avec justification, sur `/app/patient/acces` (F-CIT-12). Non fait, documenté : notification patient/établissement en interne (`Notification`) plutôt que SMS réel (aucune passerelle SMS dans ce dépôt) ; pas de rôle "auditeur" ni d'écran de revue sous 7 jours (F-AUD-02 non construit), mais chaque accès reste tracé intégralement dans `JournalAudit` pour une revue future, comme le signalement F-CIT-12. |
-| F-CLI-11 Enregistrer une vaccination (P1) | **Fait** | Nouveau modèle `Vaccination` (patientId, professionnelId, etablissementId, vaccin, numeroDose, dateAdministration, numeroLot, siteInjection, voie). `src/modules/vaccination/actions.ts` + `/app/medecin/vaccinations/nouvelle` : référentiel simple (BCG, Polio, Pentavalent, Rougeole, Fièvre jaune, VAT, COVID-19, Autre), date jamais dans le futur, avertissement (case à cocher) si même vaccin + même dose déjà enregistrée pour ce patient. RG-CLI-100 (immuable) : retrait motivé plutôt que modification/suppression. Historique affiché sur la fiche patient. Non fait : contrôle d'âge/intervalle minimal par rapport au calendrier PEV (référentiel de calendrier absent de ce dépôt, comme le référentiel allergies déjà noté ailleurs). |
+| F-CLI-11 Enregistrer une vaccination (P1) | **Fait** | Nouveau modèle `Vaccination` (patientId, professionnelId, etablissementId, vaccin, numeroDose, dateAdministration, numeroLot, siteInjection, voie). `src/modules/vaccination/actions.ts` + `/app/medecin/vaccinations/nouvelle` : référentiel simple (BCG, Polio, Pentavalent, Rougeole, Fièvre jaune, VAT, COVID-19, Autre), date jamais dans le futur, avertissement (case à cocher) si même vaccin + même dose déjà enregistrée pour ce patient. RG-CLI-100 (immuable) : retrait motivé plutôt que modification/suppression. Historique affiché sur la fiche patient. Contrôle d'âge/intervalle minimal par rapport au calendrier PEV désormais fait aussi (`controlerAgeVaccination`, référentiel.ts, valeurs sourcées du tableau officiel OMS) : BCG (naissance), Polio/Pentavalent (6 semaines puis 4 semaines entre doses), Rougeole/Fièvre jaune (9 mois). VAT et COVID-19 explicitement exclus du contrôle (calendriers non ancrés sur l'âge depuis la naissance de la même façon), documenté dans le code. |
 | F-CLI-12 Prise en charge infirmière (constantes + note de soins) (P1) | **Fait** | Nouveau modèle `PriseEnChargeInfirmiere` (ne crée jamais de `Consultation`, l'infirmier n'a pas cette permission). `src/modules/soins/actions.ts` + `/app/medecin/soins` : liste des patients arrivés (rendez-vous confirmé du jour) sans constantes prises, saisie des constantes (mêmes contrôles que F-CLI-06), priorité de tri (urgent/prioritaire/standard), note de soins obligatoire. Le médecin retrouve automatiquement la prise en charge non consommée à l'ouverture d'une nouvelle consultation (`getPriseEnChargeNonRecuperee`, bandeau d'information, constantes pré-remplies), marquée « récupérée » une fois le brouillon créé. |
 | F-CLI-13 Ajouter un document médical (P1) | **Fait** (médecin uniquement) | Nouveau modèle `DocumentMedical`. `src/modules/document/actions.ts` + `/app/medecin/documents/nouveau` + `src/app/api/documents/[id]/route.ts` (téléchargement authentifié, Zero Trust revérifié à chaque téléchargement, jamais d'URL publique statique). RG-CLI-110 : type vérifié par signature binaire réelle (PDF/JPEG/PNG), 10 Mo max, testé avec un faux `.pdf` réellement rejeté. RG-CLI-112 : stockage hors de `public/` (`private-uploads/documents/`), nom de fichier aléatoire. RG-CLI-113 : jamais supprimé, seulement retiré « ajouté par erreur ». Non fait, documenté : suppression des métadonnées EXIF (aucune librairie de traitement d'image dans ce dépôt, décision de dépendance à prendre), téléversement par l'infirmier/le laboratoire (RBAC actuel = médecin uniquement), téléchargement direct par le patient de ses propres documents. |
 | F-CLI-14 Référence vers un autre établissement (P2) | Non applicable | Le pack lui-même indique « non développé dans le MVP ». Rien à signaler. |
 | F-PRE-01 Création de prescription liée à une consultation | Fait | Inchangé. |
 | F-PRE-02 Contrôles de sécurité (allergie, doublon, etc.) | **Fait** | Allergie ↔ médicament (DCI + classe thérapeutique) : bloquant, forçage avec justification ≥ 20 caractères tracé. Doublon et même-classe étendus aux ordonnances actives du patient (pas seulement la prescription en cours), niveau avertissement avec confirmation simple (`src/modules/prescription/controles-doublons.ts`). Non fait : contrôles âge/grossesse/durée (nécessitent des champs de référentiel médicament qui n'existent pas encore). |
-| F-PRE-03 Posologie structurée | Non fait | Toujours un champ texte libre. |
+| F-PRE-03 Posologie structurée | **Fait** (périmètre réduit) | Le champ stocké (`LignePrescription.posologie`) reste un `String` (pas de migration), mais le formulaire de création est désormais structuré (dose, unité, voie, fréquence séparées, `src/modules/prescription/posologie.ts`), composé en une chaîne cohérente à l'enregistrement, revalidé et recomposé côté serveur (jamais une chaîne envoyée telle quelle par le client). Non fait : pas de flux d'édition d'une posologie déjà enregistrée dans ce dépôt, donc rien à reparser côté existant. |
 | F-PRE-04 / F-PRE-06 Numérotation RX-XXXX-XXXX, empreinte SHA-256, signature 2FA | Partiel | Numéro `RX-<année>-<séquence>` et empreinte SHA-256 générés à la création (`src/modules/prescription/actions.ts`). Non fait : ré-authentification à deux facteurs (voir "Limites assumées" : nécessiterait de rendre la MFA obligatoire pour tous les médecins, hors périmètre de ce correctif). |
 
 ## Corrections apportées
@@ -75,20 +75,23 @@ côté médecin et côté patient).
 
 ## Reste à faire, par ordre de valeur
 
+Mise à jour 2026-09-26 : F-PRE-03 (posologie structurée, périmètre réduit),
+F-CLI-11/calendrier vaccinal et l'écran de revue des accès d'urgence
+(F-AUD-02, via `admin_etablissement`/`admin_national` plutôt qu'un rôle
+"auditeur") ont été traités depuis la passe précédente ; retirés de cette
+liste, voir leurs lignes dans le tableau ci-dessus et
+`docs/audit-cote-administration.md` pour F-AUD-02.
+
 1. **Contrôles âge/grossesse/durée** (F-PRE-02) : nécessitent des champs de
    référentiel médicament qui n'existent pas (âge minimum, contre-indication
-   grossesse) et une notion de grossesse en cours côté patient.
-2. **Posologie structurée** (F-PRE-03) : dose/unité/voie/fréquence séparées
-   plutôt qu'un champ texte libre.
-3. **Calendrier vaccinal** (F-CLI-11) : contrôle d'âge/intervalle minimal par
-   rapport au calendrier PEV, référentiel absent de ce dépôt.
-4. **Suppression des métadonnées EXIF** (F-CLI-13, RG-CLI-110) : nécessite une
+   grossesse) et une notion de grossesse en cours côté patient. Implique une
+   migration de schéma, à ne faire que lorsque `schema.prisma` ne sera plus en
+   cours de modification concurrente par une autre session.
+2. **Suppression des métadonnées EXIF** (F-CLI-13, RG-CLI-110) : nécessite une
    librairie de traitement d'image (aucune dans ce dépôt), décision de
-   dépendance à prendre avec l'utilisateur.
-5. **Écran de revue des accès d'urgence sous 7 jours** (F-CLI-10, RG-CLI-92,
-   F-AUD-02) : aucun rôle "auditeur" ni écran d'audit dans ce dépôt ; chaque
-   accès reste tracé dans `JournalAudit` en attendant.
-6. **Autosauvegarde/mode hors ligne des brouillons**, **abandon à 7 jours**,
+   dépendance à prendre avec l'utilisateur (même type de décision déjà prise
+   ce soir pour `pdf-lib`, F-CIT-13).
+3. **Autosauvegarde/mode hors ligne des brouillons**, **abandon à 7 jours**,
    **signature 2FA des prescriptions**, **notification SMS réelle** : chantiers
    d'infrastructure transverses, chacun documenté comme limite assumée à
    l'endroit concerné plutôt que construit à moitié.
@@ -101,7 +104,9 @@ constantes structurées, validation verrouillée, addendum/retrait), les trois
 et les cinq écarts de la troisième passe (F-CLI-09 historique complet,
 F-CLI-10 bris de glace, F-CLI-11 vaccination, F-CLI-12 prise en charge
 infirmière, F-CLI-13 document médical) sont désormais tous traités et
-vérifiés à l'écran. Le rôle médecin n'a plus de trou P0 ouvert. Ce qui reste
-(F-PRE-02/03, calendrier vaccinal, EXIF, écran auditeur, autosauvegarde/2FA)
-est soit une fonctionnalité additionnelle, soit un chantier d'infrastructure
-transverse clairement signalé, jamais un correctif ponctuel oublié.
+vérifiés à l'écran, de même que F-PRE-03 et le calendrier vaccinal de F-CLI-11
+(passe du 2026-09-26). Le rôle médecin n'a plus de trou P0 ouvert. Ce qui
+reste (F-PRE-02, EXIF, autosauvegarde/2FA/SMS) est soit une fonctionnalité
+additionnelle nécessitant une migration de schéma, soit un chantier
+d'infrastructure transverse clairement signalé, jamais un correctif ponctuel
+oublié.
