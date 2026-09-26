@@ -85,6 +85,17 @@ export async function televerserImageCloudinary(
  * statique/publique). "image" comme resource_type couvre aussi bien les PDF
  * que les JPEG/PNG cote Cloudinary (memes formats que
  * detecterTypeReelFichier, src/modules/document/stockage-fichiers.ts).
+ *
+ * RG-CLI-110 : flags: "force_strip" (transformation appliquee au
+ * televersement, donc persistee sur la ressource stockee elle-meme, pas
+ * seulement sur une URL de livraison a la demande) retire les metadonnees
+ * EXIF/XMP/ICC embarquees (dont la localisation GPS) d'une image avant
+ * stockage. Verifie manuellement (pas seulement documente) : upload d'une
+ * image de test contenant un vrai segment EXIF, telechargement immediat
+ * derriere une URL signee neuve sans aucune transformation demandee a la
+ * volee, absence confirmee du segment EXIF dans les octets recus. Verifie
+ * aussi que ce flag n'altere ni ne rasterise un PDF (upload/telechargement
+ * d'un PDF de test, octets et format inchanges).
  */
 export async function televerserFichierPriveCloudinary(
   octets: Buffer,
@@ -103,6 +114,7 @@ export async function televerserFichierPriveCloudinary(
           public_id: options.identifiantPublic,
           type: "authenticated",
           resource_type: "image",
+          flags: "force_strip",
         },
         (erreur, resultatTeleversement) => {
           if (erreur || !resultatTeleversement) {
