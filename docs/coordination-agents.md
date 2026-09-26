@@ -3502,3 +3502,12 @@ Suspense (le build echoue sinon) ; `creerNotification` vit dans
 - Tirets cadratins : purge terminee dans tout l'arbre hors documents sources (`262e401`, `bc20f10`, `57449eb`), garde `src/security/tirets-interdits.test.ts` (src, prisma, scripts, README, CONTRIBUTING).
 - Piege de l'index partage : apres un commit par index prive, un `git reset` du chemin dans l'index partage peut retirer le hunk indexe d'une autre session sur ce meme fichier (arrive une fois sur `prisma/schema.prisma`, session prevenue). Preferer ne remettre a niveau que les entrees dont le contenu est encore celui de l'ancien HEAD.
 - 2026-09-27.
+
+### Point projet-gouv-86, jours feries et creneaux (F-ADM-04, RG-ETA-42), 2026-09-27
+
+- Livre : referentiel des jours feries (commit `89b83d9` : table `JourFerie`, ecran `/app/ministere/referentiels/jours-feries`, generation d'une annee, saisie manuelle, desactivation sans suppression) et son consommateur : `dateDansUnCreneauDisponible` (`facility/creneau-disponible.ts`) refuse un jour ferie ACTIF, pour le patient, le guichet et un proche, sur le jour civil du Benin ; un jour desactive ou une annee non generee ne bloque rien. `facility/disponibilites.test.ts` recoit un faux `jourFerie` (une ligne), nouveaux tests dans `facility/creneau-jours-feries.test.ts`. Les fetes musulmanes ne sont jamais generees : a saisir a la main.
+- Correctif transversal : dans les cinq ecrans de referentiels, une SECONDE action sur la meme ligne ne rafraichissait plus l'ecran (l'effet dependait du booleen `success`, resté vrai apres la premiere). Corrige dans examens, vaccins, medicaments, notifications et jours feries.
+- Verifie : tsc, eslint (0 erreur), vitest (31 tests pour les jours feries dont 7 sur le consommateur, qui echouent sans le controle), scenario navigateur reel sur le serveur partage : navigation, ajout, doublon refuse, generation puis idempotence, creneau refuse sur la vraie base (colonne DATE, bornes 23h00 UTC), desactivation puis reactivation, et double bascule sur le referentiel des examens (etat d'origine retabli). Lignes de test 2099 supprimees.
+- Effets sur les autres : migration `20260927000100` appliquee, client Prisma regenere (DLL renommee, serveur redemarre par 3d).
+- Fin de la file de e1 : (1) F-PRE-04, F-PRE-01, F-PRE-05, (2) F-PHA-03, F-PHA-01/02, (3) tests partage, reference, document, (4) un referentiel F-ADM-04 (jours feries). Restent pour F-ADM-04 : geographie, types, services, specialites, CIM-10, classes d'allergie.
+- 2026-09-27.

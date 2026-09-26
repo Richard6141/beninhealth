@@ -6,6 +6,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import { dateDepuisJourCivil, jourCivilBenin } from "@/modules/administration/jours-feries-calcul";
 
 /**
  * Utilise par creerRendezVousAction (src/modules/facility/actions.ts) :
@@ -20,8 +21,22 @@ import { prisma } from "@/lib/prisma";
  * jamais defini d'agenda. Des qu'un professionnel definit au moins un
  * creneau, seules les heures qu'il a explicitement ouvertes deviennent
  * reservables pour lui.
+ *
+ * RG-ETA-42 : un jour ferie ACTIF du referentiel (F-ADM-04) ne genere aucun
+ * creneau, quel que soit l'agenda du professionnel, y compris quand il n'en
+ * a defini aucun. Le jour civil est celui du Benin. Un jour desactive, ou
+ * une annee jamais generee, ne bloque rien.
  */
 export async function dateDansUnCreneauDisponible(professionnelId: string, dateUtc: Date): Promise<boolean> {
+  const jourFerie = await prisma.jourFerie.findFirst({
+    where: { date: dateDepuisJourCivil(jourCivilBenin(dateUtc)), actif: true },
+    select: { id: true },
+  });
+
+  if (jourFerie) {
+    return false;
+  }
+
   const creneaux = await prisma.creneauDisponibilite.findMany({ where: { professionnelId } });
   if (creneaux.length === 0) {
     return true;

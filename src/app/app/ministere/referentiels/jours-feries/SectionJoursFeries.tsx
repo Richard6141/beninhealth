@@ -32,11 +32,12 @@ function LigneJourFerie({ jour }: { jour: JourFerieResume }) {
   const router = useRouter();
   const [etat, action, enCours] = useActionState(basculerActifJourFerieAction, etatInitial);
 
+  // Sur l'objet d'etat, pas son booleen : sinon une seconde bascule de la meme ligne ne rafraichirait rien.
   useEffect(() => {
     if (etat.success) {
       router.refresh();
     }
-  }, [etat.success, router]);
+  }, [etat, router]);
 
   return (
     <div className="flex flex-col gap-2 border-b border-bordure py-3 last:border-0 sm:flex-row sm:items-center sm:justify-between">

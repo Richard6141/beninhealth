@@ -33,11 +33,20 @@ function LigneNotification({ entree }: { entree: ModeleNotificationResume }) {
     etatInitial
   );
 
+  // Un effet par action, sur l'OBJET d'etat (nouveau a chaque resultat) et non sur
+  // son booleen : apres un premier succes le booleen reste vrai et ne relancerait
+  // jamais le rafraichissement d'une seconde action sur la meme ligne.
   useEffect(() => {
-    if (etatTexte.success || etatBasculement.success) {
+    if (etatTexte.success) {
       router.refresh();
     }
-  }, [etatTexte.success, etatBasculement.success, router]);
+  }, [etatTexte, router]);
+
+  useEffect(() => {
+    if (etatBasculement.success) {
+      router.refresh();
+    }
+  }, [etatBasculement, router]);
 
   return (
     <div className="flex flex-col gap-3 border-b border-bordure py-4 last:border-0">

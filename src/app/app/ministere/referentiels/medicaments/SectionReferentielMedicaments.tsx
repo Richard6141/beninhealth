@@ -103,7 +103,7 @@ function FormulaireAjoutMedicament() {
     if (state.success) {
       router.refresh();
     }
-  }, [state.success, router]);
+  }, [state, router]);
 
   return (
     <form key={cle} action={formAction} className="flex flex-col gap-4">
@@ -179,7 +179,7 @@ function LigneMedicament({ medicament }: { medicament: MedicamentReferentielResu
     if (etatBasculement.success) {
       router.refresh();
     }
-  }, [etatBasculement.success, router]);
+  }, [etatBasculement, router]);
 
   if (enEdition) {
     return <FormulaireModificationMedicament medicament={medicament} onTermine={() => setEnEdition(false)} />;

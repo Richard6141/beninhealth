@@ -15,6 +15,8 @@ vi.mock("@/lib/prisma", () => ({
   prisma: {
     professionnelSante: { findUnique: vi.fn() },
     creneauDisponibilite: { findMany: vi.fn(), create: vi.fn(), findUnique: vi.fn(), delete: vi.fn() },
+    // RG-ETA-42 : aucun jour ferie connu dans ces tests (voir creneau-jours-feries.test.ts pour les jours feries).
+    jourFerie: { findFirst: vi.fn(async () => null) },
   },
 }));
 
