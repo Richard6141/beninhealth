@@ -3464,3 +3464,12 @@ Suspense (le build echoue sinon) ; `creerNotification` vit dans
 - Verifie : chaque correction est couverte par un test qui echoue sans elle (module `reference` rejoue avec son ancienne version : 4 tests rouges, puis 20 verts avec la correction) ; tsc, eslint (0 erreur).
 - Reste pour cette file : tests du module `document` (telechargement, IDOR), puis les referentiels F-ADM-04.
 - 2026-09-26.
+
+### Point projet-gouv-3e, lot 4 (tests, correction de resultat, tirets), 2026-09-26
+
+- F-NOT-01 : le compteur de la cloche se rafraichit toutes les 60 s et au retour sur l'onglet (`17f96c2`), logique pure testee ; non verifie dans un navigateur.
+- F-CLI-11 et F-CLI-12 : enregistrer ou retirer une vaccination et creer une prise en charge infirmiere acceptaient un consentement "urgence" ou limite a un autre domaine ; l'ecriture exige maintenant `dossier_complet` ou `consultations` (`6880fc8`, lecture inchangee). Premiers tests des modules vaccination, soins (31 tests) et communautaire (17 tests, aucun defaut trouve).
+- F-LAB-04 (RG-ROL-31) : correction d'un resultat valide par nouvelle version (`425485f`). Nouvelle table `VersionResultatExamen` et colonne `ExamenMedical.versionResultat`, migration `20260926230000` ; le serveur de dev doit etre redemarre pour recharger le client Prisma (la DLL etait verrouillee, les types sont a jour).
+- Tirets cadratins : retires de mes fichiers. Il en reste dans `ministere/etablissements/SectionEtablissementsAdmin.tsx`, `patient/proches/[id]/page.tsx`, `pilotage/masquage.ts` (commentaires) et dans une quarantaine de fichiers de documentation : a traiter par leurs proprietaires.
+- Reste dans ma file laboratoire : valeurs de reference par age (F-LAB-03), antecedents du patient sur l'ecran de validation.
+- 2026-09-26.
