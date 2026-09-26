@@ -4,11 +4,13 @@ import { useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { ClipboardList, FlaskConical, Search, UserRound } from "lucide-react";
 import type { ExamenResume } from "@/modules/laboratoire/actions";
+import { Alert } from "@/components/ui/Alert";
 import { Badge } from "@/components/ui/Badge";
 import type { BadgeTone } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { cn } from "@/lib/cn";
 import { Modal, type ModalHandle } from "@/components/ui/Modal";
+import { FormulairePrelevement } from "./FormulairePrelevement";
 import { FormulaireResultat } from "./FormulaireResultat";
 import { SectionValidation } from "./FormulaireValidation";
 
@@ -22,6 +24,22 @@ function libelleStatut(statut: string): { texte: string; tone: BadgeTone } {
   if (cle === "annule") return { texte: "Annulé", tone: "critical" };
   return { texte: statut, tone: "neutral" };
 }
+
+const LIBELLES_TYPE_ECHANTILLON: Record<string, string> = {
+  sang_veineux: "Sang veineux",
+  sang_capillaire: "Sang capillaire",
+  urine: "Urine",
+  selles: "Selles",
+  autre: "Autre",
+};
+
+const LIBELLES_MOTIF_REJET: Record<string, string> = {
+  hemolyse: "Hémolysé",
+  quantite_insuffisante: "Quantité insuffisante",
+  mauvais_tube: "Mauvais tube",
+  delai_depasse: "Délai dépassé",
+  etiquetage_incorrect: "Étiquetage incorrect",
+};
 
 function formaterDateHeure(date: string): string {
   try {
@@ -151,7 +169,7 @@ export function ListeExamensLaboratoire({
                 aria-checked={actif}
                 onClick={() => setFiltreStatut(option.id)}
                 className={cn(
-                  "rounded-[calc(var(--radius-champ)-4px)] px-3 py-1.5 text-[13px] font-semibold transition-colors motion-reduce:transition-none",
+                  "rounded-champ px-3 py-1.5 text-[13px] font-semibold transition-colors motion-reduce:transition-none",
                   actif
                     ? "bg-surface text-marine shadow-[var(--ombre-carte)]"
                     : "text-encre-attenuee hover:text-encre"
@@ -271,7 +289,10 @@ function LigneExamen({
         <Badge tone={statut.tone}>{statut.texte}</Badge>
       </td>
       <td className={`${styleCellule} text-right`} onClick={(evenement) => evenement.stopPropagation()}>
-        {peutSaisir ? <FormulaireResultat examen={examen} /> : null}
+        <div className="flex flex-wrap justify-end gap-2">
+          <FormulairePrelevement examen={examen} />
+          {peutSaisir ? <FormulaireResultat examen={examen} /> : null}
+        </div>
 
         <Modal ref={detailsModalRef} icon={ClipboardList} title="Détails de l'examen">
           <div className="flex flex-col gap-5">
@@ -311,6 +332,29 @@ function LigneExamen({
             <TuileDetail label="Demandé par">
               <span className="text-[14px] text-encre">{examen.demandeurNomComplet ?? "Non précisé"}</span>
             </TuileDetail>
+
+            {examen.motifRejetEchantillon ? (
+              <Alert level="warning" title="Précédent échantillon rejeté">
+                {LIBELLES_MOTIF_REJET[examen.motifRejetEchantillon] ?? examen.motifRejetEchantillon}, nouveau
+                prélèvement nécessaire.
+              </Alert>
+            ) : null}
+
+            {examen.typeEchantillon ? (
+              <div className="grid grid-cols-2 gap-3">
+                <TuileDetail label="Échantillon">
+                  <span className="text-[14px] text-encre">
+                    {LIBELLES_TYPE_ECHANTILLON[examen.typeEchantillon] ?? examen.typeEchantillon}
+                    {examen.identifiantEchantillon ? ` (${examen.identifiantEchantillon})` : ""}
+                  </span>
+                </TuileDetail>
+                <TuileDetail label="Prélevé le">
+                  <span className="text-[14px] text-encre">
+                    {examen.datePrelevement ? formaterDateHeure(examen.datePrelevement) : "—"}
+                  </span>
+                </TuileDetail>
+              </div>
+            ) : null}
 
             {examen.resultat ? (
               <TuileDetail label="Résultat">
