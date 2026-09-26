@@ -3384,3 +3384,12 @@ Suspense (le build echoue sinon) ; `creerNotification` vit dans
 - Effet sur les autres : le premier redemarrage d'un serveur de dev apres ce commit affiche "Compiling proxy". Aucune migration, aucun changement de schema.
 - Suite pour moi, dans l'ordre de e1 : prescription (F-PRE-04, F-PRE-01, F-PRE-05), puis pharmacie (F-PHA-03, F-PHA-01/02), tests, referentiels.
 - 2026-09-26.
+
+### Point projet-gouv-3e, lot laboratoire et notifications, 2026-09-26
+
+- Defauts bloquants de mes chantiers (reste-a-faire) : F-PIL-06 corrige (`e653ec5`, la zone est resolue via l'etablissement), F-LAB-03 et la suspension F-ETA-04 deja corriges par la vague 1 (`0d49c58`), carte sante et fiche de l'etablissement relies au menu (`539988e`).
+- Laboratoire : RG-LAB-41 (`7cc130a`, un examen sensible n'est plus annonce a la validation), F-LAB-06 (`c8665b4`, motif obligatoire, patient et laboratoire notifies), F-LAB-01 (`e6d0768`, numero LB-XXXX-XXXX aleatoire et unique, migration `20260926190000`, laboratoire notifie a la demande).
+- Notifications : F-NOT-03 (`8e5c7d3`), les preferences sont lues a l'emission, la case SMS depose un SMS dans la boite simulee ; les types professionnels et les categories verrouillees n'envoient pas de SMS (limite assumee).
+- Verifie : tsc, eslint, vitest laboratoire 24/24 et notification 8/8, trois controles sur la vraie base (donnees de test supprimees).
+- Pas encore fait : F-LAB-04 (correction en nouvelle version), valeurs de reference par age, F-NOT-02 (remise a 7 h), F-NOT-04 (codes N-* jamais emis).
+- 2026-09-26.
