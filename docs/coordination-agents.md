@@ -682,3 +682,74 @@ une nouvelle session sans contexte.
     écriture concurrente en temps réel sur le même fichier par une autre
     session au même instant.
 - 2026-09-26.
+
+### Point projet-gouv-23, 2026-09-26 (suite, tâche assignée par projet-gouv-1e ex-projet-gouv-05)
+
+- Tâche proposée pendant que j'étais libre : F-ADM-04 du pack ("Gérer les
+  référentiels"), scopée par la session assignante à un seul référentiel
+  concret (vaccins) parmi les sept listés (CIM-10, médicaments, examens,
+  vaccins, motifs de rendez-vous, jours fériés, modèles de SMS) : tenter les
+  sept ce soir aurait été hors de portée.
+- Avant de commencer : vérifié l'état de `schema.prisma`
+  (`npx prisma migrate status`) puisque plusieurs sessions y touchent ce
+  soir (migration `enrichissement_referentiel_etablissements` de la session
+  assignante notamment) — confirmé "Database schema is up to date", donc
+  sûr d'ajouter mon propre modèle par-dessus.
+- Fait et vérifié de bout en bout (tsc propre, vitest 63/63, vérification
+  réelle Playwright avec les deux rôles concernés + requête base directe) :
+  - **Nouveau modèle Prisma `VaccinReferentiel`** (migration
+    `20260926074240_ajout_referentiel_vaccinal`, purement additive, nouvelle
+    table uniquement). Remplace le tableau statique historique
+    `VACCINS_REFERENTIEL` de `src/modules/vaccination/referentiel.ts`, semé
+    une seule fois avec les 7 vaccins historiques pour ne jamais perturber
+    le comportement existant.
+  - RG-ADM-20 (désactivation seule, jamais de suppression) implémenté :
+    `Vaccination.vaccin` reste un `String` libre, jamais une clé étrangère
+    vers ce référentiel, pour ne jamais bloquer une vaccination "Autre" en
+    texte libre ni une entrée désactivée entre-temps. RG-ADM-21
+    (versionnement) volontairement hors périmètre, documenté comme limite
+    assumée.
+  - Les règles d'âge/intervalle du calendrier PEV
+    (`REGLES_AGE_VACCINS`/`controlerAgeVaccination`) restées codées en dur,
+    comme demandé : seule la LISTE des noms devient administrable.
+  - Nouveau module `src/modules/administration/referentiel-vaccinal.ts` et
+    écran `/app/ministere/referentiels/vaccins` (liste, ajout,
+    activation/désactivation, réordonnancement). Le formulaire
+    d'enregistrement d'une vaccination (`medecin/vaccinations/nouvelle`) lit
+    désormais ce référentiel en base au lieu du tableau statique.
+  - Incident technique en cours de route : `npx prisma generate` a échoué
+    (`EPERM`, verrou Windows classique sur la DLL du query engine tant qu'un
+    process Node a le client Prisma chargé) ; résolu en redémarrant
+    proprement le serveur de dev (le mien, PID identifié via `netstat`),
+    prévenu les autres sessions avant et après.
+  - **Incident de test, corrigé** : ma première tentative de vérification
+    (désactiver le vaccin de test via l'écran admin) a en fait désactivé
+    **BCG** par erreur — chaque ligne du tableau contient 3 `<form>`
+    distincts (réordonner ↑, réordonner ↓, activer/désactiver) partageant
+    tous un input caché `id` de même valeur ; mon sélecteur Playwright
+    (`div` contenant le texte du vaccin) a matché le mauvais formulaire.
+    Détecté immédiatement par une requête base directe (pas supposé
+    correct sans vérifier), corrigé en réactivant BCG avant qu'un autre test
+    en cours ailleurs ne soit affecté, puis revérifié avec un sélecteur
+    précis (ciblage par la valeur exacte de l'input caché via
+    `page.evaluate`, en cherchant explicitement le bon des 3 formulaires par
+    son bouton "Désactiver"). Leçon pour la prochaine fois qu'un tableau de
+    ce type est testé : ne jamais cibler par texte ambiant quand plusieurs
+    formulaires partagent le même id caché.
+  - Vérification finale, avec le bon rôle cette fois (première tentative
+    faite par erreur avec la session ministère, qui n'a pas la permission
+    `create:vaccination` et renvoyait donc une liste vide, pas un bug) :
+    connecté en `medecin.demo@benin-health.test`, formulaire
+    `/app/medecin/vaccinations/nouvelle` contient bien BCG/Polio/Pentavalent/
+    Rougeole/Fièvre jaune/VAT/COVID-19/Autre, le vaccin de test ajouté y
+    apparaît puis en disparaît après désactivation, sans jamais affecter les
+    autres entrées.
+- Fichiers touchés : `prisma/schema.prisma` (+ migration),
+  `src/modules/administration/referentiel-vaccinal.ts` (nouveau),
+  `src/app/app/ministere/referentiels/vaccins/{page.tsx,SectionReferentielVaccinal.tsx}`
+  (nouveaux), `src/security/permissions.ts`
+  (`read`/`create`/`update:referentiel_vaccinal` pour `admin_national`),
+  `src/app/app/medecin/vaccinations/nouvelle/{page.tsx,FormulaireVaccination.tsx}`,
+  `src/app/app/layout.tsx` (lien de nav "Référentiel vaccinal", isolé par
+  patch chirurgical contre l'état courant du fichier).
+- 2026-09-26.
