@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   basculerActifVaccinReferentielAction,
   creerVaccinReferentielAction,
@@ -33,14 +34,21 @@ function LigneVaccin({
   estPremier: boolean;
   estDernier: boolean;
 }) {
+  const router = useRouter();
   const [etatBasculement, actionBasculement, pendingBasculement] = useActionState(
     basculerActifVaccinReferentielAction,
     etatInitial
   );
-  const [, actionReordonnancement, pendingReordonnancement] = useActionState(
+  const [etatReordonnancement, actionReordonnancement, pendingReordonnancement] = useActionState(
     reordonnerVaccinReferentielAction,
     etatInitial
   );
+
+  useEffect(() => {
+    if (etatBasculement.success || etatReordonnancement.success) {
+      router.refresh();
+    }
+  }, [etatBasculement.success, etatReordonnancement.success, router]);
 
   return (
     <div className="flex flex-col gap-2 border-b border-bordure py-3 last:border-0 sm:flex-row sm:items-center sm:justify-between">
@@ -90,14 +98,16 @@ function LigneVaccin({
 }
 
 function FormulaireAjoutVaccin() {
+  const router = useRouter();
   const [state, formAction, pending] = useActionState(creerVaccinReferentielAction, etatInitial);
   const [cle, setCle] = useState(0);
 
   useEffect(() => {
     if (state.success) {
       setCle((valeur) => valeur + 1);
+      router.refresh();
     }
-  }, [state.success]);
+  }, [state.success, router]);
 
   return (
     <form action={formAction} className="flex flex-wrap items-end gap-3">
