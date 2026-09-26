@@ -28,7 +28,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { createSession } from "@/lib/session";
-import { can } from "@/security/permissions";
+import { enregistrerEvenement, limiteAtteinte } from "@/lib/limite-debit";
 import { journaliser } from "@/modules/audit/journaliser";
 import { envoyerSms } from "@/modules/notification/sms/envoyer";
 import type { NomRole } from "@/types";
@@ -47,6 +47,15 @@ const ROLES_VALIDES: readonly string[] = [
 const ROUNDS_BCRYPT = 12;
 const JOURS_VALIDITE_CODE = 30;
 const TENTATIVES_MAX = 5;
+const LIMITE_ECHECS_PAR_ADRESSE = 10;
+const FENETRE_ECHECS_MS = 15 * 60 * 1000;
+
+let hashFacticeMemorise: Promise<string> | null = null;
+/** Hash bcrypt sans valeur, pour egaliser le temps de reponse quand aucun code n'est a comparer. */
+function hashFactice(): Promise<string> {
+  hashFacticeMemorise ??= bcrypt.hash("code-factice-sans-valeur", ROUNDS_BCRYPT);
+  return hashFacticeMemorise;
+}
 const ALPHABET_CODE = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
 const LONGUEUR_CODE = 8;
 const TYPES_ACCES_AUTORISES = ["dossier_complet", "consultations"] as const;
@@ -188,6 +197,13 @@ export async function genererCodeReclamationAction(
     const adresseTechnique = await adresseTechniqueCourante();
 
     await prisma.$transaction(async (tx) => {
+      // Un nouveau code annule les precedents encore valides (RG-AUTH-20) : un
+      // seul code utilisable a la fois par dossier.
+      await tx.codeReclamationDossier.updateMany({
+        where: { patientId: patient.id, consommeLe: null, expireLe: { gt: new Date() } },
+        data: { expireLe: new Date() },
+      });
+
       await tx.codeReclamationDossier.create({
         data: { patientId: patient.id, codeHash, expireLe },
       });
@@ -268,10 +284,38 @@ export async function reclamerDossierAction(
   }
 
   try {
-    const codesActifs = await prisma.codeReclamationDossier.findMany({
-      where: { consommeLe: null, expireLe: { gte: new Date() }, tentatives: { lt: TENTATIVES_MAX } },
-      include: { patient: { include: { user: true } } },
-    });
+    const adresseTechnique = await adresseTechniqueCourante();
+    const cleLimite = `reclamation-dossier:${adresseTechnique}`;
+
+    if (limiteAtteinte(cleLimite, LIMITE_ECHECS_PAR_ADRESSE, FENETRE_ECHECS_MS)) {
+      return { error: "Trop de tentatives. Réessayez dans quelques minutes.", success: false };
+    }
+
+    // Le dossier vise est identifie par le telephone ET la date de naissance
+    // saisis (RG-AUTH-21) : seuls ses codes actifs sont compares, jamais ceux
+    // de tous les dossiers. Cela borne le cout bcrypt d'un appel (sinon chaque
+    // essai paierait un bcrypt par code actif de la plateforme) et permet de
+    // compter les essais faux sur le bon dossier (RG-AUTH-20).
+    const jourSaisi = dateNaissanceSaisie.toISOString().slice(0, 10);
+    const patientsVises = (
+      await prisma.patient.findMany({
+        where: { user: { telephone: telephone.trim(), statut: "sans_compte" } },
+        include: { user: true },
+      })
+    ).filter((patient) => patient.dateNaissance.toISOString().slice(0, 10) === jourSaisi);
+
+    const codesActifs =
+      patientsVises.length === 0
+        ? []
+        : await prisma.codeReclamationDossier.findMany({
+            where: {
+              patientId: { in: patientsVises.map((patient) => patient.id) },
+              consommeLe: null,
+              expireLe: { gte: new Date() },
+              tentatives: { lt: TENTATIVES_MAX },
+            },
+            include: { patient: { include: { user: true } } },
+          });
 
     let codeCorrespondant: (typeof codesActifs)[number] | null = null;
     for (const candidat of codesActifs) {
@@ -281,36 +325,41 @@ export async function reclamerDossierAction(
       }
     }
 
+    if (codesActifs.length === 0) {
+      // Meme temps de reponse qu'un vrai essai : la duree ne doit pas reveler
+      // si un dossier correspond au telephone et a la date de naissance.
+      await bcrypt.compare(code, await hashFactice());
+    }
+
     if (!codeCorrespondant) {
+      enregistrerEvenement(cleLimite, FENETRE_ECHECS_MS);
+
+      if (codesActifs.length > 0) {
+        await prisma.codeReclamationDossier.updateMany({
+          where: { id: { in: codesActifs.map((candidat) => candidat.id) } },
+          data: { tentatives: { increment: 1 } },
+        });
+
+        const dossiersVises = new Map(codesActifs.map((candidat) => [candidat.patientId, candidat.patient]));
+        for (const dossier of dossiersVises.values()) {
+          await journaliser({
+            utilisateurId: dossier.userId,
+            action: "tentative_reclamation_echouee",
+            donneeConcernee: `patient:${dossier.id}`,
+            adresseTechnique,
+            justification:
+              "Code incorrect pour un dossier dont le telephone et la date de naissance correspondent (F-AUTH-03, RG-AUTH-20).",
+          });
+        }
+      }
+
       return { error: MESSAGE_ERREUR_GENERIQUE, success: false };
     }
 
     const { patient } = codeCorrespondant;
-    const adresseTechnique = await adresseTechniqueCourante();
 
     if (patient.user.statut !== "sans_compte") {
       return { error: "Ce dossier est déjà associé à un compte. Présentez-vous à l'accueil d'un établissement.", success: false };
-    }
-
-    const dateNaissanceCorrespond =
-      patient.dateNaissance.toISOString().slice(0, 10) === dateNaissanceSaisie.toISOString().slice(0, 10);
-    const telephoneCorrespond = patient.user.telephone === telephone.trim();
-
-    if (!dateNaissanceCorrespond || !telephoneCorrespond) {
-      await prisma.codeReclamationDossier.update({
-        where: { id: codeCorrespondant.id },
-        data: { tentatives: { increment: 1 } },
-      });
-
-      await journaliser({
-        utilisateurId: patient.userId,
-        action: "tentative_reclamation_echouee",
-        donneeConcernee: `patient:${patient.id}`,
-        adresseTechnique,
-        justification: "Code valide mais date de naissance ou telephone ne correspondent pas au dossier (F-AUTH-03, RG-AUTH-21).",
-      });
-
-      return { error: MESSAGE_ERREUR_GENERIQUE, success: false };
     }
 
     const emailDejaUtilise = await prisma.user.findUnique({ where: { email: nouvelEmail } });
