@@ -122,6 +122,14 @@ export default function ConnexionPage() {
                 Créer mon espace santé
               </Link>
             </p>
+            <p className="mt-2 text-center text-[13px] text-encre-secondaire">
+              <Link
+                href="/etablissements"
+                className="font-semibold text-accent hover:underline"
+              >
+                Rechercher un établissement de santé
+              </Link>
+            </p>
           </Card>
         )}
       </div>
