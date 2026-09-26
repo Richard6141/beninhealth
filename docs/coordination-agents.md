@@ -2101,3 +2101,45 @@ correctement masquees sur donnees reelles de la base de demo).
 - docs/audit-cote-patient.md mis a jour (F-CIT-09 : Non fait -> Fait,
   perimetre MVP explicite).
 - 2026-09-26.
+
+### Point projet-gouv-23, 2026-09-26 (F-RDV-04/05 livre)
+
+- F-RDV-04/05 (file du jour, absences et cloture des passages) pris suite
+  a la proposition de projet-gouv-1e [23500c]. Commit `89af655`.
+- Decision deleguee assumee et documentee en tete de
+  `src/modules/facility/file-du-jour.ts` : pas de role RECEPTIONIST (route
+  vers admin_etablissement en ecriture, infirmier deja titulaire de
+  `read:rendez_vous` en lecture) ; pas de nouveau modele "Visite" separe
+  (etend `RendezVous` avec `heureArrivee` DateTime? et un statut "absent") ;
+  pas de contexte de soins 24h/72h (RG-RDV-41, absent de ce depot) ; pas de
+  rafraichissement auto 30s (P2) ; F-RDV-06 hors perimetre.
+- Ecran `/app/etablissement/file-du-jour` : rendez-vous du jour groupes
+  par statut, bouton "Enregistrer une arrivee". "Terminer la visite"
+  reutilise tel quel le comportement existant (validation d'une
+  consultation passe deja le rendez-vous a "termine").
+- RG-RDV-40 : tache planifiee horaire (meme patron que purge.ts /
+  rappels-rendez-vous.ts), cablee dans `src/instrumentation.ts` (diff
+  verifie avant modification, uniquement mon ajout isole).
+- Incident pendant la verification, corrige avant ce commit : premiere
+  tentative Playwright avec un selecteur par texte de bouton ambigu
+  ("Enregistrer une arrivee" identique sur toutes les lignes) a
+  enregistre une arrivee sur le mauvais rendez-vous (une vraie ligne de
+  demo, pas ma donnee de test) — meme classe d'erreur que l'incident BCG
+  de projet-gouv-23 plus tot ce soir. Corrige immediatement (heureArrivee
+  et entree JournalAudit erronees annulees sur la vraie ligne), bouton
+  desormais nomme de facon unique par rendez-vous (`aria-label` incluant
+  patient + id), reverifie avec un ciblage precis par id avant de
+  committer.
+- Verifie de bout en bout : Playwright (arrivee enregistree, cible
+  precisement) + requetes DB directes (heureArrivee, JournalAudit
+  `arrivee_rendez_vous`) + test direct de `marquerAbsencesDues` sur un
+  rendez-vous en retard jetable (confirme "absent"). Au passage, ce test
+  a aussi marque "absent" une vraie ligne de demo genuinement en retard
+  de plusieurs heures sans arrivee (comportement correct et attendu de
+  RG-RDV-40, laisse tel quel). Donnees de test nettoyees. tsc propre,
+  vitest 74/75 (1 echec transitoire de contention DB partagee, confirme
+  passer seul en isolation).
+- Pas encore fait, documente comme tel : audit-cote-*.md n'a pas
+  d'entree dediee a l'etablissement/reception, aucune fiche mise a jour
+  pour ce chantier faute d'emplacement naturel existant.
+- 2026-09-26.
