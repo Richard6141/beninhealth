@@ -1325,13 +1325,19 @@ export async function validerResultatExamenAction(
     // doit jamais faire echouer la validation elle-meme (deja actee en base).
     const examenValide = resultatTransaction.examen;
     const { creerNotification } = await import("@/modules/notification/creer");
+    // RG-LAB-41 / RG-CIT-20 : le patient n'est PAS prevenu a la validation
+    // d'un examen sensible ; il ne l'est qu'a l'annonce explicite par le
+    // medecin (annoncerResultatExamenAction), sinon la notification revelerait
+    // qu'un resultat sensible existe avant que le medecin ne l'ait annonce.
     await Promise.all([
-      creerNotification(
-        examenValide.patient.userId,
-        "resultat_examen_disponible",
-        "Un resultat d'analyse est disponible dans votre dossier.",
-        "/app/patient/examens"
-      ),
+      examenValide.sensible
+        ? Promise.resolve()
+        : creerNotification(
+            examenValide.patient.userId,
+            "resultat_examen_disponible",
+            "Un resultat d'analyse est disponible dans votre dossier.",
+            "/app/patient/examens"
+          ),
       creerNotification(
         examenValide.demandeur.userId,
         "resultat_examen_disponible",
