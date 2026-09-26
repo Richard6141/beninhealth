@@ -2023,3 +2023,36 @@ correctement masquees sur donnees reelles de la base de demo).
     transmise a la session assignante, en attente de retour avant de
     coder quoi que ce soit sur ce point precis.
 - 2026-09-26.
+
+### Point projet-gouv-23, 2026-09-26 (F-CIT-01, cloture finale)
+
+- Verification finale demandee sur le contact d'urgence (script HTTP jetable,
+  capture directe du corps multipart POST envoye au navigateur, PAS
+  seulement la valeur DOM juste avant clic) : confirme au niveau le plus bas
+  possible que le champ `contactUrgenceNom` (prefixe `_1_` par React, meme
+  prefixe que `groupeSanguin`/`allergies`/`maladiesChroniques` qui arrivent
+  eux correctement remplis dans le meme payload) part bien VIDE du
+  navigateur. Elimine donc l'hypothese d'un probleme de nom de champ ou de
+  lecture cote serveur : le navigateur envoie reellement une chaine vide
+  pour ces 3 champs precis, malgre `contactUrgenceNom`/`Telephone`/`Lien`
+  confirmes remplis (`Marie Test`, etc.) juste avant le clic sur "Terminer".
+  Mecanisme exact toujours non identifie, malgre cette precision
+  supplementaire.
+- Verifie en base directement (pas seulement via l'ecran) sur le compte de
+  test : `groupeSanguin`, `allergies`, `maladiesChroniques` corrects,
+  `contactsUrgence` vide (bug confirme, pas de faux negatif de l'ecran),
+  1 seule entree `JournalAudit` action "modification_profil" (garde de
+  double-soumission toujours efficace).
+- vitest (68/68) reverifie apres cette derniere passe, aucune regression.
+- Fichiers de diagnostic jetables nettoyes.
+- **F-CIT-01 clos** : le commit `714df34` documentait deja honnetement
+  cette limite avant cette verification (message de commit complet,
+  Co-Authored-By present) ; cette passe finale ne fait que confirmer avec
+  une preuve plus directe (payload brut plutot que DOM) qu'il n'y a rien de
+  plus a corriger sans identifier la cause exacte, qui resiste a
+  l'investigation depuis le debut de ce chantier (double-soumission,
+  champs controles, capture DOM, capture payload : quatre angles distincts,
+  meme resultat). Le contact d'urgence reste modifiable via
+  `/app/patient/dossier`. Aucune action supplementaire prevue sur ce point
+  precis sauf nouvelle piste concrete.
+- 2026-09-26.
