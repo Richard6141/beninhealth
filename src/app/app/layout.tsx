@@ -8,6 +8,7 @@ import {
   History,
   LayoutDashboard,
   HeartPulse,
+  Lock,
   MapPin,
   Pill,
   ShieldAlert,
@@ -73,6 +74,11 @@ const navigationPatient: ElementNavigation[] = [
     label: "Qui a consulté mon dossier",
     href: "/app/patient/acces",
     icon: <History size={tailleIconeNav} aria-hidden="true" />,
+  },
+  {
+    label: "Mes droits sur mes données",
+    href: "/app/patient/droits",
+    icon: <Lock size={tailleIconeNav} aria-hidden="true" />,
   },
 ];
 

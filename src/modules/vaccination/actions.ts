@@ -456,3 +456,45 @@ export async function getVaccinationsDuPatient(patientId: string): Promise<Vacci
     motifRetrait: vaccination.motifRetrait,
   }));
 }
+
+/**
+ * Recupere l'historique des vaccinations du patient connecte, pour son
+ * propre dossier (F-CIT-13 : export de mes donnees). Contrairement a
+ * getVaccinationsDuPatient, aucun controle de consentement ici : un patient
+ * a toujours acces a ses propres donnees.
+ */
+export async function getMesVaccinations(): Promise<VaccinationResume[]> {
+  const session = await getSession();
+
+  if (!session) {
+    return [];
+  }
+
+  const patient = await prisma.patient.findUnique({ where: { userId: session.userId } });
+
+  if (!patient) {
+    return [];
+  }
+
+  const vaccinations = await prisma.vaccination.findMany({
+    where: { patientId: patient.id },
+    include: { professionnel: { include: { user: true } }, etablissement: true },
+    orderBy: { dateAdministration: "desc" },
+  });
+
+  return vaccinations.map((vaccination) => ({
+    id: vaccination.id,
+    patientId: vaccination.patientId,
+    vaccin: vaccination.vaccin,
+    numeroDose: vaccination.numeroDose,
+    dateAdministration: vaccination.dateAdministration.toISOString(),
+    numeroLot: vaccination.numeroLot,
+    siteInjection: vaccination.siteInjection,
+    voie: vaccination.voie,
+    voieLibelle: libelleVoie(vaccination.voie),
+    professionnelNomComplet: nomCompletProfessionnel(vaccination.professionnel.user),
+    etablissementNom: vaccination.etablissement.nom,
+    saisieParErreur: vaccination.saisieParErreur,
+    motifRetrait: vaccination.motifRetrait,
+  }));
+}
