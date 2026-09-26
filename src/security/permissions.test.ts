@@ -86,6 +86,14 @@ describe("can (permissions RBAC)", () => {
     it("refuse la lecture des analytics (reservee a admin_national)", () => {
       expect(can("admin_etablissement", "read", "analytics")).toBe(false);
     });
+
+    it("autorise la lecture du journal d'audit (F-AUD-01, scope a son etablissement)", () => {
+      expect(can("admin_etablissement", "read", "journal_audit")).toBe(true);
+    });
+
+    it("autorise la revue d'un acces d'urgence (F-AUD-02)", () => {
+      expect(can("admin_etablissement", "create", "revue_acces_urgence")).toBe(true);
+    });
   });
 
   describe("role admin_national", () => {
@@ -95,6 +103,28 @@ describe("can (permissions RBAC)", () => {
 
     it("refuse la creation d'analytics (lecture seule pour ce role)", () => {
       expect(can("admin_national", "create", "analytics")).toBe(false);
+    });
+
+    it("autorise la lecture du journal d'audit (F-AUD-01, echelle plateforme)", () => {
+      expect(can("admin_national", "read", "journal_audit")).toBe(true);
+    });
+
+    it("autorise la revue d'un acces d'urgence (F-AUD-02)", () => {
+      expect(can("admin_national", "create", "revue_acces_urgence")).toBe(true);
+    });
+  });
+
+  describe("acces d'urgence (F-CLI-10), reserve a medecin et infirmier", () => {
+    it("autorise le medecin a declencher un acces d'urgence", () => {
+      expect(can("medecin", "create", "acces_urgence")).toBe(true);
+    });
+
+    it("autorise l'infirmier a declencher un acces d'urgence", () => {
+      expect(can("infirmier", "create", "acces_urgence")).toBe(true);
+    });
+
+    it("refuse a un role sans lien clinique de declencher un acces d'urgence", () => {
+      expect(can("pharmacien", "create", "acces_urgence")).toBe(false);
     });
   });
 
