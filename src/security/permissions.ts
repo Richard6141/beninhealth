@@ -194,6 +194,12 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     'read:referentiel_examens',
     'create:referentiel_examens',
     'update:referentiel_examens',
+    // F-NOT-04 : catalogue des notifications, 4e referentiel administrable
+    // du pack F-ADM-04 (modeles de notifications/SMS, voir
+    // src/modules/administration/referentiel-notifications.ts).
+    'read:referentiel_notification',
+    'create:referentiel_notification',
+    'update:referentiel_notification',
   ]),
 };
 

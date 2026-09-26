@@ -11,6 +11,7 @@ import {
   HeartPulse,
   Lock,
   MapPin,
+  MessageSquare,
   Pill,
   ShieldAlert,
   ShieldCheck,
@@ -234,6 +235,11 @@ const navigationAdminNational: ElementNavigation[] = [
     label: "Référentiel des examens",
     href: "/app/ministere/referentiels/examens",
     icon: <FlaskConical size={tailleIconeNav} aria-hidden="true" />,
+  },
+  {
+    label: "Catalogue des notifications",
+    href: "/app/ministere/referentiels/notifications",
+    icon: <MessageSquare size={tailleIconeNav} aria-hidden="true" />,
   },
 ];
 

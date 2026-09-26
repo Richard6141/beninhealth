@@ -1095,3 +1095,34 @@ model ExamenReferentielAdmin {
 
   @@schema("public")
 }
+
+// F-NOT-04 du pack ("Catalogue des notifications", docs/pack claude/specs/17-fiches-notifications.md)
+// et 4e referentiel administrable du pack F-ADM-04 (modeles de
+// notifications/SMS, apres vaccins, medicaments, examens), meme principe.
+// Seme depuis CATALOGUE_NOTIFICATIONS_DEFAUT
+// (src/modules/notification/catalogue-defaut.ts), qui reprend a l'identique
+// le tableau du pack (24 codes N-*).
+// Perimetre volontairement reduit (limite assumee, voir
+// src/modules/administration/referentiel-notifications.ts) : seul le texte
+// du modele SMS et l'etat actif/inactif sont administrables ; declencheur,
+// destinataire et canaux restent informatifs (documentation du catalogue,
+// pas des parametres consommes par un envoi reel). Aucun appelant existant
+// (creerNotification, envoyerSms, OTP...) ne lit encore cette table : la
+// migration des ~13 appels existants vers ce catalogue est un chantier
+// transverse hors perimetre de cette nuit.
+// RG-ADM-20 (desactivation seule, jamais suppression) : meme principe que
+// les 3 referentiels precedents.
+model ModeleNotification {
+  id               String   @id @default(cuid())
+  code             String   @unique
+  declencheur      String
+  destinataire     String
+  canaux           String
+  texteModele      String   @default("")
+  ordre            Int      @default(0)
+  actif            Boolean  @default(true)
+  dateCreation     DateTime @default(now())
+  dateModification DateTime @default(now())
+
+  @@schema("public")
+}
