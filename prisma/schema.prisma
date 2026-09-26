@@ -1,17 +1,28 @@
-// Schema Prisma, Phase 2 (authentification et roles).
-// Base locale : SQLite, pour une mise en route rapide sans Docker.
-// A migrer vers PostgreSQL (+ PostGIS) avant la demonstration finale,
-// voir src/database/schema-notes.md pour le schema PostgreSQL cible complet.
-// Les champs qui seraient des tableaux natifs sous PostgreSQL sont stockes
-// ici en chaine JSON (SQLite ne supporte pas les listes scalaires Prisma).
+// Schema Prisma. Base PostgreSQL (migration depuis SQLite effectuee pour
+// RG-PIL-04 du pack : role DB analytics_reader limite a un schema separe,
+// impossible sous SQLite qui n'a pas de systeme de schemas/roles). PostGIS
+// n'est pas encore active : les champs de geolocalisation restent des Float
+// simples (latitude/longitude), a revoir si F-PIL-03 (carte sanitaire) exige
+// de vraies requetes geospatiales. Les champs qui seraient des tableaux
+// natifs restent stockes en chaine JSON (compatibilite conservee avec le
+// modele de donnees existant, pas une contrainte Postgres).
 
 generator client {
   provider = "prisma-client-js"
 }
 
+// RG-PIL-04 du pack : le schema "analytics" est physiquement separe du
+// schema "public" pour pouvoir limiter un role de base de donnees dedie
+// (analytics_reader, voir prisma/analytics-role.sql) au seul schema
+// "analytics" : GRANT USAGE/SELECT sur analytics, aucun droit sur public.
+// Cote Prisma, "multiSchema" (stable depuis 5.15) permet de declarer les
+// deux schemas dans le meme client tout en gardant une isolation reelle au
+// niveau de la base, verifiee par un test (voir prisma/analytics-role.sql et
+// le test d'integration associe).
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
+  schemas  = ["public", "analytics"]
 }
 
 // Compte utilisateur de la plateforme, tous roles confondus.
@@ -49,6 +60,10 @@ model User {
   notifications Notification[]
   addendaConsultation AddendumConsultation[]
   documentsMedicaux DocumentMedical[]
+  codesVerificationEmail CodeVerificationEmail[]
+  revuesAccesUrgence RevueAccesUrgence[]
+  alertesRevues HealthAlertReview[]
+  @@schema("public")
 }
 
 // Attribution d'un role a un utilisateur (un utilisateur peut cumuler
@@ -60,6 +75,52 @@ model UserRole {
   nom    String
 
   @@unique([userId, nom])
+  @@schema("public")
+}
+
+// Referentiel geographique du Benin (12 departements, communes reelles),
+// pour la dimension territoire des indicateurs de pilotage (chapitre 14 du
+// pack : "Territoires : national -> departement (12) -> zone sanitaire (34)
+// -> commune -> etablissement"). Departements et communes sont des donnees
+// administratives reelles et stables. Les zones sanitaires (regroupements
+// officiels de communes, 34 au Benin) sont en revanche seedees de facon
+// minimale ici (une par etablissement de demo connu) : la liste complete et
+// les decoupages exacts doivent etre valides aupres du ministere avant tout
+// usage reel, meme limite deja assumee pour les referentiels allergies et
+// vaccins de ce depot.
+model Departement {
+  id   String @id @default(cuid())
+  code String @unique
+  nom  String @unique
+
+  communes        Commune[]
+  zonesSanitaires ZoneSanitaire[]
+
+  @@schema("public")
+}
+
+model ZoneSanitaire {
+  id            String @id @default(cuid())
+  code          String @unique
+  nom           String
+  departementId String
+  departement   Departement @relation(fields: [departementId], references: [id])
+
+  etablissements EtablissementSanitaire[]
+
+  @@schema("public")
+}
+
+model Commune {
+  id            String @id @default(cuid())
+  nom           String
+  departementId String
+  departement   Departement @relation(fields: [departementId], references: [id])
+
+  etablissements EtablissementSanitaire[]
+
+  @@unique([departementId, nom])
+  @@schema("public")
 }
 
 // Correspond a EtablissementSanitaire dans src/types/domain-facility.ts.
@@ -76,6 +137,14 @@ model EtablissementSanitaire {
   longitude           Float
   servicesDisponibles String @default("[]")
   capacite            Int
+  // Dimension territoire des indicateurs de pilotage (F-PIL-02/03, RG-PIL-05).
+  // Facultatifs pour ne pas casser les etablissements deja crees avant ce
+  // referentiel ; un etablissement sans territoire renseigne est exclu des
+  // agregats territorialises tant qu'il n'est pas complete.
+  communeId       String?
+  commune         Commune? @relation(fields: [communeId], references: [id])
+  zoneSanitaireId String?
+  zoneSanitaire   ZoneSanitaire? @relation(fields: [zoneSanitaireId], references: [id])
 
   professionnels ProfessionnelSante[]
   rendezVous     RendezVous[]
@@ -87,6 +156,7 @@ model EtablissementSanitaire {
   vaccinations Vaccination[]
   prisesEnChargeInfirmieres PriseEnChargeInfirmiere[]
   delivrances Delivrance[]
+  @@schema("public")
 }
 
 // Correspond a ProfessionnelSante dans src/types/domain-identity.ts.
@@ -114,6 +184,7 @@ model ProfessionnelSante {
   vaccinations Vaccination[]
   prisesEnChargeInfirmieres PriseEnChargeInfirmiere[]
   delivrances Delivrance[]
+  @@schema("public")
 }
 
 // Correspond a Patient dans src/types/domain-patient.ts.
@@ -145,6 +216,7 @@ model Patient {
   vaccinations Vaccination[]
   documentsMedicaux DocumentMedical[]
   prisesEnChargeInfirmieres PriseEnChargeInfirmiere[]
+  @@schema("public")
 }
 
 // Correspond a Consentement dans src/types/domain-patient.ts.
@@ -166,6 +238,7 @@ model Consentement {
   // un retrait met a jour cette meme ligne (statut + dates), plutot que
   // d'empiler des lignes. L'historique des evenements vit dans JournalAudit.
   @@unique([patientId, acteurAutoriseId])
+  @@schema("public")
 }
 
 // Correspond a RendezVous dans src/types/domain-facility.ts.
@@ -187,6 +260,7 @@ model RendezVous {
   dateCreation    DateTime  @default(now())
 
   consultation Consultation?
+  @@schema("public")
 }
 
 // Correspond a Consultation dans src/types/domain-clinical.ts.
@@ -244,6 +318,7 @@ model Consultation {
   addenda         AddendumConsultation[]
   documentsMedicaux DocumentMedical[]
   priseEnChargeInfirmiere PriseEnChargeInfirmiere?
+  @@schema("public")
 }
 
 // F-CLI-08 du pack : complement ou correction d'une consultation deja
@@ -260,6 +335,7 @@ model AddendumConsultation {
   motif          String
   contenu        String
   date           DateTime @default(now())
+  @@schema("public")
 }
 
 // Correspond a ExamenMedical dans src/types/domain-clinical.ts.
@@ -306,6 +382,7 @@ model ExamenMedical {
   // src/modules/laboratoire/referentiel-examens-sensibles.ts.
   sensible                  Boolean @default(false)
   resultatAnnonceAuPatient  Boolean @default(false)
+  @@schema("public")
 }
 
 // Correspond a SuiviCommunautaire dans src/types/domain-communautaire.ts.
@@ -328,6 +405,7 @@ model SuiviCommunautaire {
   localisation    String    @default("")
   notes           String    @default("")
   dateCreation    DateTime  @default(now())
+  @@schema("public")
 }
 
 // Correspond a Medicament dans src/types/domain-clinical.ts.
@@ -348,6 +426,7 @@ model Medicament {
   lignesPrescription LignePrescription[]
   // Generique par lequel ce medicament a ete substitue lors d'une delivrance (F-PHA-03).
   substitutionsDelivrees LigneDelivrance[] @relation("MedicamentDelivre")
+  @@schema("public")
 }
 
 // Correspond a Prescription dans src/types/domain-clinical.ts.
@@ -382,6 +461,7 @@ model Prescription {
   lignes     LignePrescription[]
   historique EvenementPrescription[]
   delivrances Delivrance[]
+  @@schema("public")
 }
 
 // Correspond a LignePrescription dans src/types/domain-clinical.ts : un
@@ -400,6 +480,7 @@ model LignePrescription {
   nonSubstituable      Boolean @default(false)
 
   lignesDelivrees LigneDelivrance[]
+  @@schema("public")
 }
 
 // Correspond a F-PHA-03 du pack : un acte de delivrance en pharmacie, une ou
@@ -420,6 +501,7 @@ model Delivrance {
   dateAnnulation  DateTime?
 
   lignes LigneDelivrance[]
+  @@schema("public")
 }
 
 // Une ligne delivree au sein d'un acte de delivrance (Delivrance) : quantite
@@ -439,6 +521,7 @@ model LigneDelivrance {
   motifNonDelivrance  String?
   numeroLot           String?
   datePeremption      DateTime?
+  @@schema("public")
 }
 
 // Correspond a EvenementHistoriquePrescription dans src/types/domain-clinical.ts.
@@ -453,6 +536,24 @@ model EvenementPrescription {
   utilisateurId  String
   utilisateur    User     @relation(fields: [utilisateurId], references: [id])
   commentaire    String?
+  @@schema("public")
+}
+
+// Code de verification a 6 chiffres envoye par e-mail a chaque connexion
+// (etape obligatoire, independante de la double authentification TOTP
+// optionnelle ci-dessus, voir loginAction dans src/modules/identity/actions.ts).
+// Jamais le code en clair : seul son empreinte bcrypt est stockee, meme
+// principe que User.motDePasseHash. A usage unique (consommeLe) et de courte
+// duree de vie (expireLe), comme le jeton de pre-authentification JWT associe.
+model CodeVerificationEmail {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash    String
+  dateCreation DateTime @default(now())
+  expireLe    DateTime
+  consommeLe  DateTime?
+  @@schema("public")
 }
 
 // Correspond a JournalAudit dans src/types/domain-audit.ts.
@@ -466,6 +567,27 @@ model JournalAudit {
   date             DateTime @default(now())
   adresseTechnique String
   justification    String
+
+  revue RevueAccesUrgence?
+  @@schema("public")
+}
+
+// Correspond a F-AUD-02 du pack : revue d'un acces d'urgence "bris de glace"
+// (src/modules/urgence/actions.ts) par un administrateur. Table separee
+// plutot qu'un champ ajoute sur JournalAudit : une trace d'audit reste
+// immuable, la revue est un evenement distinct qui la concerne, jamais une
+// modification de l'entree originale.
+model RevueAccesUrgence {
+  id             String   @id @default(cuid())
+  journalAuditId String   @unique
+  journalAudit   JournalAudit @relation(fields: [journalAuditId], references: [id])
+  reviewerId     String
+  reviewer       User     @relation(fields: [reviewerId], references: [id])
+  // conforme | non_conforme
+  decision       String
+  commentaire    String
+  date           DateTime @default(now())
+  @@schema("public")
 }
 
 // Notification interne (Phase 10). Correspond au perimetre "notifications
@@ -481,6 +603,7 @@ model Notification {
   lien          String?
   lu            Boolean  @default(false)
   date          DateTime @default(now())
+  @@schema("public")
 }
 
 // Correspond a F-CLI-11 du pack : vaccination administree en etablissement
@@ -504,6 +627,7 @@ model Vaccination {
   saisieParErreur    Boolean  @default(false)
   motifRetrait       String?
   dateCreation       DateTime @default(now())
+  @@schema("public")
 }
 
 // Correspond a F-CLI-13 du pack : document ajoute au dossier d'un patient
@@ -529,6 +653,7 @@ model DocumentMedical {
   retirePourErreur       Boolean   @default(false)
   motifRetrait           String?
   dateCreation           DateTime  @default(now())
+  @@schema("public")
 }
 
 // Correspond a F-CLI-12 du pack : prise en charge infirmiere (constantes,
@@ -560,4 +685,92 @@ model PriseEnChargeInfirmiere {
   consultationRattacheeId String? @unique
   consultationRattachee   Consultation? @relation(fields: [consultationRattacheeId], references: [id])
   date                  DateTime @default(now())
+  @@schema("public")
+}
+
+// Correspond au point 1 de F-PIL-07 du pack ("chaque evenement metier
+// pertinent... publie un evenement dans une file de taches") : file de
+// taches persistee en base plutot qu'en memoire, pour ne perdre aucun
+// evenement en cas de redemarrage du serveur entre deux passages de la tache
+// horaire. Une ligne = un evenement a traiter au prochain recalcul du couple
+// (date, etablissement) concerne (src/modules/pilotage/agregation.ts).
+model TachePilotage {
+  id              String    @id @default(cuid())
+  // Jour concerne par l'evenement (ex. date de la consultation validee), pas
+  // la date de l'evenement de publication lui-meme (dateCreation ci-dessous).
+  date            DateTime
+  // Null si l'evenement ne porte pas de dimension etablissement (ex. compte
+  // citoyen cree, IND-13).
+  etablissementId String?
+  // consultation_validee | consultation_retiree | rendez_vous_change |
+  // prescription_signee | delivrance | vaccination | compte_cree
+  type            String
+  dateCreation    DateTime  @default(now())
+  traitee         Boolean   @default(false)
+  dateTraitement  DateTime?
+
+  @@index([traitee])
+  @@schema("public")
+}
+
+// Correspond a F-PIL-07 du pack (calcul des agregats) : table de faits
+// unique, schema "analytics" separe (RG-PIL-04), une ligne par combinaison
+// (jour, etablissement/zone/departement, indicateur, sexe, tranche d'age,
+// dimension libre). RG-PIL-01 : jamais un identifiant de patient, un nom, ni
+// une date de naissance exacte ici, uniquement des dimensions agregees et un
+// compte. Le recalcul (src/modules/pilotage/agregation.ts) supprime puis
+// reinsere les lignes d'un (date, etablissementId) donne dans une
+// transaction (RG-PIL-60, idempotent). etablissementId est null pour un
+// agregat calcule directement au niveau departemental/national (RG-PIL-05 :
+// une donnee SENSITIVE n'est jamais comptee par etablissement ni par
+// commune, seulement departement ou national).
+model AgregatQuotidien {
+  id                String   @id @default(cuid())
+  date              DateTime
+  etablissementId   String?
+  zoneSanitaireId   String?
+  departementId     String?
+  typeEtablissement String?
+  // Code IND-01 a IND-13 (catalogue documente dans src/modules/pilotage/indicateurs.ts).
+  indicateur        String
+  sexe              String?
+  trancheAge        String?
+  // Dimension supplementaire dependant de l'indicateur : groupe de maladies
+  // (IND-03/04), DCI d'un medicament (IND-09), "vaccin:doseN" (IND-10),
+  // statut de rendez-vous (IND-07), etc. Documente par indicateur dans
+  // src/modules/pilotage/indicateurs.ts.
+  dimensionLibre    String?
+  valeur            Int
+  dateCalcul        DateTime @default(now())
+
+  @@unique([date, etablissementId, zoneSanitaireId, departementId, indicateur, sexe, trancheAge, dimensionLibre], name: "cle_agregat")
+  @@index([indicateur, date])
+  @@schema("analytics")
+}
+
+// Correspond a F-PIL-06 du pack (alertes epidemiologiques) : table de
+// decisions humaines sur une alerte statistique, volontairement HORS du
+// schema "analytics" (qui reste en lecture seule pour l'application, seul le
+// job de recalcul y ecrit) : "nouvelle" -> "vue" (commentaire) -> "fermee"
+// (motif). RG-PIL-50 : une alerte est un signal a verifier, jamais une
+// communication automatique.
+model HealthAlertReview {
+  id              String    @id @default(cuid())
+  zoneSanitaireId String
+  groupeMaladies  String
+  // Semaine ISO au format "AAAA-Wss", ex. "2026-W39".
+  semaine         String
+  casObserves     Int
+  seuilCalcule    Float
+  // nouvelle | vue | fermee
+  statut          String    @default("nouvelle")
+  commentaire     String?
+  motifFermeture  String?
+  reviewerId      String?
+  reviewer        User?     @relation(fields: [reviewerId], references: [id])
+  dateCreation    DateTime  @default(now())
+  dateRevue       DateTime?
+
+  @@unique([zoneSanitaireId, groupeMaladies, semaine])
+  @@schema("public")
 }
