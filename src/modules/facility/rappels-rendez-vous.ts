@@ -31,6 +31,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { creerNotification } from "@/modules/notification/creer";
+import { suivreExecution } from "@/modules/administration/executions-taches";
 import { veilleA18hBenin } from "@/lib/fuseau-horaire";
 
 const FUSEAU_BENIN = "Africa/Porto-Novo";
@@ -135,10 +136,13 @@ declare global {
 
 async function executerAvecJournal(): Promise<void> {
   try {
-    const { veille, deuxHeures } = await envoyerRappelsDus();
-    if (veille > 0 || deuxHeures > 0) {
-      console.log(`[rendez-vous] rappels envoyes : ${veille} (veille), ${deuxHeures} (2h avant)`);
-    }
+    await suivreExecution("rappels_rendez_vous", async () => {
+      const { veille, deuxHeures } = await envoyerRappelsDus();
+      if (veille > 0 || deuxHeures > 0) {
+        console.log(`[rendez-vous] rappels envoyes : ${veille} (veille), ${deuxHeures} (2h avant)`);
+      }
+      return veille + deuxHeures;
+    });
   } catch (erreur) {
     console.error("[rendez-vous] echec de l'envoi planifie des rappels", erreur);
   }

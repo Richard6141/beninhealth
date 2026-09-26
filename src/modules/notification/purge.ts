@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { purgerExecutionsAnciennes, suivreExecution } from "@/modules/administration/executions-taches";
 
 /**
  * Purge des notifications au-dela de la conservation prevue par le pack
@@ -33,10 +34,15 @@ export async function purgerNotificationsExpirees(maintenant: Date = new Date())
 
 async function executerPurgeAvecJournal(): Promise<void> {
   try {
-    const nombreSupprime = await purgerNotificationsExpirees();
-    if (nombreSupprime > 0) {
-      console.log(`[notification] purge : ${nombreSupprime} notification(s) de plus de ${JOURS_CONSERVATION} jours supprimee(s)`);
-    }
+    await suivreExecution("purge_notifications", async () => {
+      const nombreSupprime = await purgerNotificationsExpirees();
+      if (nombreSupprime > 0) {
+        console.log(`[notification] purge : ${nombreSupprime} notification(s) de plus de ${JOURS_CONSERVATION} jours supprimee(s)`);
+      }
+      // Le suivi des taches (F-ADM-01) se purge lui-meme, a 30 jours.
+      await purgerExecutionsAnciennes();
+      return nombreSupprime;
+    });
   } catch (erreur) {
     console.error("[notification] echec de la purge planifiee", erreur);
   }

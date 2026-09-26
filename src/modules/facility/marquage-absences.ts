@@ -6,6 +6,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import { suivreExecution } from "@/modules/administration/executions-taches";
 import { transitionnerRendezVousEnMasse } from "./rendez-vous-etats";
 
 const DELAI_ABSENCE_MS = 60 * 60 * 1000; // 1h (RG-RDV-33/40)
@@ -35,10 +36,13 @@ declare global {
 
 async function executerAvecJournal(): Promise<void> {
   try {
-    const nombre = await marquerAbsencesDues();
-    if (nombre > 0) {
-      console.log(`[rendez-vous] ${nombre} rendez-vous marque(s) absent (RG-RDV-40)`);
-    }
+    await suivreExecution("marquage_absences", async () => {
+      const nombre = await marquerAbsencesDues();
+      if (nombre > 0) {
+        console.log(`[rendez-vous] ${nombre} rendez-vous marque(s) absent (RG-RDV-40)`);
+      }
+      return nombre;
+    });
   } catch (erreur) {
     console.error("[rendez-vous] echec du marquage automatique des absences", erreur);
   }

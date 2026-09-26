@@ -1539,3 +1539,25 @@ model ActionAdministrateurEnAttente {
   @@index([statut, expireLe])
   @@schema("public")
 }
+
+// F-ADM-01 du pack : etat technique du tableau de bord administrateur ("derniere
+// execution des taches planifiees", "erreurs des 24 h"). Une ligne par
+// execution d'une tache planifiee en process (purge des notifications, remise
+// des SMS differes, relances du laboratoire, rappels de rendez-vous, marquage
+// des absences), ecrite par src/modules/administration/executions-taches.ts.
+// `message` ne contient jamais de donnee de sante ni de stack : uniquement le
+// nom de l'erreur et un message technique tronque. Purge a 30 jours.
+model ExecutionTache {
+  id            String   @id @default(cuid())
+  tache         String
+  // ok | erreur
+  statut        String
+  // Nombre d'elements traites (relances envoyees, SMS remis...), null si inconnu.
+  nombreTraite  Int?
+  message       String?
+  date          DateTime @default(now())
+
+  @@index([tache, date])
+  @@index([statut, date])
+  @@schema("public")
+}

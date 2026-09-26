@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { creerNotification } from "@/modules/notification/creer";
+import { suivreExecution } from "@/modules/administration/executions-taches";
 
 /**
  * Relances planifiees du laboratoire (F-LAB-05 du pack), en process comme la
@@ -118,11 +119,14 @@ export async function relancerAnnoncesEnRetard(maintenant: Date = new Date()): P
 
 async function executerRelancesAvecJournal(): Promise<void> {
   try {
-    const escalades = await escaladerResultatsCritiquesNonLus();
-    const rappels = await relancerAnnoncesEnRetard();
-    if (escalades > 0 || rappels > 0) {
-      console.log(`[laboratoire] relances : ${escalades} escalade(s) de resultat critique, ${rappels} rappel(s) d'annonce`);
-    }
+    await suivreExecution("relances_laboratoire", async () => {
+      const escalades = await escaladerResultatsCritiquesNonLus();
+      const rappels = await relancerAnnoncesEnRetard();
+      if (escalades > 0 || rappels > 0) {
+        console.log(`[laboratoire] relances : ${escalades} escalade(s) de resultat critique, ${rappels} rappel(s) d'annonce`);
+      }
+      return escalades + rappels;
+    });
   } catch (erreur) {
     console.error("[laboratoire] echec des relances planifiees", erreur);
   }

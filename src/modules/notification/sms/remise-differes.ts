@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { suivreExecution } from "@/modules/administration/executions-taches";
 
 /**
  * Remise des SMS differes (F-NOT-02, RG-NOT-04 du pack) : un SMS non urgent
@@ -41,10 +42,13 @@ export async function remettreSmsDifferes(maintenant: Date = new Date()): Promis
 
 async function executerRemiseAvecJournal(): Promise<void> {
   try {
-    const remis = await remettreSmsDifferes();
-    if (remis > 0) {
-      console.log(`[notification] ${remis} SMS differe(s) remis a leur heure programmee`);
-    }
+    await suivreExecution("remise_sms_differes", async () => {
+      const remis = await remettreSmsDifferes();
+      if (remis > 0) {
+        console.log(`[notification] ${remis} SMS differe(s) remis a leur heure programmee`);
+      }
+      return remis;
+    });
   } catch (erreur) {
     console.error("[notification] echec de la remise des SMS differes", erreur);
   }
