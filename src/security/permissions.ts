@@ -227,6 +227,11 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     'read:referentiel_examens',
     'create:referentiel_examens',
     'update:referentiel_examens',
+    // F-ADM-04 (partie 5) : referentiel des jours feries (RG-ETA-42, voir
+    // src/modules/administration/jours-feries.ts).
+    'read:jour_ferie',
+    'create:jour_ferie',
+    'update:jour_ferie',
     // F-NOT-02 : boite d'envoi SMS simulee, consultable et testable (voir
     // src/modules/notification/sms/dev.ts).
     'read:envoi_sms',

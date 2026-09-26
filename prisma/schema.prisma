@@ -1491,3 +1491,23 @@ model ModeleNotification {
 
   @@schema("public")
 }
+
+// F-ADM-04 du pack, 5e referentiel administrable : jours feries nationaux
+// (RG-ETA-42 : ils ne generent pas de creneau de rendez-vous). Une ligne par
+// date (jour civil, colonne DATE, sans fuseau) ; le jour civil d'un instant
+// est celui du Benin, UTC+1 (voir src/modules/administration/jours-feries-calcul.ts).
+// RG-ADM-20 : desactivation seule, jamais suppression. "source" distingue les
+// dates generees (fixes et fetes chretiennes mobiles) des dates saisies a la
+// main (fetes musulmanes, jours exceptionnels). RG-ADM-21 (versionnement) hors
+// perimetre, meme limite assumee que les referentiels precedents.
+model JourFerie {
+  id               String   @id @default(cuid())
+  date             DateTime @unique @db.Date
+  libelle          String
+  actif            Boolean  @default(true)
+  source           String   @default("saisie")
+  dateCreation     DateTime @default(now())
+  dateModification DateTime @default(now())
+
+  @@schema("public")
+}

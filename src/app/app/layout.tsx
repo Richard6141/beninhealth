@@ -5,6 +5,7 @@ import {
   BadgeCheck,
   Building2,
   CalendarClock,
+  CalendarOff,
   ClipboardList,
   CreditCard,
   FlaskConical,
@@ -282,6 +283,11 @@ const navigationAdminNational: ElementNavigation[] = [
     label: "Catalogue des notifications",
     href: "/app/ministere/referentiels/notifications",
     icon: <MessageSquare size={tailleIconeNav} aria-hidden="true" />,
+  },
+  {
+    label: "Jours fériés",
+    href: "/app/ministere/referentiels/jours-feries",
+    icon: <CalendarOff size={tailleIconeNav} aria-hidden="true" />,
   },
   {
     label: "Validation des professionnels",
