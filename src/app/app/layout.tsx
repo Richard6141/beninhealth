@@ -7,12 +7,15 @@ import {
   FlaskConical,
   FolderOpen,
   History,
+  Hospital,
   LayoutDashboard,
   HeartPulse,
   Lock,
   MapPin,
+  Merge,
   MessageSquare,
   Pill,
+  Settings,
   ShieldAlert,
   ShieldCheck,
   Users,
@@ -212,6 +215,11 @@ const navigationAdminEtablissement: ElementNavigation[] = [
     href: "/app/etablissement/file-du-jour",
     icon: <CalendarClock size={tailleIconeNav} aria-hidden="true" />,
   },
+  {
+    label: "Journal d'audit",
+    href: "/app/etablissement/audit",
+    icon: <History size={tailleIconeNav} aria-hidden="true" />,
+  },
 ];
 
 /** Ministere : SON PROPRE tableau de bord ("/app/ministere", indicateurs nationaux agreges, voir Phase 6). */
@@ -222,9 +230,19 @@ const navigationAdminNational: ElementNavigation[] = [
     icon: <Building2 size={tailleIconeNav} aria-hidden="true" />,
   },
   {
+    label: "Établissements",
+    href: "/app/ministere/etablissements",
+    icon: <Hospital size={tailleIconeNav} aria-hidden="true" />,
+  },
+  {
     label: "Référentiel vaccinal",
     href: "/app/ministere/referentiels/vaccins",
     icon: <ClipboardList size={tailleIconeNav} aria-hidden="true" />,
+  },
+  {
+    label: "Référentiel médicaments",
+    href: "/app/ministere/referentiels/medicaments",
+    icon: <Pill size={tailleIconeNav} aria-hidden="true" />,
   },
   {
     label: "Tutelles",
@@ -240,6 +258,16 @@ const navigationAdminNational: ElementNavigation[] = [
     label: "Catalogue des notifications",
     href: "/app/ministere/referentiels/notifications",
     icon: <MessageSquare size={tailleIconeNav} aria-hidden="true" />,
+  },
+  {
+    label: "Doublons patients",
+    href: "/app/ministere/doublons",
+    icon: <Merge size={tailleIconeNav} aria-hidden="true" />,
+  },
+  {
+    label: "Paramètres",
+    href: "/app/ministere/parametres",
+    icon: <Settings size={tailleIconeNav} aria-hidden="true" />,
   },
 ];
 
