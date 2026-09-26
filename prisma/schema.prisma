@@ -156,6 +156,11 @@ model EtablissementSanitaire {
   vaccinations Vaccination[]
   prisesEnChargeInfirmieres PriseEnChargeInfirmiere[]
   delivrances Delivrance[]
+  // F-CLI-14 : cet etablissement comme origine (references envoyees par ses
+  // medecins) ou comme destination (references recues, base d'acces
+  // temporaire pour ses medecins).
+  referencesEnvoyeesDepuis ReferencePatient[] @relation("EtablissementOrigineReference")
+  referencesRecues         ReferencePatient[] @relation("EtablissementDestinationReference")
   @@schema("public")
 }
 
@@ -176,6 +181,14 @@ model ProfessionnelSante {
   prescriptions Prescription[]
   // Examens medicaux demandes par ce professionnel (typiquement un medecin).
   examensDemandes ExamenMedical[]
+  // F-CLI-14 : references vers un autre etablissement envoyees par ce
+  // professionnel (medecin referent), et contre-references qu'il a redigees
+  // en reponse a une reference recue par son etablissement.
+  referencesEnvoyees ReferencePatient[] @relation("MedecinReferent")
+  contreReferencesRedigees ReferencePatient[] @relation("AuteurContreReference")
+  // F-CIT-11 : codes de partage temporaires de patients consommes par ce
+  // professionnel (medecin ou infirmier valide, RG-CIT-91).
+  codesPartageConsommes CodePartageDossier[]
   // F-LAB-04 : examens dont ce professionnel a saisi le resultat / qu'il a valides (role laboratoire).
   examensSaisis  ExamenMedical[] @relation("ExamenSaisiPar")
   examensValides ExamenMedical[] @relation("ExamenValidePar")
@@ -216,6 +229,8 @@ model Patient {
   vaccinations Vaccination[]
   documentsMedicaux DocumentMedical[]
   prisesEnChargeInfirmieres PriseEnChargeInfirmiere[]
+  references ReferencePatient[]
+  codesPartage CodePartageDossier[]
   @@schema("public")
 }
 
@@ -318,6 +333,7 @@ model Consultation {
   addenda         AddendumConsultation[]
   documentsMedicaux DocumentMedical[]
   priseEnChargeInfirmiere PriseEnChargeInfirmiere?
+  references      ReferencePatient[]
   @@schema("public")
 }
 
@@ -688,6 +704,54 @@ model PriseEnChargeInfirmiere {
   @@schema("public")
 }
 
+// Correspond a F-CLI-14 du pack (reference vers un autre etablissement, P2 :
+// "non developpe dans le MVP", implemente ici a la demande explicite de
+// l'utilisateur). Le medecin referent cree une fiche de reference (motif,
+// niveau d'urgence, resume clinique) vers un etablissement de destination de
+// niveau superieur (concretement : type "hopital", faute de champ "niveau
+// dans la pyramide" dans ce depot, voir EtablissementSanitaire). Cette ligne
+// sert elle-meme de base d'acces temporaire (30 jours a partir de la
+// creation, champ dateFinAcces) : tout professionnel du role medecin de
+// l'etablissement destinataire peut alors consulter le resume et l'historique
+// du patient (src/modules/clinical/actions.ts, accesPatientAutorise), meme
+// principe que l'acces d'urgence (src/modules/urgence/actions.ts) mais scope
+// a un etablissement entier plutot qu'a un seul professionnel, puisque le
+// medecin qui repondra n'est pas connu a l'avance. La contre-reference
+// (compte-rendu du specialiste) cloture la reference sans jamais modifier ni
+// supprimer les champs d'origine (meme principe d'immuabilite que
+// AddendumConsultation).
+model ReferencePatient {
+  id                         String    @id @default(cuid())
+  patientId                  String
+  patient                    Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  consultationId             String
+  consultation               Consultation @relation(fields: [consultationId], references: [id])
+  medecinReferentId          String
+  medecinReferent            ProfessionnelSante @relation("MedecinReferent", fields: [medecinReferentId], references: [id])
+  etablissementOrigineId     String
+  etablissementOrigine       EtablissementSanitaire @relation("EtablissementOrigineReference", fields: [etablissementOrigineId], references: [id])
+  etablissementDestinationId String
+  etablissementDestination   EtablissementSanitaire @relation("EtablissementDestinationReference", fields: [etablissementDestinationId], references: [id])
+  motif                      String
+  // urgente | programmee
+  niveauUrgence               String
+  resumeClinique              String
+  // ouverte | cloturee
+  statut                      String    @default("ouverte")
+  dateCreation                DateTime  @default(now())
+  // Fin de la base d'acces temporaire accordee a l'etablissement destinataire.
+  dateFinAcces                DateTime
+  contreReferenceTexte        String?
+  contreReferenceAuteurId     String?
+  contreReferenceAuteur       ProfessionnelSante? @relation("AuteurContreReference", fields: [contreReferenceAuteurId], references: [id])
+  dateContreReference         DateTime?
+  dateCloture                 DateTime?
+
+  @@index([etablissementDestinationId, statut])
+  @@index([medecinReferentId])
+  @@schema("public")
+}
+
 // Correspond au point 1 de F-PIL-07 du pack ("chaque evenement metier
 // pertinent... publie un evenement dans une file de taches") : file de
 // taches persistee en base plutot qu'en memoire, pour ne perdre aucun
@@ -772,5 +836,28 @@ model HealthAlertReview {
   dateRevue       DateTime?
 
   @@unique([zoneSanitaireId, groupeMaladies, semaine])
+  @@schema("public")
+}
+
+// Correspond a F-CIT-11 du pack ("Partager son dossier par code temporaire") :
+// le patient genere un code court (8 caracteres sans caracteres ambigus,
+// RG-CIT-90), qu'un professionnel medecin ou infirmier valide (RG-CIT-91)
+// saisit pour obtenir lui-meme un Consentement "consultations" sur ce
+// patient, sans que celui-ci ait besoin de le chercher dans une liste.
+// Jamais le code en clair stocke (empreinte bcrypt), meme principe que
+// CodeVerificationEmail. consommeParId/consommeLe permettent d'afficher
+// "Partage avec Dr X" en temps quasi reel cote ecran patient (sondage
+// periodique, voir src/modules/partage/actions.ts).
+model CodePartageDossier {
+  id            String    @id @default(cuid())
+  patientId     String
+  patient       Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  codeHash      String
+  dateCreation  DateTime  @default(now())
+  expireLe      DateTime
+  consommeLe    DateTime?
+  consommeParId String?
+  consommePar   ProfessionnelSante? @relation(fields: [consommeParId], references: [id])
+
   @@schema("public")
 }
