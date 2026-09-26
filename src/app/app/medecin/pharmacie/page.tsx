@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { getPrescriptionsADelivrer } from "@/modules/prescription/actions";
 import { ListePrescriptionsADelivrer } from "./ListePrescriptionsADelivrer";
+import { RechercheOrdonnance } from "./RechercheOrdonnance";
 
 /**
  * Espace pharmacien (Phase 9) : delivrance des prescriptions en officine.
@@ -31,6 +32,8 @@ export default async function PharmaciePage() {
           patients confondus.
         </p>
       </header>
+
+      <RechercheOrdonnance />
 
       <ListePrescriptionsADelivrer prescriptions={prescriptions} />
     </div>

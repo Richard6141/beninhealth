@@ -851,6 +851,128 @@ export async function getPrescriptionsADelivrer(recherche?: string): Promise<Pre
   );
 }
 
+/** Etat renvoye par rechercherOrdonnancePresenteeAction, consomme via useActionState. */
+export interface RechercheOrdonnanceActionState {
+  error: string | null;
+  success: boolean;
+  prescriptionId?: string;
+}
+
+const schemaRechercheOrdonnance = z.object({
+  numero: z.string().trim().min(1, "Le numero d'ordonnance est obligatoire."),
+  anneeNaissance: z.coerce
+    .number({ message: "L'annee de naissance doit etre un nombre." })
+    .int("L'annee de naissance doit etre un nombre entier.")
+    .min(1900, "Annee de naissance invalide.")
+    .max(new Date().getFullYear(), "Annee de naissance invalide."),
+});
+
+const MAX_RECHERCHES_ORDONNANCE_PAR_HEURE = 5;
+const MESSAGE_ORDONNANCE_INTROUVABLE =
+  "Ordonnance introuvable. Verifiez le numero et l'annee de naissance.";
+
+/**
+ * F-PHA-02 du pack (RG-PHA-01), version reduite volontaire : recherche par
+ * numero d'ordonnance (Prescription.numero, deja existant, format
+ * RX-<annee>-<sequence>, voir genererNumeroOrdonnance plus haut) + annee de
+ * naissance du patient, sans le parcours QR/jeton separe du pack (RG-PRE-40 a
+ * 42, hors perimetre ce soir) ni l'ASSIGNMENT persistant "pharmacie <->
+ * ordonnance" de 30 jours du pack (demanderait un nouveau modele Prisma, le
+ * schema est deja en pleine activite concurrente ce soir, migration
+ * analytics F-PIL-07). Se contente de resoudre l'identifiant de prescription,
+ * le pharmacien continue ensuite sur l'ecran de delivrance existant
+ * (getDetailPrescriptionPourDelivrance ci-dessous, deja ouvert a n'importe
+ * quel pharmacien sans restriction d'etablissement, et qui ne charge jamais
+ * la consultation ni son motif : RG-PHA-02 du pack, "jamais le diagnostic, ni
+ * les autres ordonnances du patient", est deja respecte par cet ecran
+ * existant, rien a y changer).
+ *
+ * RG-PHA-01 : 5 essais par pharmacien et par heure. Throttling par comptage
+ * des echecs recents dans JournalAudit (action "recherche_ordonnance_echec")
+ * plutot qu'un compteur en memoire : pas de nouvelle table, coherent avec le
+ * reste du depot (toute action sensible y est deja journalisee) et resiste a
+ * un redemarrage du serveur. Limite assumee : fenetre glissante d'une heure
+ * sur les echecs, pas un blocage a duree fixe declenche pile au 5e echec
+ * (approximation suffisante pour ce MVP mono-process ; un deploiement
+ * multi-instance devrait de toute facon compter en base plutot qu'en memoire
+ * locale a chaque instance, donc cette approche resterait la bonne base).
+ * CA-1 du pack : un numero correct avec une mauvaise annee de naissance
+ * renvoie le meme message generique qu'un numero inexistant, jamais
+ * d'indice sur laquelle des deux informations etait fausse.
+ */
+export async function rechercherOrdonnancePresenteeAction(
+  prevState: RechercheOrdonnanceActionState,
+  formData: FormData
+): Promise<RechercheOrdonnanceActionState> {
+  const session = await getSession();
+
+  if (!session || !session.roles.includes("pharmacien") || !can("pharmacien", "read", "delivrance")) {
+    return { error: "Action reservee aux pharmaciens.", success: false };
+  }
+
+  const validation = schemaRechercheOrdonnance.safeParse({
+    numero: texte(formData, "numero"),
+    anneeNaissance: texte(formData, "anneeNaissance"),
+  });
+
+  if (!validation.success) {
+    return {
+      error: premierMessageErreur(validation.error, "Numero ou annee de naissance invalide."),
+      success: false,
+    };
+  }
+
+  const { numero, anneeNaissance } = validation.data;
+
+  const uneHeureAvant = new Date(Date.now() - 60 * 60 * 1000);
+  const echecsRecents = await prisma.journalAudit.count({
+    where: {
+      utilisateurId: session.userId,
+      action: "recherche_ordonnance_echec",
+      date: { gte: uneHeureAvant },
+    },
+  });
+
+  if (echecsRecents >= MAX_RECHERCHES_ORDONNANCE_PAR_HEURE) {
+    return {
+      error: "Trop de tentatives infructueuses. Reessayez dans une heure.",
+      success: false,
+    };
+  }
+
+  const adresseTechnique = await adresseTechniqueCourante();
+  const prescription = await prisma.prescription.findUnique({
+    where: { numero },
+    include: { patient: true },
+  });
+
+  const trouvee =
+    prescription !== null && prescription.patient.dateNaissance.getFullYear() === anneeNaissance;
+
+  if (!trouvee) {
+    await journaliser({
+      utilisateurId: session.userId,
+      action: "recherche_ordonnance_echec",
+      donneeConcernee: `numero_ordonnance:${numero}`,
+      adresseTechnique,
+      justification:
+        "Recherche d'ordonnance presentee : numero ou annee de naissance ne correspond a aucune prescription.",
+    });
+
+    return { error: MESSAGE_ORDONNANCE_INTROUVABLE, success: false };
+  }
+
+  await journaliser({
+    utilisateurId: session.userId,
+    action: "recherche_ordonnance",
+    donneeConcernee: `prescription:${prescription.id}`,
+    adresseTechnique,
+    justification: `Ordonnance ${prescription.numero} retrouvee par numero et annee de naissance (patient presente au comptoir).`,
+  });
+
+  return { error: null, success: true, prescriptionId: prescription.id };
+}
+
 /**
  * Detail d'une prescription pour l'ecran de delivrance (F-PHA-03) : chaque
  * ligne avec sa quantite deja livree (somme des LigneDelivrance non
