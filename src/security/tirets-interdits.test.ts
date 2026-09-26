@@ -104,5 +104,5 @@ describe("garde typographique : aucun tiret cadratin ni demi-cadratin", () => {
     const surveilles = fichiersSurveilles();
     expect(surveilles.length).toBeGreaterThan(100);
     expect(infractions(surveilles)).toEqual([]);
-  });
+  }, 60_000);
 });

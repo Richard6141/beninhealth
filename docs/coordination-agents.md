@@ -3503,6 +3503,17 @@ Suspense (le build echoue sinon) ; `creerNotification` vit dans
 - Piege de l'index partage : apres un commit par index prive, un `git reset` du chemin dans l'index partage peut retirer le hunk indexe d'une autre session sur ce meme fichier (arrive une fois sur `prisma/schema.prisma`, session prevenue). Preferer ne remettre a niveau que les entrees dont le contenu est encore celui de l'ancien HEAD.
 - 2026-09-27.
 
+### Point projet-gouv-3d, tests manquants (urgence, proches, clinique) et quatre defauts corriges, 2026-09-27
+
+- Nouveaux fichiers de test (mocks, aucune ecriture en base) : `urgence/actions.test.ts` (34 tests), `proches/actions.test.ts` (29), `clinical/acces-lecture.test.ts` (24), `clinical/enregistrer-consultation.test.ts` (31), `clinical/addendum-retrait.test.ts`, `clinical/controles-constantes.test.ts` (23). Ils fixent les regles du pack : RG-CLI-90 a 93 (5 acces d'urgence par 24 h, 4 h exactes, pas de prolongation, justification de 20 a 500 caracteres, TOTP reel), la verification Zero Trust d'une personne a charge, RG-CLI-30/91 et RG-LAB-30 en lecture, RG-CLI-40/50/61 et l'immuabilite a l'ecriture, RG-CLI-70 (12 mois) et RG-AUTH-53 pour l'addendum et le retrait.
+- Defaut 1, urgence : aucun plafond sur les codes TOTP incorrects (une session volee pouvait deviner le code a 6 chiffres). Corrige : 5 codes incorrects verrouillent 15 minutes par professionnel (meme regle que la connexion, `lib/limite-debit.ts`, en memoire comme le reste).
+- Defaut 2, clinique : `accesPatientAutorise` acceptait n'importe quel consentement valide. Un consentement etroit ("prescriptions", "examens", "documents") ouvrait donc le resume et tout l'historique (consultations, examens dont les sensibles, suivis) via `getResumePatient` et `getHistoriquePatient`, atteignables directement comme Server Actions. Corrige : seuls dossier_complet, consultations et urgence ouvrent cette lecture (ce que les ecrans proposaient deja), une reference valide reste une base d'acces.
+- Defaut 3, clinique : `enregistrerConsultationAction` verifiait le consentement pour le patient du formulaire mais mettait a jour le brouillon designe par `consultationId` sans verifier qu'il etait du meme patient : on pouvait valider le brouillon d'un patient A avec le consentement d'un patient B. Corrige (le brouillon doit etre celui du patient du formulaire).
+- Defaut 4, proches : les personnes a charge retirees comptaient dans le plafond de 10 (`creerPersonneAChargeAction`), alors que `getMesProches` ne liste que les actives. Corrige (seules les tutelles actives comptent).
+- Constats non corriges (a arbitrer) : (a) le quota de 5 acces d'urgence est un comptage puis une ecriture, sans verrou : des demandes parallelees du meme professionnel peuvent depasser 5 (chaque acces reste journalise) ; (b) `retirerConsultationAction` reverifie le mot de passe sans plafond d'essais (session requise) ; (c) un acces d'urgence ecrase un consentement "retire" par le patient (voulu par le principe du bris de glace, a confirmer) ; (d) `getResumePatient` inclut les consultations retirees dans les derniers evenements.
+- Verifie : tsc, eslint 0 erreur, vitest 929/929 (78 fichiers).
+- Non commite : ma session n'a pas de demande de commit de l'utilisateur.
+
 ### Point projet-gouv-86, jours feries et creneaux (F-ADM-04, RG-ETA-42), 2026-09-27
 
 - Livre : referentiel des jours feries (commit `89b83d9` : table `JourFerie`, ecran `/app/ministere/referentiels/jours-feries`, generation d'une annee, saisie manuelle, desactivation sans suppression) et son consommateur : `dateDansUnCreneauDisponible` (`facility/creneau-disponible.ts`) refuse un jour ferie ACTIF, pour le patient, le guichet et un proche, sur le jour civil du Benin ; un jour desactive ou une annee non generee ne bloque rien. `facility/disponibilites.test.ts` recoit un faux `jourFerie` (une ligne), nouveaux tests dans `facility/creneau-jours-feries.test.ts`. Les fetes musulmanes ne sont jamais generees : a saisir a la main.
@@ -3511,3 +3522,35 @@ Suspense (le build echoue sinon) ; `creerNotification` vit dans
 - Effets sur les autres : migration `20260927000100` appliquee, client Prisma regenere (DLL renommee, serveur redemarre par 3d).
 - Fin de la file de e1 : (1) F-PRE-04, F-PRE-01, F-PRE-05, (2) F-PHA-03, F-PHA-01/02, (3) tests partage, reference, document, (4) un referentiel F-ADM-04 (jours feries). Restent pour F-ADM-04 : geographie, types, services, specialites, CIM-10, classes d'allergie.
 - 2026-09-27.
+
+### Repartition par domaine apres redemarrage des sessions, projet-gouv-21 (CEO, ancien e1), 2026-09-27
+
+Consigne de l'utilisateur (il dort, projet urgent, aucune question) : les quatre
+sessions travaillent sans s'arreter jusqu'a ce que TOUTES les fiches de
+`docs/reste-a-faire.md` soient faites. Les noms de session ont change (86, 3d, 3e
+n'existent plus) : la repartition ci-dessous est par DOMAINE, elle survit a un
+redemarrage. Le CEO est projet-gouv-21 (coordinateur depuis le debut, seul a
+pousser, tranche les desaccords). Une session dont la file est vide prend la
+premiere fiche P0 puis P1 en PARTIEL ou ABSENT qui n'est a personne, l'inscrit
+dans sa note de coordination AVANT de coder, puis livre avec tests.
+
+| Session | Domaine (fiches de `docs/reste-a-faire.md`) |
+|---|---|
+| 21 (CEO) | Authentification et comptes F-AUTH-01 a 06, 08, 09 ; partage citoyen F-CIT-10, 11, 12 ; acces clinique F-CLI-02 a 05 (modele d'acces, consentement automatique 12 mois) ; audit F-AUD-01, 03, 04 ; module transfert ; integration, verification en clone neuf, push |
+| 41 | Pilotage F-PIL-01, 02, 03, 05, 06, 07 ; clinique F-CLI-01, 06, 07, 09, 10, 12, 13 ; F-AUTH-07 (espace actif) ; RG-ROL-05 (interrupteur de validation des numeros d'Ordre) ; agent communautaire F-COM-01 a 08 (hors ligne, synchronisation, vaccination de terrain, grossesse, enfant, campagnes) |
+| 0a | Administration F-ADM-01 a 07 ; notifications F-NOT-01 a 04 ; etablissements F-ETA-01 a 05 ; intelligence artificielle F-IA-05 (gouvernance) puis F-IA-01 a 04 |
+| 3f | Prescription F-PRE-01 a 06 ; pharmacie F-PHA-01 a 05 (dont stocks) ; laboratoire F-LAB-01 a 06 ; rendez-vous F-RDV-01 a 07 ; citoyen F-CIT-01 a 09 et 13 ; referentiels F-ADM-04 ; seed de demonstration (comptes pharmacien et laboratoire) |
+
+Regles pour l'intelligence artificielle (F-IA-*) : aucun envoi de donnee de sante
+vers un service externe (regle du poste). Un fournisseur est une interface avec
+trois implementations : "desactive" (defaut), "regles locales" (resume structure
+deterministe, sans modele) et, plus tard seulement, un fournisseur externe
+derriere un drapeau `ia.fournisseur_externe` desactive et une journalisation.
+Toute sortie generee est marquee comme telle et jamais signee automatiquement
+(RG-IA de la fiche F-IA-05).
+
+Rappels : un commit = un lot vert (tsc, eslint, vitest de ses fichiers, garde
+`src/security/tirets-interdits.test.ts`) ; `git add` sur chemins explicites puis
+`git diff --cached --name-only` avant chaque commit ; une migration se signale au
+CEO (relecture depuis zero sur base temporaire) ; jamais de push par une autre
+session que le CEO ; l'auteur de commit est reecrit par le CEO avant le push.
