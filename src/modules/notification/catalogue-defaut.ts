@@ -4,7 +4,10 @@
  * src/modules/administration/referentiel-notifications.ts). Module pur (pas
  * de "use server").
  *
- * Reprend le tableau du pack a l'identique (24 codes). Les variables entre
+ * Reprend le tableau du pack a l'identique (24 codes), complete par les codes
+ * du laboratoire cites plus bas dans le meme chapitre (N-LAB-CANCELLED,
+ * N-LAB-CRITICAL-ESCALATION, N-LAB-ANNOUNCE-OVERDUE, tous "interne
+ * seulement", donc sans texte SMS). Les variables entre
  * accolades ({date}, {etablissement}...) sont indicatives, jamais
  * interpolees automatiquement dans ce depot (voir la limite assumee
  * documentee dans referentiel-notifications.ts) : le texte est affiche et
@@ -45,4 +48,7 @@ export const CATALOGUE_NOTIFICATIONS_DEFAUT: ModeleNotificationDefaut[] = [
   { code: "N-APPT-REJECTED", declencheur: "Demande de RDV refusée", destinataire: "Patient", canaux: "Interne + SMS", texteModele: "BHIP : votre demande de RDV du {date} n'a pas pu être acceptée. Détails dans l'application." },
   { code: "N-APPT-EXPIRED", declencheur: "Demande de RDV expirée", destinataire: "Patient", canaux: "Interne + SMS", texteModele: "BHIP : votre demande de RDV du {date} n'a pas reçu de réponse. Choisissez un autre créneau." },
   { code: "N-RX-CANCELLED", declencheur: "Ordonnance annulée ou arrêtée", destinataire: "Patient", canaux: "Interne", texteModele: "" },
+  { code: "N-LAB-CANCELLED", declencheur: "Demande d'examen annulée", destinataire: "Patient, laboratoire", canaux: "Interne", texteModele: "" },
+  { code: "N-LAB-CRITICAL-ESCALATION", declencheur: "Résultat critique non lu sous 2 h", destinataire: "Responsable d'établissement du prescripteur", canaux: "Interne (prioritaire)", texteModele: "" },
+  { code: "N-LAB-ANNOUNCE-OVERDUE", declencheur: "Résultat à annoncer non annoncé sous 30 jours", destinataire: "Auditeur, prescripteur", canaux: "Interne", texteModele: "" },
 ];

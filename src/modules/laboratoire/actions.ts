@@ -51,7 +51,7 @@ import {
   type Indicateur,
 } from "./referentiel-parametres-examens";
 import { journaliser } from "@/modules/audit/journaliser";
-import { creerNotification } from "@/modules/notification/creer";
+import { creerNotification, type OptionsNotification } from "@/modules/notification/creer";
 import { estCollisionUnicite, genererNumeroExamen } from "./numero-examen";
 import { construireAnterieurs } from "./anterieurs";
 
@@ -268,13 +268,14 @@ async function notifierPersonnelLaboratoire(
   laboratoireId: string,
   type: string,
   message: string,
-  lien: string
+  lien: string,
+  options?: OptionsNotification
 ): Promise<void> {
   const personnel = await prisma.professionnelSante.findMany({
     where: { etablissementId: laboratoireId, user: { roles: { some: { nom: "laboratoire" } } } },
     select: { userId: true },
   });
-  await Promise.all(personnel.map((membre) => creerNotification(membre.userId, type, message, lien)));
+  await Promise.all(personnel.map((membre) => creerNotification(membre.userId, type, message, lien, options)));
 }
 
 /** Nom complet d'un utilisateur, sans prefixe. */
@@ -720,13 +721,15 @@ export async function annulerExamenAction(
         examen.patient.userId,
         "examen_annule",
         "Une demande d'examen vous concernant a ete annulee par votre medecin.",
-        "/app/patient/examens"
+        "/app/patient/examens",
+        { codeCatalogue: "N-LAB-CANCELLED" }
       ),
       notifierPersonnelLaboratoire(
         examen.laboratoireId,
         "examen_annule",
         `Une demande d'examen a ete annulee par le medecin demandeur. Motif : ${motif}`,
-        "/app/medecin/laboratoire"
+        "/app/medecin/laboratoire",
+        { codeCatalogue: "N-LAB-CANCELLED" }
       ),
     ]);
 
@@ -1502,11 +1505,9 @@ export async function validerResultatExamenAction(
     ]);
 
     // RG-LAB-21 du pack : une valeur critique (LL/HH) declenche, a la
-    // validation, une notification prioritaire au prescripteur. Limite
-    // assumee : l'escalade "au responsable d'etablissement si non lue sous
-    // 2h" du pack n'est pas implementee (pas de tache planifiee fiable a
-    // laquelle se raccrocher ce soir) ; seule la notification immediate au
-    // prescripteur est envoyee.
+    // validation, une notification prioritaire au prescripteur. Si elle reste
+    // non lue plus de 2 h, la tache planifiee relances.ts l'escalade aux
+    // responsables d'etablissement du prescripteur (N-LAB-CRITICAL-ESCALATION).
     const parametresCritiques = ((examenValide.resultatsParametres as ResultatParametre[] | null) ?? []).filter(
       (p) => p.indicateur === "LL" || p.indicateur === "HH"
     );
@@ -1743,7 +1744,8 @@ export async function corrigerResultatValideAction(
           dateValidation: null,
           empreinteResultat: null,
           commentaireValidation: `Correction d'un resultat valide : ${motif}`,
-          ...(examen.sensible ? { resultatAnnonceAuPatient: false } : {}),
+          // Un examen sensible doit etre annonce de nouveau, et son rappel des 30 jours repart de zero.
+          ...(examen.sensible ? { resultatAnnonceAuPatient: false, relanceAnnonceLe: null } : {}),
         },
       });
 

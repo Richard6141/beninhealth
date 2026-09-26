@@ -163,7 +163,7 @@ function FormulaireAjoutNotification() {
 export function SectionReferentielNotifications({ referentiel }: { referentiel: ModeleNotificationResume[] }) {
   return (
     <div className="flex flex-col gap-6">
-      <Card description="Nouveau code ajouté à la fin de la liste, actif par défaut. Les 24 codes du catalogue d'origine sont déjà présents ci-dessous.">
+      <Card description="Nouveau code ajouté à la fin de la liste, actif par défaut. Les codes du catalogue d'origine sont déjà présents ci-dessous.">
         <FormulaireAjoutNotification />
       </Card>
 

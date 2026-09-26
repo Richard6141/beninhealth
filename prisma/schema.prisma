@@ -543,6 +543,12 @@ model ExamenMedical {
   versionResultat Int @default(1)
   versionsResultat VersionResultatExamen[]
 
+  // RG-LAB-41 / N-LAB-ANNOUNCE-OVERDUE du pack : date du rappel envoye au
+  // prescripteur quand le resultat d'un examen sensible valide n'a pas ete
+  // annonce au patient sous 30 jours (voir src/modules/laboratoire/relances.ts).
+  // Un seul rappel par version de resultat.
+  relanceAnnonceLe DateTime?
+
   @@schema("public")
 }
 
@@ -897,6 +903,10 @@ model Notification {
   lien          String?
   lu            Boolean  @default(false)
   date          DateTime @default(now())
+  // RG-LAB-21 du pack : date de l'escalade d'une notification de resultat
+  // critique restee non lue plus de 2 h (voir src/modules/laboratoire/relances.ts).
+  // Sert de reclamation : une notification n'est escaladee qu'une fois.
+  escaladeLe    DateTime?
   @@schema("public")
 }
 

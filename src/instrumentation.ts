@@ -28,4 +28,7 @@ export async function register(): Promise<void> {
 
   const { demarrerRemiseSmsDifferes } = await import("@/modules/notification/sms/remise-differes");
   demarrerRemiseSmsDifferes();
+
+  const { demarrerRelancesLaboratoire } = await import("@/modules/laboratoire/relances");
+  demarrerRelancesLaboratoire();
 }
