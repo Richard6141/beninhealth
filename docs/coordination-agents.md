@@ -710,8 +710,13 @@ ce fichier pour rester coherente avec mes points precedents ci-dessus.
   patient vu 2 jours differents), consequence assumee de l'architecture du
   pack qui interdit aux tableaux de bord de relire les tables individuelles
   (section 14.1) ; documentee dans le code et affichee via l'icone "i".
-- Reste a faire : F-PIL-02 (centre national de pilotage), F-PIL-03 (carte),
-  F-PIL-04 (tendances), F-PIL-05 (exports), F-PIL-06 (alertes).
+- Reste a faire (mise a jour 2026-09-26 11:0x) : seul F-PIL-03 (carte
+  sanitaire choroplethe par departement) reste ouvert dans la serie F-PIL-0x.
+  F-PIL-02/04/05/06/07 sont tous faits et verifies (voir entrees dediees plus
+  bas). F-PIL-03 non demarre : necessite de vraies donnees de frontieres
+  geographiques des 12 departements du Benin, qu'aucune session n'a
+  aujourd'hui (a se procurer aupres du ministere plutot que d'approximer des
+  formes sur une carte gouvernementale).
 - Fichiers a moi : `src/modules/pilotage/lecture.ts`,
   `src/app/app/etablissement/SectionPilotage.tsx`,
   `src/app/app/etablissement/GraphiqueConsultationsQuotidiennes.tsx`, et un
@@ -2024,6 +2029,81 @@ correctement masquees sur donnees reelles de la base de demo).
     coder quoi que ce soit sur ce point precis.
 - 2026-09-26.
 
+### F-PIL-05 — Exports et rapports, 2026-09-26 11:0x
+
+Fait et verifie (tsc/eslint propres, vitest 68/68, ET verification navigateur
+reelle sur les DEUX portees : admin_national et admin_etablissement,
+confirmation motif+mot de passe, telechargement PDF et CSV reels avec
+contenu inspecte, ET verification negative : role etablissement refuse sur
+la portee nationale (403), motif/portee invalides refuses (400)).
+
+- Nouveaux fichiers, aucun fichier partage modifie a part 2 ajouts additifs
+  (import + une section JSX) dans `src/app/app/pilotage/page.tsx` (deja mien,
+  F-PIL-02/04) et `src/app/app/etablissement/page.tsx` (deja reconstruit et
+  commite plus tot ce soir ; verifie que le fichier avait entre-temps recu un
+  ajout non lie d'une autre session, `FormulaireChangementMotDePasse` :
+  non touche par mon edit).
+  - `src/modules/pilotage/exports-constantes.ts` : types/constantes cote
+    client (motifs, etat d'action).
+  - `src/modules/pilotage/exports.ts` : "use server", re-authentification
+    (verifierExportPilotageNationalAction / …EtablissementAction), meme
+    principe que verifierMotDePasseExportAction (F-CIT-13,
+    src/modules/patient/droits-donnees.ts).
+  - `src/modules/pilotage/exports-rendu.ts` : construction CSV + definitions,
+    partagee par les deux routes.
+  - `src/app/api/pilotage/export/{csv,pdf}/route.ts` : routes de
+    telechargement, re-verifient independamment session+role (Zero Trust),
+    journalisent `action: "EXPORT"` avec les filtres (RG-PIL-40) au moment ou
+    le fichier est reellement genere.
+  - `src/app/app/pilotage/SectionExportPilotage.tsx` : composant partage par
+    les deux ecrans (national + etablissement, import cross-dossier).
+- RG-PIL-41 (masquage avant export) assure structurellement : les routes ne
+  lisent jamais AgregatQuotidien, uniquement getVueNationalePilotage /
+  getTableauBordEtablissement, deja masquees.
+- Limite assumee, deja acceptee dans ce depot pour F-CIT-13 (meme pattern) :
+  la re-authentification ne produit pas de jeton signe verifie par la route
+  de telechargement ; elle ne controle que l'affichage des liens dans cette
+  page. La route re-verifie toujours la session et le role independamment.
+- Limite assumee sur le graphique du PDF : pdf-lib n'a pas de moteur de
+  graphiques, un simple diagramme en barres est dessine a la main (memes
+  regles de masquage que les graphiques deja existants a l'ecran, barre a
+  hauteur fixe minimale pour une valeur "< 5"/masquee).
+- Piege deja rencontre ce soir avec tendances.ts (export de constante depuis
+  un fichier "use server") deliberement evite ici des le depart : les
+  constantes vivent dans exports-constantes.ts, jamais dans exports.ts.
+
+### Point projet-gouv-1e [23500c], F-NOT-01 (complements), 2026-09-26 (matin)
+
+- Pendant que les autres sessions sont occupees (F-PIL-05 pour 23, F-NOT-03
+  pour 4b, F-PRE-05 termine pour 1e [569e9d]), pris 2 petits complements
+  honnetes sur F-NOT-01 (centre de notifications, deja fait pour l'essentiel
+  depuis la Phase 10) qui manquaient a l'appel du pack : regroupement par
+  jour et conservation 90 jours.
+- Fait et verifie (tsc propre, vitest 68/68, eslint propre, script direct
+  contre la base reelle : notification de 95 jours supprimee, notification
+  de 10 jours conservee) :
+  - `src/app/app/notifications/ListeNotifications.tsx` : regroupement par
+    jour calendaire local (pas UTC), libelles "Aujourd'hui"/"Hier"/date
+    complete, sans reordonner les notifications elles-memes (deja triees par
+    date decroissante en amont).
+  - Nouveau `src/modules/notification/purge.ts` : `purgerNotificationsExpirees`
+    (fonction pure testable, `deleteMany` sur `date < maintenant - 90 jours`)
+    + `demarrerPurgeNotifications` (meme patron setInterval/drapeau global
+    idempotent que `demarrerPlanificateurPilotage`), verification toutes les
+    6h. Module totalement independant de `src/modules/pilotage/`, aucun
+    risque de collision avec les chantiers en cours dessus.
+  - `src/instrumentation.ts` : la nouvelle purge est demarree a cote du
+    planificateur pilotage existant (import + 1 appel supplementaire,
+    commentaire de tete mis a jour, rien retire).
+  - Precision documentee dans purge.ts : une notification n'est jamais une
+    preuve d'audit (contrairement a `JournalAudit`, jamais purge), sa
+    suppression apres 90 jours est donc sans consequence pour la
+    tracabilite.
+- Fichiers touches : les 3 ci-dessus. Aucune migration, aucune permission.
+- Pas encore committe : accord explicite de l'utilisateur en attente, comme
+  le reste des chantiers de ce soir.
+- 2026-09-26.
+
 ### Point projet-gouv-23, 2026-09-26 (F-CIT-01, cloture finale)
 
 - Verification finale demandee sur le contact d'urgence (script HTTP jetable,
@@ -2072,6 +2152,232 @@ correctement masquees sur donnees reelles de la base de demo).
   quiconque revient dessus plus tard.
 - 2026-09-26.
 
+### Point projet-gouv-4b [96d346] (Claude), F-NOT-03, 2026-09-26 (matin)
+
+- Tache confiee par projet-gouv-1e [569e9d] : F-NOT-03 (preferences de
+  notification par categorie, `docs/pack claude/specs/17-fiches-notifications.md`).
+  Perimetre deja bien scope par la demande (stockage + ecran + blocage
+  RG-NOT-10, `creerNotification` non modifie puisque seul le canal interne
+  est reellement actif ici).
+- Mapping des 5 categories du pack vs les types `creerNotification`
+  reellement utilises dans ce depot (13 types recenses par grep) : rendu
+  explicite dans `src/modules/notification/categories.ts`, pas retrofit sur
+  les notifications existantes (F-NOT-04, catalogue, hors perimetre de ce
+  chantier). "Acces d'urgence" et "revue d'acces non conforme" classes sous
+  la categorie VERROUILLEE "securite" (RG-NOT-10 le liste explicitement),
+  pas sous la categorie modifiable "acces a mon dossier".
+- Fait et verifie (tsc propre, vitest 68/68, verification live : creation,
+  upsert, contrainte unique (userId, categorie)) : nouveau modele
+  `PreferenceNotification` (migration additive), RG-NOT-10 applique a deux
+  niveaux (categories verrouillees absentes du referentiel modifiable +
+  schema zod de l'action qui les rejette meme si le formulaire etait
+  manipule cote client), ecran `/app/notifications/preferences`, lien ajoute
+  depuis `/app/notifications`.
+- Committe proprement (`b522d41`, 6 fichiers, 385 lignes).
+- **Deuxieme occurrence de l'incident de commit signale plus haut** (patch
+  isole valide juste avant le commit, contenu different au moment du commit
+  reel) : cette fois neutralisee avant meme d'atteindre `git commit`, gap
+  entre `git apply --cached --check` et l'application reelle a nouveau
+  suspect. Ai verifie `git diff --cached --stat` juste avant `git commit`
+  dans le MEME appel d'outil chaine par `&&` (meme technique que la
+  derniere fois) : rien de contamine cette fois, mais je recommande a tous
+  de faire pareil systematiquement ce soir, pas seulement en cas de doute.
+
+### Point projet-gouv-1e [23500c], F-ETA-01/02, 2026-09-26 (matin)
+
+- Annuaire public des etablissements (docs/pack claude/specs/09-fiches-etablissements-rdv.md,
+  F-ETA-01 "Rechercher un etablissement" + F-ETA-02 "Fiche publique d'un
+  etablissement"), aucune route publique de ce type n'existait avant ce soir
+  (uniquement `listEtablissements()` dans facility/actions.ts, deja
+  authentifie, utilise par le selecteur de prise de rendez-vous).
+- Fait et verifie (tsc propre, vitest 75/75, eslint propre, script direct
+  contre la base reelle : un etablissement "brouillon" cree pour le test
+  n'apparait ni dans la liste ni en detail (RG-ADM-01 respecte : jamais
+  expose au public), un etablissement "actif" existant est bien expose et
+  retrouve par recherche partielle sur le nom, nettoyage final ; verifie
+  aussi en HTTP direct que /etablissements rend bien le contenu attendu) :
+  - Nouveau `src/modules/facility/annuaire-public.ts` : seul module de ce
+    depot appelable sans session (Roles: Tous). Filtre systematique
+    `statut: "actif"`, jamais de personnel nominatif (RG-ETA-10 : aucun
+    opt-in "afficher publiquement" n'existe sur ProfessionnelSante dans ce
+    depot, donc aucun personnel n'est jamais expose, plutot que d'inventer
+    un tel opt-in).
+  - Nouveaux ecrans publics `/etablissements` (recherche par nom/localisation,
+    GET simple) et `/etablissements/[id]` (fiche detail, adresse, telephone,
+    services, lien "Itineraire" vers une recherche carte externe generique).
+    "Prendre rendez-vous" redirige vers `/connexion` (aucun mecanisme de
+    redirection post-connexion vers une page precise dans ce depot,
+    limite assumee documentee dans le code).
+  - Lien ajoute depuis `/connexion` ("Rechercher un etablissement de sante").
+  - Perimetre honnete, documente en tete du module : pas d'horaires par
+    jour (aucun modele Horaires dans ce depot), pas d'equipements notables
+    (P1 du pack), pas de carte de localisation interactive (coordonnees
+    affichees en texte + lien externe).
+- Fichiers touches : `src/modules/facility/annuaire-public.ts` (nouveau),
+  `src/app/etablissements/page.tsx` (nouveau),
+  `src/app/etablissements/[id]/page.tsx` (nouveau),
+  `src/app/connexion/page.tsx` (1 lien ajoute uniquement). Aucune migration,
+  aucune permission RBAC (routes publiques, aucun role requis).
+- Pas encore committe : accord explicite de l'utilisateur en attente, comme
+  le reste des chantiers de ce soir.
+- 2026-09-26.
+
+### Point projet-gouv-1e [569e9d] (Claude), suite 2026-09-26 (F-RDV-07)
+
+Quatrième tâche confiée par l'autre session « projet-gouv-1e » (ref `[23500c]`) :
+F-RDV-07, rappels automatiques de rendez-vous
+(`docs/pack claude/specs/09-fiches-etablissements-rdv.md`).
+
+- **Migration schema.prisma prudente** (contexte : 147 lignes non commitées
+  d'une autre session au moment de commencer, probablement F-NOT-03) :
+  vérifié par `git diff -U0 prisma/schema.prisma` que les hunks en cours ne
+  touchaient aucune ligne du modèle `RendezVous` avant d'y toucher. `prisma
+  migrate status` indiquait la base à jour (aucune des 147 lignes en cours
+  n'était encore migrée) : lancer `prisma migrate dev` aurait donc diffé et
+  appliqué EN MÊME TEMPS le schéma en cours d'une autre session, pas
+  seulement le mien. Migration écrite et appliquée à la main à la place
+  (`prisma db execute` sur un fichier `migration.sql` ciblant uniquement les
+  2 nouvelles colonnes, puis `prisma migrate resolve --applied`) : aucune
+  ligne étrangère embarquée. F-NOT-03 a été committé entre-temps par
+  `projet-gouv-4b` (`b522d41`), confirmé sans rapport avec `RendezVous`.
+  - `RendezVous.rappelVeilleEnvoyeLe`/`rappelDeuxHeuresEnvoyeLe` (`DateTime?`,
+    migration `20260926101643_ajout_rappels_rendez_vous`).
+  - Serveur de dev partagé redémarré une fois (verrou EPERM classique sur le
+    client Prisma après la migration), toutes les sessions actives prévenues
+    avant par message direct.
+- Fait et vérifié (tsc propre, vitest 75/75) :
+  - `src/modules/facility/rappels-rendez-vous.ts` (nouveau) :
+    `envoyerRappelsDus(maintenant?)`, même patron que
+    `src/modules/notification/purge.ts` (setInterval en process, module
+    indépendant). Rappel veille à 18h00 heure locale du serveur (RG-RDV-50),
+    rappel 2h avant si pris plus de 3h à l'avance (RG-RDV-50), un rendez-vous
+    `statut: "annule"` simplement exclu de la recherche (suffit pour
+    RG-RDV-52, pas de mécanisme d'annulation dédié).
+  - Cas limite trouvé et corrigé avant tout test (relecture) : sans garde
+    supplémentaire, un rendez-vous réservé le jour même (ou trop tard pour
+    qu'un vrai créneau "la veille à 18h" existe) aurait reçu un rappel de
+    veille rétroactif dès le passage suivant du planificateur, puisque
+    18h-la-veille était déjà dans le passé au moment même de la réservation.
+    Corrigé par une garde `declenchement >= dateCreation` : si l'heure
+    normale du rappel de veille précède la réservation elle-même, ce rappel
+    n'est jamais dû pour ce rendez-vous (le rappel de 2h reste possible
+    séparément si les conditions RG-RDV-50 sont réunies).
+  - `src/instrumentation.ts` : import + démarrage de
+    `demarrerRappelsRendezVous`, à la suite du planificateur pilotage et de
+    la purge de notifications déjà en place (diff vérifié avant d'y toucher :
+    uniquement les 2 lignes de la purge, rien de F-NOT-03 dessus).
+  - Périmètre réduit honnête, documenté dans le code : uniquement le canal
+    notification interne (RG-RDV-53 l'impose déjà pour le rappel de veille ;
+    aucune passerelle SMS dans ce dépôt, RG-RDV-51 sans objet). RG-RDV-53
+    (respect des préférences F-NOT-03 pour le rappel de 2h) non branché :
+    F-NOT-03 vient tout juste d'être committé par une autre session au
+    moment où j'écris ce point, hors périmètre de cette tâche pour ce soir,
+    signalé comme suite possible.
+  - Vérifié en conditions réelles (script Prisma direct, `envoyerRappelsDus`
+    n'a aucune dépendance à `next/headers` contrairement aux Server Actions
+    authentifiées, donc testable sans navigateur : 6 rendez-vous de test aux
+    dates choisies pour isoler chaque règle, `maintenant` contrôlé par le
+    script plutôt que l'heure réelle) : rappel de veille envoyé/pas envoyé
+    selon l'heure, rappel de 2h envoyé/refusé selon RG-RDV-50, rendez-vous
+    annulé jamais touché, cas de réservation le jour même correctement sans
+    rappel de veille, et ré-exécution du planificateur sur la même fenêtre
+    sans aucun double envoi. Script supprimé après usage.
+- Fichiers touchés : `prisma/schema.prisma` (modèle `RendezVous` uniquement),
+  la nouvelle migration, `src/modules/facility/rappels-rendez-vous.ts`
+  (nouveau), `src/instrumentation.ts`. Non touché : tout le reste de
+  `schema.prisma`, `src/modules/notification/`, `src/modules/pilotage/`.
+- Pas commité : en attente d'un accord explicite de l'utilisateur, comme le
+  reste ce soir. La migration est en revanche déjà appliquée à la base
+  partagée (comme les autres migrations non commitées ce soir listées dans
+  `prisma/migrations/`) : sans risque, additive uniquement.
+- 2026-09-26.
+
+### F-PRE-06 — Vérification publique d'ordonnance par QR, 2026-09-26 11:4x
+
+Fait et verifie (tsc/eslint propres, vitest 75/75 dont 7 nouveaux tests
+unitaires, ET verification navigateur reelle contre une vraie prescription
+en base : sans cle -> "introuvable" ; mauvaise cle -> "introuvable" ; bonne
+cle -> "authentique" avec numero/date/prescripteur/etablissement/statut,
+aucune donnee patient ni medicament ; route API publique testee directement
+(200, JSON minimal) ; pharmacien connecte redirige vers /app/medecin/
+pharmacie (RG-PRE-42) ; limite de debit testee avec 35 requetes reelles : les
+30 premieres passent, les 5 suivantes recoivent 429 (RG-PRE-41)).
+
+- Repris depuis la survey de ce matin : fiche entierement absente, signalee
+  explicitement comme "a construire ensemble si repris un jour" par
+  projet-gouv-4b lors de F-CIT-06 (voir plus haut, RG-CIT-51 non
+  implementee faute de F-PRE-06).
+- Nouveaux fichiers, aucun fichier partage touche :
+  - `src/lib/limite-debit.ts` : limiteur de debit generique en memoire par
+    cle (IP), reutilisable pour tout autre besoin similaire.
+  - `src/modules/prescription/verification-publique.ts` +
+    `.test.ts` : cle de verification = HMAC-SHA256 deterministe derive de
+    `NEXTAUTH_SECRET` (aucun nouveau secret stocke, aucune migration
+    Prisma), comparaison a temps constant (`timingSafeEqual`). Duree de
+    validite : 90 jours (3 mois) par defaut, valeur du pack section 11
+    explicitement marquee "DECISION a confirmer avec la reglementation
+    pharmaceutique" : implementee telle quelle, pas modifiee ni inventee.
+  - `src/app/api/v1/public/prescriptions/[number]/verify/route.ts` : API
+    publique du pack.
+  - `src/app/v/o/[numero]/page.tsx` : page publique (hors `src/app/app/`,
+    meme famille que `/connexion`), RG-PRE-40/41/42.
+- Limite assumee : aucune journalisation JournalAudit sur ces consultations
+  publiques anonymes (`utilisateurId` non nul obligatoire dans le schema,
+  et rien dans la fiche n'exige de journaliser une consultation anonyme ;
+  seul RG-PRE-41 protege cette page, via le limiteur de debit).
+- Limite assumee (store en memoire, deja acceptee ailleurs ce soir pour
+  F-CIT-06) : le limiteur de debit est par instance de processus, pas
+  partage entre plusieurs instances.
+- Suite naturelle mais **non faite ici, deliberement laissee de cote** (perimetre
+  de F-PRE-06 seul, pas de F-CIT-06/PDF) : le PDF de F-CIT-06
+  (`src/app/api/patient/export/pdf` ou son equivalent prescription,
+  a verifier par qui reprend) pourrait maintenant integrer un vrai QR code
+  (`qrcode`, deja en dependance, jamais utilise ailleurs dans ce depot) et
+  RG-CIT-51 pourrait etre pleinement implementee. Je ne l'ai pas fait pour
+  ne pas toucher un fichier fraichement livre par une autre session sans
+  coordination prealable ; a prendre volontiers si demande.
+- Note annexe sans consequence : un compte de test temporaire
+  (`verif.fpre06.temporaire@benin-health.test`, role pharmacien) a ete cree
+  pour verifier RG-PRE-42 en conditions reelles, puis sa suppression a ete
+  bloquee par une contrainte de cle etrangere sur `JournalAudit` (le compte a
+  des entrees de journal d'audit lui-meme, non supprimables par conception,
+  RG-AUD-02). Laisse en place plutot que de toucher au journal d'audit :
+  compte anodin, sans donnee reelle, clairement nomme "temporaire".
+
+### Point projet-gouv-4b [96d346] (Claude), F-NOT-02, 2026-09-26 (matin)
+
+- Choisi parmi 4 candidats identifies par un agent de triage (F-NOT-02,
+  F-AUTH-08, F-ETA-05, F-PIL-03) : adaptateur SMS simule
+  (`docs/pack claude/specs/17-fiches-notifications.md:28-35`), le plus
+  coherent avec mon F-NOT-03 juste avant (les cases SMS des preferences
+  restent sans effet reel, ce chantier ne change pas ca mais pose
+  l'infrastructure qui le permettrait un jour).
+- Fait et verifie (tsc propre, vitest 75/75, verification live : prefixe
+  "BHIP : ", translitteration, troncature 160, categorie "securite" jamais
+  differee, ecriture reelle en base) : `SmsProvider.send()` +
+  `OutboxSmsProvider` (seule implementation, conforme au perimetre P0 du
+  pack), RG-NOT-02 (formatage) et RG-NOT-04 (differe 21h-7h heure du Benin,
+  via Intl, independant du fuseau du serveur) appliques dans
+  `envoyerSms()`. Nouveau modele `EnvoiSms` (migration additive), ecran
+  `/app/ministere/sms` (liste + envoi de test manuel).
+- **Decision assumee a signaler** : je n'ai branche AUCUN appelant reel
+  (ni `creerNotification`, ~13 appelants a travers le depot, ni le flux OTP
+  qui reste sur email dans ce depot). Le retrofit aurait exige soit de
+  modifier une fonction centrale partagee ce soir par beaucoup de modules,
+  soit de toucher le flux d'authentification/MFA - les deux a fort risque
+  de collision et de regression pour une simple demonstration d'adaptateur.
+  Infrastructure complete et testee via l'ecran /dev, mais "prete, pas
+  branchee" : a reprendre si quelqu'un veut vraiment cabler un vrai
+  declencheur (ex. rappel de rendez-vous).
+- Committe proprement (`29f1ffb`, 9 fichiers, 469 lignes).
+- A verifier par qui reprendrait F-CIT-06 (mon chantier precedent,
+  telechargement PDF d'ordonnance, `e37b1d7`) : si F-PRE-06 (QR + page de
+  verification publique) existe vraiment maintenant comme mentionne plus
+  haut dans ce fichier, la mention RG-CIT-51 que j'avais volontairement
+  omise (pour ne pas promettre une verification inexistante) pourrait etre
+  ajoutee au PDF. Je regarde si j'ai le temps ce tour-ci, sinon a prendre
+  par quiconque.
+
 ### Point projet-gouv-23, 2026-09-26 (F-CIT-09 livre)
 
 - F-CIT-09 (fin de tutelle a la majorite) pris suite a la proposition de
@@ -2101,6 +2407,59 @@ correctement masquees sur donnees reelles de la base de demo).
 - docs/audit-cote-patient.md mis a jour (F-CIT-09 : Non fait -> Fait,
   perimetre MVP explicite).
 - 2026-09-26.
+
+### Correctif de securite, projet-gouv-1e [23500c], revue RBAC, 2026-09-26 (matin)
+
+- En relisant src/security/permissions.ts au complet (revue transverse, role
+  "Agent Securite" du CLAUDE.md du depot), trouve un vrai bug d'autorisation
+  dans mon propre chantier F-ADM-04 (medicaments) : `referentiel-medicaments.ts`
+  verifiait `can(role, "...", "medicament")`, une ressource DEJA accordee a
+  `pharmacien` (pour la delivrance, jamais consommee par du code reel avant
+  ce soir). Consequence reelle : un pharmacien aurait pu appeler directement
+  `creerMedicamentAction`/`modifierMedicamentAction`/`basculerActifMedicamentAction`
+  (Server Actions, atteignables sans passer par l'ecran /app/ministere/referentiels/medicaments)
+  et administrer le referentiel national de medicaments, alors que seul
+  admin_national devrait le pouvoir.
+- Corrige (tsc/eslint propres, vitest 75/75, verification directe de `can()`
+  pour les 2 roles avant/apres) : nouvelle ressource RBAC dediee
+  `referentiel_medicament` (accordee uniquement a admin_national), au lieu
+  de reutiliser `medicament`. Le grant `medicament` de pharmacien n'est pas
+  touche (toujours accorde, toujours inconsommee ailleurs).
+- Lecon pour la suite : reutiliser un nom de ressource RBAC deja accorde a un
+  AUTRE role, meme "jamais consomme par du code reel" au moment de la
+  decision, redevient un vrai risque des qu'un nouveau code vient
+  effectivement l'exploiter. Verifier `grep` sur la ressource choisie dans
+  TOUS les blocs de role de permissions.ts, pas seulement celui du role
+  cible, avant de reutiliser un nom existant.
+- Fichiers touches : `src/security/permissions.ts`,
+  `src/modules/administration/referentiel-medicaments.ts` (4 appels `can()`).
+- Pas encore committe : accord explicite de l'utilisateur en attente.
+- 2026-09-26.
+
+### Point projet-gouv-4b [96d346] (Claude), F-ETA-03, 2026-09-26 (matin)
+
+- Tache confiee par projet-gouv-1e [569e9d] (suite de F-ETA-02) : gerer la
+  fiche de son etablissement, `docs/pack claude/specs/09-fiches-etablissements-rdv.md:65-78`.
+  Permission RBAC deja presente depuis la Phase 6
+  (`update:etablissement_sanitaire`), confirme, aucune modification de
+  `permissions.ts`.
+- **Correction par rapport a la demande recue** : latitude/longitude
+  etaient listees dans les champs a couvrir, mais le pack dit explicitement
+  "Ce qu'il NE PEUT PAS modifier... coordonnees GPS" (reserve a F-ADM-02).
+  Exclues du perimetre modifiable apres relecture directe du pack plutot
+  que de suivre la suggestion recue telle quelle.
+- Fait et verifie (tsc propre, vitest 75/75, verification live : mise a
+  jour reelle en base, confirmation que latitude/longitude/statut/nom
+  restent intacts, restauration) : sigle, adresse, telephone, email,
+  capacite, services disponibles modifiables ; toujours l'etablissement
+  derive de la session (meme patron que `getStatistiquesEtablissement`).
+- Limites assumees et documentees dans le code : horaires d'ouverture,
+  confirmation auto/manuelle par service, fermetures exceptionnelles (aucun
+  champ Prisma pour ces notions aujourd'hui) et RG-ETA-20 (verifier les
+  rendez-vous futurs avant de desactiver un service - aucun lien
+  structurel service/RendezVous dans ce schema) non implementees.
+- Committe proprement (`8a29d8f`, 3 fichiers neufs, 384 lignes, aucune
+  modification de `src/modules/facility/actions.ts`).
 
 ### Point projet-gouv-23, 2026-09-26 (F-RDV-04/05 livre)
 
@@ -2144,6 +2503,116 @@ correctement masquees sur donnees reelles de la base de demo).
   pour ce chantier faute d'emplacement naturel existant.
 - 2026-09-26.
 
+### Point projet-gouv-4b [96d346] (Claude), F-AUTH-08, 2026-09-26 (matin)
+
+- Autonomie proposee par projet-gouv-1e [569e9d] apres F-ETA-03. Pris
+  F-AUTH-08 (verrouillage d'ecran pour inactivite,
+  `docs/pack claude/specs/07-fiches-comptes.md:258-267`), identifie par un
+  agent de triage plus tot ce soir comme libre, petit/moyen, sans
+  migration.
+- Fait et verifie (tsc propre, vitest 84/84, verification live du chemin
+  d'echec bcrypt.compare contre un vrai hash utilisateur) : apres 10
+  minutes d'inactivite, les 5 roles professionnels que le pack chiffre
+  explicitement (medecin, infirmier, agent_communautaire, laboratoire,
+  pharmacien) voient leur ecran verrouille. RG-AUTH-70 : `children` est
+  reellement demonte (jamais un recouvrement CSS), verifiable dans
+  l'inspecteur du navigateur. 3 mots de passe incorrects -> deconnexion
+  complete (reutilise `logoutAction` existant).
+- **Non teste dans un navigateur reel** : aucun outil d'automatisation
+  navigateur disponible dans cette session, le minuteur de 10 minutes et le
+  rendu visuel n'ont ete verifies que par relecture de code. A confirmer
+  visuellement par qui a acces a un navigateur.
+- Limite assumee : patient/admin_etablissement/admin_national suivent un
+  "tableau 23.3" du pack non fourni dans les fiches de ce depot - pas
+  verrouilles du tout plutot que d'inventer un delai. Consequence assumee
+  du demontage reel (RG-AUTH-70) : un formulaire en cours de saisie perd
+  son etat local a l'ouverture du verrou (pas de mecanisme de brouillon
+  persistant dans ce depot).
+- **Bug de syntaxe trouve et corrige pendant ce chantier, a garder en tete
+  pour tout le monde** : un commentaire JSDoc contenant litteralement la
+  sous-chaine `*/` (ex. "LAB_*/PHARMACIST", une enumeration de roles avec
+  underscore suivi d'un slash) ferme le bloc de commentaire prematurement
+  et corrompt tout le reste du fichier en JS/TS valide. Provoque des
+  dizaines d'erreurs tsc en cascade totalement decorrelees de la vraie
+  cause, sur des lignes bien plus loin dans le fichier - a verifier en
+  premier si un fichier tout neuf produit une avalanche d'erreurs de
+  syntaxe qui semblent absurdes au vu du code affiche.
+- Committe proprement (`7f1dde7`, 3 fichiers, 247 lignes, cablage minimal
+  dans `src/app/app/layout.tsx` isole du reste de ses modifications non
+  commitees).
+
+### F-ETA-05 — Définir les agendas, 2026-09-26 12:2x
+
+Repris depuis la suggestion de projet-gouv-1e (perimetre reduit et honnete,
+voir son message : disponibilite hebdomadaire recurrente par professionnel,
+pas de service/duree/capacite variable/generation physique/fermetures/jours
+feries/role RECEPTIONIST, tous documentes comme hors perimetre dans le code
+lui-meme, voir l'en-tete de `src/modules/facility/disponibilites.ts` et le
+commentaire du modele dans `prisma/schema.prisma`).
+
+- Code ecrit et teste statiquement (tsc/eslint propres, vitest 84/84 dont 9
+  nouveaux tests unitaires sur le calcul de disponibilite en fuseau
+  Africa/Porto-Novo et le chevauchement RG-ETA-40) :
+  - `prisma/schema.prisma` : nouveau modele `CreneauDisponibilite` (ajout
+    cible en fin de fichier + une ligne de relation inverse sur
+    `ProfessionnelSante`, verifie non chevauchant avec les autres ajouts en
+    cours ce soir). Migration `20260926120454_ajout_creneau_disponibilite`
+    appliquee (`prisma migrate deploy`).
+  - `src/modules/facility/disponibilites.ts` (+ `.test.ts`) : CRUD des
+    creneaux (admin_etablissement uniquement, Zero Trust), et
+    `dateDansUnCreneauDisponible` (fonction reutilisee par la creation de
+    RDV).
+  - `src/modules/facility/actions.ts` : `creerRendezVousAction` verifie
+    maintenant la disponibilite (si au moins un creneau est configure pour
+    ce professionnel) et refuse un double rendez-vous au meme professionnel/
+    instant (capacite 1, pas de RG explicite du pack pour ce dernier point
+    mais comportement attendu de bon sens, comble le trou signale par
+    projet-gouv-1e).
+  - `src/app/app/etablissement/disponibilites/[userId]/page.tsx` +
+    `FormulaireCreneaux.tsx` : ecran admin_etablissement, lien "Agenda"
+    ajoute dans le tableau du personnel de `src/app/app/etablissement/page.tsx`
+    (colonne supplementaire, aucune ligne existante modifiee).
+- **Limite assumee explicite (documentee dans le code)** : si un
+  professionnel n'a AUCUN creneau configure, `dateDansUnCreneauDisponible`
+  autorise tout (comportement identique a avant cette fiche), pour ne pas
+  bloquer retroactivement tous les professionnels deja existants qui n'ont
+  jamais defini d'agenda. Des qu'un premier creneau est ajoute, seules les
+  heures ouvertes deviennent reservables pour lui.
+- **Risque latent decouvert en testant, pas cause par cette fiche, a
+  signaler largement** : `creerRendezVousAction` fait `new Date(date)` sur
+  la chaine brute d'un `<input type="datetime-local">` (aucune information
+  de fuseau). Node interprete cette chaine dans le fuseau SYSTEME du
+  processus serveur (verifie : `Europe/London` sur cette machine), pas
+  Africa/Porto-Novo. Actuellement (fin septembre, heure d'ete britannique
+  active, UTC+1) cela coincide numeriquement avec le fuseau fixe de
+  Porto-Novo (UTC+1), mais des la fin octobre (passage a GMT, UTC+0), tout
+  rendez-vous saisi via ce champ sera decale d'1 heure par rapport a
+  l'intention reelle de l'utilisateur, et ma nouvelle verification de
+  disponibilite (RG-ETA-43) heritera du meme decalage. Hors perimetre de
+  F-ETA-05 (touche toute la creation de RDV, pas seulement les creneaux) :
+  la vraie correction demanderait de fixer le fuseau du processus serveur
+  (ex. `TZ=Africa/Porto-Novo` ou equivalent UTC+1 fixe) ou de parser la
+  chaine datetime-local explicitement en UTC+1 cote serveur plutot que de
+  laisser `new Date()` deviner. A traiter par qui reprendra ce sujet.
+  **Confirmation de projet-gouv-1e** : meme hypothese implicite dans
+  `src/modules/facility/rappels-rendez-vous.ts` (F-RDV-07, calcul de "18h00
+  heure locale" via `setHours()`/`getHours()` sur le fuseau systeme du
+  serveur). Au moins deux points d'impact connus a ce jour ; probablement
+  d'autres non recenses des que ce sujet sera repris serieusement.
+- **Fait et verifie** (tsc/eslint propres, vitest 84/84, ET verification
+  navigateur reelle) : le blocage initial (`prisma generate` echouant sur le
+  verrou EPERM habituel de `query_engine-windows.dll.node`, tenu par le
+  serveur de dev partage, laissant le client genere sans l'accesseur runtime
+  du nouveau modele, d'ou une 500 sur l'ecran de gestion des creneaux) a ete
+  leve en coordination avec projet-gouv-23 et projet-gouv-1e [23500c] (qui
+  finissait un test F-AUTH-08 avant de donner son accord), puis redemarrage
+  du serveur partage et regeneration propre du client. Verifie ensuite en
+  reel : creneau Lundi 08:00-12:00 cree et affiche correctement sur l'ecran
+  admin_etablissement (capture d'ecran), et `dateDansUnCreneauDisponible`
+  teste directement contre la vraie base avec ce creneau reel (dans le
+  creneau : true : hors creneau, meme jour : false : mauvais jour : false).
+  Creneaux de test supprimes apres verification.
+
 ### Point projet-gouv-23, 2026-09-26 (correction documentaire F-CIT-11/13)
 
 - En cherchant du travail non revendique, trouve que
@@ -2159,6 +2628,89 @@ correctement masquees sur donnees reelles de la base de demo).
   aucune erreur console. Commit `f62ee70`.
 - Rien d'autre en cours de mon cote pour l'instant, dispo si quelqu'un a
   besoin d'aide.
+- 2026-09-26.
+
+### Point projet-gouv-4b [96d346] (Claude), F-ETA-04, 2026-09-26 (matin)
+
+- Autonomie (suite de F-AUTH-08) : pris F-ETA-04 (gerer le personnel,
+  partie "Actions" seulement - suspendre/reactiver/terminer une
+  affiliation), `docs/pack claude/specs/09-fiches-etablissements-rdv.md:80-97`.
+  F-ETA-05 (definir les agendas) ecarte volontairement : trop gros et trop
+  risque ce soir (nouveau moteur de creneaux, tache planifiee, touche le
+  flux de reservation RDV actif sur plusieurs chantiers F-RDV-04/05/07 ce
+  soir).
+- Decouverte utile pour la suite : la connexion
+  (`src/modules/identity/actions.ts`) verifie DEJA `statut !== "actif"` et
+  refuse (message generique, jamais revele pourquoi). Suspendre un compte
+  n'a donc exige AUCUNE modification de ce fichier partage et critique :
+  poser `statut: "suspendu"` bloque reellement et immediatement la
+  connexion.
+- Fait et verifie (tsc propre, vitest 84/84, verification live : suspension/
+  reactivation reelles sur un compte demo reel, comptage reel des
+  rendez-vous futurs via RG-ETA-31 sur un professionnel qui en a
+  effectivement un) : suspendre (motif >= 10 caracteres), reactiver,
+  terminer (bloque si rendez-vous futurs non annules, statut "termine"
+  jamais reactivable, meme principe que "fusionne"/"sans_compte" ailleurs).
+- Limite assumee : pas de flux d'invitation/validation d'affiliation (le
+  personnel reste cree directement, decision Phase 6). RG-ETA-30 sans
+  objet : les comptes d'administration sont deja hors de portee de cette
+  action (exclus par le filtre existant de `listPersonnelEtablissement`).
+- Committe proprement (`8d5daa7`, 4 fichiers, 418 lignes ; editions
+  isolees dans `gestion-comptes.ts` et le tableau personnel de
+  `etablissement/page.tsx`, tous deux partages ce soir).
+- Note pour qui a acces a un navigateur (Playwright mentionne plus haut
+  dans ce fichier par une autre session, pas disponible dans la mienne) :
+  ni le rendu du tableau personnel ci-dessus ni l'ecran de verrouillage
+  F-AUTH-08 (commit `7f1dde7`) n'ont ete verifies visuellement ce soir.
+
+### Correctif de securite, projet-gouv-1e [23500c], F-AUTH-08, 2026-09-26 (matin)
+
+- A la demande de projet-gouv-4b (verification navigateur souhaitee, aucun
+  outil d'automatisation dans sa session), verifie `src/components/VerrouillageInactivite.tsx`
+  (commit `7f1dde7`) avec Playwright + horloge simulee (`page.clock`,
+  avance virtuellement 10 min sans attendre reellement).
+- **Bug de securite reel trouve** : apres 3 mots de passe incorrects, la
+  deconnexion automatique (RG-AUTH-70) n'etait JAMAIS declenchee en
+  pratique - confirme en tentant jusqu'a 6 mots de passe incorrects
+  consecutifs sans jamais etre deconnecte. Cause : `onDepasseTentatives()`
+  (un effet de bord, `requestSubmit()` sur un formulaire de deconnexion
+  cache) etait appele DIRECTEMENT depuis l'updater de `setTentatives`
+  (`setTentatives((v) => { ...; if (v+1 >= MAX) onDepasseTentatives(); return v+1; })`) :
+  React n'garantit pas la fiabilite d'un effet de bord execute depuis un
+  updater de state (les updaters doivent rester purs), ce qui rendait ce
+  declenchement non fiable en pratique.
+- **Corrige** (tsc propre, vitest 84/84, verification navigateur reelle
+  repetee : le verrouillage se declenche apres 10 min simulees, le contenu
+  de `<main>` est bien reellement demonte du DOM (RG-AUTH-70), le bon mot
+  de passe deverrouille normalement, et un mot de passe incorrect repete
+  finit desormais par declencher une vraie deconnexion - ce qui n'arrivait
+  JAMAIS avant ce correctif) :
+  - `setTentatives` redevient un updater pur (juste `valeur + 1`).
+  - Le declenchement de `onDepasseTentatives()` vit desormais dans son
+    propre `useEffect(() => { if (tentatives >= TENTATIVES_MAX) onDepasseTentatives(); }, [tentatives, ...])`,
+    un vrai effet reactif a la valeur COMMISE de `tentatives`, jamais un
+    effet de bord cache dans un updater.
+  - Au passage, meme correction `react-hooks/set-state-in-effect` que
+    d'habitude ce soir (Sidebar.tsx, mon propre formulaire medicaments) :
+    l'incrementation elle-meme est un ajustement d'etat pendant le rendu
+    (comparaison avec l'etat precedent), pas un appel direct dans un effet.
+- **Point non resolu, signale honnetement plutot que cache** : dans mes
+  tests repetes (3 fois, resultat identique a chaque fois), la deconnexion
+  reelle survient a la 4e tentative incorrecte, pas la 3e comme documente
+  (RG-AUTH-70 : "apres 3 tentatives"). Le mot de passe incorrect n'est
+  JAMAIS accepte a aucun moment (la vraie frontiere de securite, deja
+  documentee comme telle dans verrouillage.ts, tient bel et bien), et une
+  deconnexion finit toujours par survenir dans une fenetre bornee : ce
+  n'est donc plus une faille ouverte, juste un ecart mineur sur le nombre
+  exact de tentatives tolerees. Cause possible non confirmee : le serveur
+  de dev partage etait sous charge concurrente de 4 autres sessions au
+  moment du test, ce qui peut affecter le timing des transitions React
+  (`useActionState`) d'une maniere que je n'ai pas eu le temps d'isoler
+  completement. A revoir par projet-gouv-4b ou une prochaine session dans
+  un environnement plus calme si la precision exacte (3 et pas 4) importe
+  pour la demonstration.
+- Fichiers touches : `src/components/VerrouillageInactivite.tsx` uniquement.
+- Pas encore committe : accord explicite de l'utilisateur en attente.
 - 2026-09-26.
 
 ### Point projet-gouv-23, 2026-09-26 (F-RDV-06 livre)
@@ -2191,6 +2743,55 @@ correctement masquees sur donnees reelles de la base de demo).
   84/84.
 - 2026-09-26.
 
+### F-AUTH-09 — Gérer ses appareils et sessions, 2026-09-26 13:2x
+
+Repris depuis la suggestion de projet-gouv-1e (les deux autres pistes,
+F-AUTH-03 et une eventuelle collision F-AUTH-04, ecartees apres verification
+directe aupres de projet-gouv-4b et projet-gouv-1e [569e9d] : voir messages
+plus haut).
+
+**Incident cause et resolu (a signaler pour la methode, pas pour le fond)** :
+en modifiant `src/lib/session.ts` pour que `createSession()` ecrive dans la
+nouvelle table `SessionActive`, j'ai laisse tourner ce code AVANT d'avoir un
+client Prisma regenere avec ce modele (verrou EPERM habituel, deja rencontre
+2 fois ce soir). Consequence : `prisma.sessionActive` etait `undefined`,
+donc **toute connexion et toute inscription ont echoue pour tout le monde**
+sur le serveur de dev partage pendant quelques minutes (signale par
+projet-gouv-1e [569e9d], qui recevait des 500 sur `/inscription`). Corrige
+immediatement : redemarrage du serveur + regeneration propre + connexion
+reelle re-testee au navigateur (patient.demo, succes). Lecon retenue,
+appliquee dans les fiches precedentes (F-PIL-04, F-ETA-05) mais oubliee
+ici vu que `createSession`/`getSession` sont sur le chemin le plus central
+de tout le depot (chaque page authentifiee) : verifier `prisma generate`
+AVANT d'ecrire du code qui utilise un nouveau modele, pas apres, quand ce
+code est sur un chemin partage par tout le monde plutot qu'un ecran isole.
+
+- Conception : `src/lib/session.ts` embarque desormais un `sessionId` dans
+  le JWT (cree a `createSession()`, une ligne `SessionActive` en base par
+  connexion reussie), retro-compatible avec les JWT deja emis (sessionId
+  absent traite comme valide mais non gerable). `getSession()` verifie que
+  la ligne existe encore (sinon deconnexion effective a la requete suivante,
+  CA-1 du pack) et memoise via `cache()` de React (une seule lecture en base
+  par requete, pas une par composant serveur). **Aucun appelant existant de
+  createSession/getSession/destroySession n'a ete modifie** (meme signature
+  externe partout : `src/modules/identity/actions.ts`,
+  `src/modules/identity/reclamation.ts` de projet-gouv-4b compris) : le
+  risque de collision etait dans le comportement runtime (incident
+  ci-dessus), pas dans le code des autres fichiers.
+- Limite assumee : pas de geolocalisation IP ("ville approximative" du pack)
+  ni de mise a jour de "derniere activite" a chaque requete (throttle a 5
+  minutes, pour ne pas ecrire en base a chaque navigation).
+- Reste a faire avant de clore : module `src/modules/identity/sessions.ts`
+  (lister/fermer une session/deconnecter les autres), ecran dans
+  `/app/securite`, tests, verification navigateur reelle du CA-1 (fermer une
+  session doit deconnecter l'autre appareil a sa requete suivante).
+- Note pour projet-gouv-1e [569e9d] (F-AUTH-04) : cette infra permet
+  maintenant d'implementer le CA-1 du pack pour vous aussi ("toutes les
+  autres sessions fermees" a la reinitialisation du mot de passe) via
+  `prisma.sessionActive.deleteMany({where:{userId}})` (ou en excluant la
+  session courante si vous le faites depuis une session deja connectee) :
+  pas fait ici, hors perimetre F-AUTH-09, mais l'infra est prete.
+
 ### Point projet-gouv-23, 2026-09-26 (verification npm run demo:e2e)
 
 - A la demande de projet-gouv-1e : lance `npm run demo:e2e`
@@ -2215,6 +2816,345 @@ correctement masquees sur donnees reelles de la base de demo).
   (design, RBAC, prescription, pilotage, notifications, F-RDV-04/05/06,
   F-ETA-04/05, F-CIT-09, F-AUTH-08, etc.).
 - 2026-09-26.
+
+### Point projet-gouv-4b [96d346] (Claude), F-AUTH-03, 2026-09-26 (matin)
+
+- Pris F-AUTH-03 (reclamer un dossier existant,
+  `docs/pack claude/specs/07-fiches-comptes.md:124-149`), identifie via le
+  docstring de `creerPatientParProfessionnelAction`
+  (src/modules/identity/actions.ts) qui documentait deja explicitement ce
+  manque ("fonctionnalite non construite dans ce MVP"). Collision evitee de
+  justesse : projet-gouv-b3 a repere le meme schema en cours et m'a
+  contacte avant de dupliquer - reflexe a garder pour tous.
+- Fait et verifie (tsc propre, vitest 84/84, verification live sur un vrai
+  patient "sans_compte" existant : recherche par hash bcrypt parmi les
+  codes actifs, bon code retrouve, mauvais code correctement rejete) :
+  generation de code (professionnel avec consentement actif,
+  `/app/medecin/patients/[id]/reclamation`), reclamation
+  (`/inscription/reclamer`) qui active le compte EXISTANT (jamais de
+  nouveau compte, jamais de fusion). RG-AUTH-20 (hache, usage unique, 30
+  jours, 5 tentatives puis blocage du code), RG-AUTH-21 (date de naissance
+  ET telephone doivent correspondre, un code valide avec une mauvaise date
+  compte comme une tentative, CA-2 du pack), RG-AUTH-22 (dossier deja actif
+  refuse avec le message du pack).
+- Synergie avec mon propre F-NOT-02 (adaptateur SMS simule, commit
+  `29f1ffb`) : le code de reclamation est "envoye" via `envoyerSms`,
+  consultable sur `/app/ministere/sms` - premier vrai appelant de cet
+  adaptateur ce soir.
+- Limite assumee : RG-AUTH-21 exige aussi une verification du telephone
+  par OTP live, ce depot n'a pas d'infrastructure generique de
+  verification telephonique (seul le code de connexion passe par e-mail) -
+  verification limitee a la correspondance exacte du numero deja
+  enregistre.
+- Bug trouve par tsc et par projet-gouv-1e independamment (roles.map en
+  string[] au lieu de NomRole[] pour createSession) : corrige par un
+  filtre + cast, signale a la session concernee.
+- Committe proprement (`624ba6d`, 6 fichiers, 566 lignes, aucune
+  modification de `identity/actions.ts` ni du reste des fichiers partages
+  touches uniquement par des editions isolees dans `schema.prisma` et
+  `inscription/page.tsx`).
+
+### Point projet-gouv-1e [569e9d] (Claude), suite 2026-09-26 (F-AUTH-04)
+
+Cinquième tâche confiée par l'autre session « projet-gouv-1e » (ref `[23500c]`) :
+F-AUTH-04, mot de passe oublié (`docs/pack claude/specs/07-fiches-comptes.md`).
+
+- **Nouvelle table dédiée plutôt que réutiliser `CodeVerificationEmail`**
+  (suggestion initiale du pack de "réutiliser le pattern") : un code de
+  connexion et un code de réinitialisation ont des conséquences trop
+  différentes pour partager la même table si les deux existaient en même
+  temps pour le même compte (risque qu'un code de connexion valide soit
+  accepté par erreur pour changer le mot de passe, ou l'inverse). Nouveau
+  modèle `CodeReinitialisationMotDePasse` (mêmes principes : jamais le code
+  en clair, usage unique, courte durée de vie), migration
+  `20260926115825_ajout_code_reinitialisation_mot_de_passe`, appliquée et
+  résolue à la main (`prisma db execute` + `migrate resolve --applied`) après
+  vérification que le modèle `User` n'était touché par aucun hunk en cours.
+  Un redémarrage du serveur de dev a été nécessaire (verrou EPERM habituel),
+  toutes les sessions prévenues avant (déjà idle à ce moment-là).
+- Fait et vérifié (tsc propre, vitest 84/84) :
+  - `src/modules/identity/reinitialisation-mot-de-passe.ts` (nouveau) :
+    `demanderReinitialisationMotDePasseAction` (étape 1, message générique
+    systématique que le compte existe ou non, CA-2 du pack) et
+    `reinitialiserMotDePasseAction` (étape 2, redemande l'e-mail en plus du
+    code plutôt qu'un jeton lié à un utilisateur réel — un jeton n'aurait pu
+    exister que pour un compte réel, ce qui aurait justement révélé son
+    existence, contrairement au flux de connexion où le mot de passe est
+    déjà vérifié avant l'étape du code). RG-AUTH-30 (mot de passe identique à
+    l'actuel refusé, bcrypt.compare) et RG-AUTH-31 (PLATFORM_ADMIN/AUDITOR
+    absents de ce dépôt, routé vers `admin_national` par rigueur plutôt que
+    "sans objet" — vérifié qu'aucun code n'est même généré pour ce rôle, donc
+    indiscernable d'un compte inexistant, cohérent avec l'anti-énumération).
+  - Écrans `/mot-de-passe-oublie` et `/mot-de-passe-oublie/nouveau` (routes
+    top-level comme `/connexion`), lien "Mot de passe oublié ?" ajouté sur
+    `/connexion`. Bug trouvé et corrigé avant tout test (relecture) :
+    envelopper `formAction` dans une fonction intermédiaire (pour capturer
+    l'e-mail saisi et pré-remplir le lien vers l'étape suivante) casse la
+    soumission progressive native du formulaire Server Action côté Next.js
+    (rendu `action="javascript:throw ..."` au lieu des champs `$ACTION_*`) ;
+    corrigé en gardant `action={formAction}` tel quel et en capturant l'e-mail
+    via un `onChange` séparé sur le champ, sans toucher au formulaire
+    lui-même.
+  - Périmètre réduit honnête, documenté dans le code : CA-1 du pack ("une
+    session ouverte ailleurs est déconnectée à la requête suivante") non
+    implémenté — les JWT de ce dépôt sont sans état, l'implémenter
+    demanderait un numéro de version de session sur `User` vérifié dans
+    `getSession()` (`src/lib/session.ts`, fichier central). Coordonné avec
+    projet-gouv-b3 qui construit exactement cette infrastructure pour
+    F-AUTH-09 : mon reset pourra s'y brancher une fois disponible, pas fait
+    ce soir.
+  - Vérifié en conditions réelles (script HTTP jetable, technique de
+    `scripts/demo-e2e.ts`, sur un compte patient jetable — jamais un compte
+    de démo partagé pour ce qui change réellement un mot de passe) : parcours
+    complet couvrant anti-énumération (e-mail inexistant → même message,
+    aucun code généré), RG-AUTH-31 (admin_national → idem), mauvais code,
+    mots de passe non concordants, succès réel, réutilisation d'un code déjà
+    consommé (refusée), RG-AUTH-30, et connexion réelle finale avec le
+    nouveau mot de passe (round-trip complet). Piège rencontré dans le script
+    lui-même (pas un bug produit) : `verifierEtConsommerCodeReinitialisation`
+    consomme le code sur TOUTE tentative, correcte ou non (repris à
+    l'identique de `verifierEtConsommerCodeVerificationEmail`, anti-rejeu
+    voulu) — mon premier essai de script réutilisait le code initial après
+    l'avoir déjà "brûlé" avec un essai de mauvais code, corrigé en redemandant
+    un code frais après ce test.
+  - Perturbations partagées rencontrées cette nuit pendant la vérification,
+    sans rapport avec ce chantier : le serveur de dev est brièvement tombé
+    (interruption externe, redémarré par une autre session), puis
+    `prisma.sessionActive` indéfini pendant quelques minutes (F-AUTH-09 de
+    projet-gouv-b3, client Prisma pas encore régénéré au moment où j'ai
+    testé) — les deux résolus par l'autre session, revérifié ensuite avec
+    succès.
+- Fichiers touchés : `prisma/schema.prisma` (nouveau modèle uniquement, champ
+  relation sur `User`), la nouvelle migration,
+  `src/modules/identity/reinitialisation-mot-de-passe.ts` (nouveau),
+  `src/app/mot-de-passe-oublie/page.tsx` (nouveau),
+  `src/app/mot-de-passe-oublie/nouveau/page.tsx` (nouveau),
+  `src/app/connexion/page.tsx` (1 lien ajouté uniquement). Non touché :
+  `src/lib/session.ts`, `src/modules/identity/actions.ts`,
+  `src/modules/identity/verification-email.ts`.
+- Pas commité : en attente d'un accord explicite de l'utilisateur, comme le
+  reste ce soir. Migration déjà appliquée à la base partagée (additive
+  uniquement, sans risque).
+- 2026-09-26.
+
+### F-AUTH-09 — Suite et cloture, 2026-09-26 13:4x
+
+Fait et verifie (tsc/eslint propres, vitest 89/89 dont 5 nouveaux tests
+unitaires Zero Trust, ET verification navigateur reelle du CA-1 : deux
+contextes navigateur distincts connectes sur le meme compte, fermeture
+d'une session depuis le premier, second contexte redirige vers /connexion a
+sa requete suivante, premier contexte toujours connecte).
+
+- `src/modules/identity/sessions.ts` (+ `.test.ts`) : `listerMesSessions`,
+  `fermerSessionAction`, `deconnecterAutresAppareilsAction`.
+- `src/app/app/securite/{GestionSessions.tsx,page.tsx}` : nouvelle section
+  "Appareils et sessions", ajout additif au fichier existant (juste apres la
+  section MFA), aucune ligne existante modifiee a part l'import et le
+  `Promise.all`.
+- Limite assumee : pas de "ville approximative" (aucune geolocalisation IP,
+  service tiers hors de portee sans accord explicite) : adresse IP technique
+  affichee a la place.
+- Note positive : la fiche precedente (F-ETA-05) avait signale un risque de
+  fuseau horaire dans `creerRendezVousAction` (parsing via le fuseau systeme
+  du serveur plutot qu'Africa/Porto-Novo fixe). Ce risque a ete corrige entre
+  temps par une autre session (`src/lib/fuseau-horaire.ts`,
+  `dateDepuisChaineLocaleBenin`), qui a bien reutilise ma fonction
+  `dateDansUnCreneauDisponible` avec l'instant desormais correctement
+  calcule. Merci a qui que ce soit qui a pris ca, ca ferme une vraie lacune
+  sans que j'aie eu besoin d'y revenir moi-meme.
+
+**Incident cause et resolu pendant cette fiche** (deja detaille plus haut,
+recapitulatif court pour qui parcourt le fichier en diagonale) : ecriture
+dans `src/lib/session.ts` avant regeneration du client Prisma a casse
+connexion/inscription pour tout le monde pendant quelques minutes ; corrige
+par redemarrage + regeneration + reverification reelle. Lecon a appliquer
+partout desormais, pas seulement sur un ecran isole : regenerer le client
+AVANT d'ecrire du code qui l'utilise des qu'un chemin est partage par
+plusieurs fiches (authentification, session, tout ce qui est appele sur
+`/app/*`).
+
+### Point projet-gouv-1e [569e9d] (Claude), suite 2026-09-26 (correctif fuseau horaire, F-ETA-05/F-RDV-06/F-RDV-07)
+
+Pas une tâche confiée cette fois : trou repéré par moi-même pendant mon
+propre chantier F-RDV-07 (déjà noté dans mon point de l'époque) et confirmé
+par projet-gouv-b3 pendant F-ETA-05 (voir son point plus haut) — pris de ma
+propre initiative après feu vert de l'autre session « projet-gouv-1e » pour
+choisir mon prochain chantier.
+
+- **Bug** : plusieurs endroits de `src/modules/facility/` interprétaient une
+  heure de rendez-vous via `new Date(chaine)`/`.getHours()`/`.setHours()`
+  ambiants, qui dépendent du fuseau horaire configuré sur le serveur (pas
+  forcément `Africa/Porto-Novo`, UTC+1 fixe sans heure d'été). Repéré par
+  projet-gouv-b3 : un serveur réglé sur `Europe/London` coïncide avec UTC+1
+  tant que l'heure d'été britannique est active, mais divergera d'1h fin
+  octobre — un rendez-vous "09h30" saisi par un patient serait alors stocké
+  et/ou comparé avec 1h de décalage, silencieusement, sans erreur visible.
+  `src/modules/facility/disponibilites.ts` (`dateDansUnCreneauDisponible`,
+  écrit par projet-gouv-b3 pour F-ETA-05) faisait déjà le bon calcul
+  manuellement, mais seulement à cet endroit — le reste du code partageait
+  encore le bug.
+- Fait et vérifié (tsc propre, vitest 96/96, ET vérification réelle : `npm
+  run demo:e2e` rejoué en entier après le correctif, y compris son étape de
+  prise de rendez-vous réelle, tout au vert) :
+  - Nouveau `src/lib/fuseau-horaire.ts` : point d'entrée unique pour cette
+    conversion (`dateDepuisChaineLocaleBenin` : interprète une chaîne
+    `datetime-local` comme heure locale Africa/Porto-Novo → instant UTC ;
+    `jourEtMinutesLocalesBenin` et `veilleA18hBenin` : sens inverse). Même
+    calcul manuel que `dateDansUnCreneauDisponible` (offset fixe +1h), pas
+    réécrit dans ce dernier (déjà correct, pas mon périmètre de le toucher),
+    seulement centralisé pour tout nouveau code. 8 tests dédiés
+    (`fuseau-horaire.test.ts`), y compris les cas de bascule de jour proche
+    de minuit UTC.
+  - `src/modules/facility/actions.ts` (`creerRendezVousAction`, F-RDV-01) et
+    `src/modules/facility/rendez-vous-guichet.ts`
+    (`creerRendezVousGuichetAction`, F-RDV-06, déjà commité par
+    projet-gouv-23) : `new Date(date)` remplacé par
+    `dateDepuisChaineLocaleBenin(date)`, calculé une seule fois et réutilisé
+    pour la vérification de disponibilité, le refus de doublon ET la création
+    elle-même (`actions.ts` recalculait `new Date(date)` deux fois avant,
+    petit nettoyage au passage).
+  - `src/modules/facility/rappels-rendez-vous.ts` (le mien, F-RDV-07) :
+    `veilleA18h` locale remplacée par `veilleA18hBenin` importée ; le rappel
+    de 2h n'était PAS affecté (différence de millisecondes entre deux
+    instants UTC, indépendante de tout fuseau). `formaterDateRendezVous`
+    (texte affiché au patient dans la notification) corrigé aussi :
+    `toLocaleDateString` sans `timeZone` explicite dépendait implicitement du
+    même fuseau serveur pour l'affichage, ajouté `timeZone: "Africa/Porto-Novo"`.
+  - Périmètre délibérément NON étendu : je n'ai pas cherché d'autres
+    `toLocaleDateString`/`new Date` sensibles au fuseau ailleurs dans le
+    dépôt (l'affichage pur, contrairement au calcul de déclenchement, cause
+    un désagrément visuel mais jamais une décision métier erronée) — trop
+    large pour ce correctif ciblé, à traiter séparément si jugé utile.
+- Fichiers touchés : `src/lib/fuseau-horaire.ts` (nouveau),
+  `src/lib/fuseau-horaire.test.ts` (nouveau),
+  `src/modules/facility/actions.ts`,
+  `src/modules/facility/rendez-vous-guichet.ts`,
+  `src/modules/facility/rappels-rendez-vous.ts`. Non touché :
+  `src/modules/facility/disponibilites.ts` (déjà correct).
+- Pas commité : en attente d'un accord explicite de l'utilisateur, comme le
+  reste ce soir.
+- 2026-09-26.
+
+### Point projet-gouv-4b [96d346] (Claude), F-CIT-05, 2026-09-26 (matin)
+
+- Autonomie proposee par projet-gouv-1e. Repere moi-meme : F-CIT-05 (carte
+  sante numerique QR, `docs/pack claude/specs/08-fiches-citoyen.md:102-125`).
+  Decouverte importante en cours de route : un QR personnel PERMANENT
+  existe deja (`src/modules/verification/actions.ts`, `getMonQrCode`,
+  route `/app/verification/[userId]`) mais encode une URL statique SANS
+  jeton ni expiration - il ne prouve aucune fraicheur (un QR photographie
+  une fois resterait valable indefiniment), donc ne satisfait pas
+  l'objectif meme de F-CIT-05 ("prouver la presence recente", RG-CIT-40/41).
+  Choix : ne pas toucher ce fichier existant (badge d'identite, usage
+  legitime different, sans exigence de fraicheur), construire F-CIT-05 en
+  parallele avec son propre jeton temporaire. A garder en tete si quelqu'un
+  reprend ce sujet : les deux QR coexistent volontairement.
+- Fait et verifie (tsc propre, vitest 98/98, verification live : QR PNG
+  reellement genere, logique de consommation/expiration du jeton) :
+  RG-CIT-40 (jeton opaque, 5 min, usage unique, jamais l'identifiant ni de
+  donnee medicale dans le QR), regeneration automatique cote client avec
+  compte a rebours, CA-1 (jeton consomme refuse au deuxieme scan) et CA-2
+  (jeton expire refuse) du pack.
+- Limite assumee : pas de QR de secours hors ligne ni d'impression PDF
+  carte bancaire (etapes 3/4 du pack, P1/hors ligne).
+- Committe proprement (`ea53813`, 4 fichiers neufs, 375 lignes, aucun
+  fichier partage touche - pas de migration, pas de permission nouvelle).
+
+### F-AUTH-04 — CA-1 branche sur l'infra de sessions (F-AUTH-09), 2026-09-26 14:0x
+
+Suite naturelle suggeree par projet-gouv-1e une fois F-AUTH-09 livre.
+Verifie aupres de projet-gouv-1e [569e9d] avant de commencer (elle avait
+termine F-AUTH-04 et n'y touchait plus, aucun conflit).
+
+- Modifie `src/modules/identity/reinitialisation-mot-de-passe.ts` (fichier
+  jamais commite, deja "a moi/a elle" en pratique) : `reinitialiserMotDePasseAction`
+  ferme desormais toutes les `SessionActive` du compte des que le mot de
+  passe est change (aucune session courante a exclure, ce parcours se fait
+  toujours deconnecte). Docstring de tete mise a jour (l'ancienne mention
+  "CA-1 hors perimetre" n'etait plus vraie).
+- Fait et verifie : tsc/eslint propres, vitest 98/98 dont 2 nouveaux tests
+  cibles, ET verification directe contre la vraie base (contournement
+  volontaire du navigateur pour cette verification precise, le relais SMTP
+  local de cet environnement ayant un delai de rejet variable qui rendait la
+  version Playwright peu fiable a chronometrer ; le mecanisme de
+  connexion/MFA/creneaux a deja ete verifie au navigateur reel dans les
+  fiches precedentes, donc pas de perte de couverture reelle) : 4 sessions
+  actives simulees puis effectivement 0 apres reinitialisation, nouveau mot
+  de passe verifie fonctionnel (bcrypt.compare).
+- **Incident sans consequence a signaler** : le serveur de dev partage est
+  tombe pendant cette verification (personne n'a signale l'avoir arrete ;
+  possible redemarrage concurrent d'une autre session). Une tentative de
+  redemarrage de ma part a demarre une instance redondante sur le port 3001
+  (Next.js a detecte qu'une autre tournait deja sur 3000 entre-temps) :
+  aucune action corrective necessaire, l'instance existante fonctionnait
+  bien (200 sur /connexion apres verification). Si vous voyez un message
+  "Another next dev server is already running" cote terminal, c'est normal
+  ce soir avec autant de sessions actives : verifiez d'abord que le port
+  3000 repond avant de tuer quoi que ce soit.
+- Note annexe sans consequence, meme motif que les precedentes ce soir : un
+  compte de test (`verif.fauth04.temporaire@benin-health.test`, role
+  patient) reste en base, sa suppression bloquee par la contrainte
+  JournalAudit (RG-AUD-02, par conception).
+
+### Point projet-gouv-e1 [0212b4] (ex-projet-gouv-1e [23500c]), RG-PRE-30, 2026-09-26 (matin)
+
+Note d'identite : renommage de session (redemarrage de l'environnement),
+memoire complete conservee. Anciennement "projet-gouv-1e [23500c]" dans ce
+fichier (F-ADM-02/04/06/07, F-LAB-02, F-PRE-02, F-ETA-01/02, F-NOT-01
+complements, correctif F-AUTH-08, correctif RBAC medicaments).
+
+- Chapitre 23 (securite/conformite) : RG-PRE-30 du pack (la signature d'une
+  prescription exige une re-authentification) n'etait pas implementee.
+  Perimetre reduit assume, documente dans le code : toujours redemandee
+  (pas de fenetre de grace de 5 minutes depuis la derniere authentification
+  forte, ce depot ne trace cet instant nulle part), un seul essai par
+  soumission (pas de compteur de 3 echecs -> deconnexion, contrairement au
+  verrouillage d'ecran F-AUTH-08 qui vit cote client le temps d'un seul
+  montage de composant).
+- Fait et verifie (tsc propre, vitest 98/98, eslint propre, verification
+  navigateur reelle Playwright : bouton "Signer" desactive sans mot de
+  passe, mauvais mot de passe refuse par le serveur ET aucune prescription
+  creee en base dans ce cas, bon mot de passe accepte et prescription
+  reellement creee) :
+  - `src/modules/prescription/actions.ts` : nouveau champ
+    `motDePasseSignature` sur `schemaCreationPrescription` ET
+    `schemaRenouvellementPrescription` (F-PRE-05 cree lui aussi une
+    prescription "validee", meme exigence). Verification bcrypt.compare
+    contre `User.motDePasseHash`, avant tout le reste (controles cliniques,
+    transaction) : jamais laisser croire qu'une prescription est "presque"
+    signee. Echec journalise (`signature_prescription_mot_de_passe_invalide`).
+  - `FormulairePrescription.tsx` et `RenouvellementPrescription.tsx` :
+    champ mot de passe ajoute, bouton de soumission renomme
+    "Signer la prescription" / "Renouveler et signer", desactive tant que
+    le champ est vide.
+- **Poussé sur GitHub a la demande explicite de l'utilisateur** (fait
+  separement de ce chantier, pas un commit) : les 62 commits locaux en
+  attente depuis le debut de la nuit ont ete pousses sur
+  `origin/main` (`922716d..ea53813`), remote passe de SSH (aucune cle sur
+  cette machine) a HTTPS avec un jeton personnel fourni par l'utilisateur
+  pour cette seule commande, jamais persiste dans la config git. Ce
+  chantier RG-PRE-30 lui-meme reste local, non committe, comme le reste des
+  chantiers de ce soir (accord explicite de commit toujours distinct de
+  l'accord de push deja donne).
+- Fichiers touches par RG-PRE-30 : `src/modules/prescription/actions.ts`,
+  `FormulairePrescription.tsx`, `RenouvellementPrescription.tsx`.
+- 2026-09-26.
+
+### Point projet-gouv-4b [96d346] (Claude), F-AUTH-07, 2026-09-26 (matin)
+
+- Tache suggeree par projet-gouv-e1 (nouvelle session) : F-AUTH-07 (choisir
+  son espace actif, `docs/pack claude/specs/07-fiches-comptes.md:233-256`).
+  Verifie d'abord, comme demande : grep sur `roles: { create: [...] }` et
+  sur `prisma/seed.ts` pour un compte avec plus d'un role - aucun resultat.
+  `UserRole` est structurellement un modele separe (multi-role possible en
+  theorie), mais aucun flux (seed, inscription, invitation) n'en cree
+  jamais plus d'un par compte dans ce depot.
+- **Non construit, documente comme limite assumee** : un vrai selecteur
+  d'espace actif suppose un compte avec plusieurs roles simultanes, cas qui
+  n'existe nulle part ici. Le construire aurait ete de la machinerie pour
+  un scenario jamais rencontre, plutot qu'une vraie fonctionnalite. RG-
+  AUTH-60/61 sans objet dans ce depot pour la meme raison.
+- Rien commite (pas de code produit pour ce chantier).
 
 ### Point projet-gouv-23, 2026-09-26 (F-ADM-04 examens livre)
 
@@ -2342,4 +3282,74 @@ correctement masquees sur donnees reelles de la base de demo).
   infrastructure demontrable jugee suffisante.
 - Verifie : tsc propre, vitest 98/98, script live-DB jetable (semis 24
   entrees, lecture, modification, restauration) supprime apres usage.
+- 2026-09-26.
+
+### Point projet-gouv-e1 [0212b4], acces au dossier par NPI ou telephone, 2026-09-26
+
+- Demande de l'utilisateur : un professionnel ouvre le dossier d'un patient
+  sans relation prealable (NPI, ou telephone pour tester, avec code OTP envoye
+  au patient via Wapy.pro/WhatsApp), et reponse a "comment identifier de
+  facon unique un specialiste qui exerce dans plusieurs etablissements".
+- Livre, commits `631e4da` et `7d12d23` (locaux, non pousses) : client Wapy
+  (`src/lib/wapy.ts`), normalisation des numeros (`src/lib/telephone.ts`),
+  module `src/modules/transfert/` (demande, code, confirmation par le patient
+  dans son espace, octroi commun), table `DemandeAccesDossier`
+  (migration `20260926160500`), ecrans `/app/medecin/patients` (carte "Ouvrir le
+  dossier d'un nouveau patient") et `/app/patient/demandes-acces`. Note de
+  conception complete : `docs/conception-transfert-dossier.md`.
+- Recherches deleguees et recues (fichiers locaux non versionnes dans
+  `docs/recherche-transfert/`) : 3e `realite-benin.md` (NPI 13 chiffres,
+  art. 407 APDP, numeros a 10 chiffres), 3d `identite-professionnels.md`
+  (personne / identite professionnelle / affiliations, migration en 4 phases,
+  26 fichiers concernes), 86 `benchmark-consentement.md` (Kenya : OTP
+  supprime car codes partages, d'ou la confirmation dans l'espace patient).
+  Merci a tous les trois.
+- Verifie : tsc, eslint, vitest 196/196, et 3 scripts Playwright jetables
+  (code, autorisation par le patient, refus, mode NPI) contre la vraie base
+  avec le canal SMS simule et la cle Wapy videe pour ne rien envoyer a un numero
+  reel. Donnees de test supprimees, interrupteur et NPI de demo restaures.
+- Effets sur les autres : 1) migration appliquee sur la base partagee
+  (nouvelle table + index unique sur `Patient.referenceIdentiteNationale`,
+  nullable) ; 2) fonctionnalite activable `access.by_npi` ajoutee (desactivee
+  par defaut) ; 3) permissions `create/update:demande_acces_dossier`
+  (medecin, infirmier) et `read/update:demande_acces_recue` (patient) ;
+  4) le commit `631e4da` a aussi inclus les permissions F-ADM-02/04/06/07 qui
+  manquaient a HEAD ; 5) le client Prisma a ete regenere en renommant la DLL
+  verrouillee (sans tuer le serveur), puis le serveur de dev a ete redemarre
+  (accord de 3d, information des autres).
+- Pas commence : migration des professionnels multi-etablissements (attend les
+  decisions du produit, voir section 10 de la note de conception).
+- Question ouverte a tous : `src/security/permissions.test.ts` est modifie
+  (tests F-AUD-01/02, F-CLI-10) mais 3d dit que ce n'est pas lui. A qui est-il ?
+- 2026-09-26.
+
+### Point projet-gouv-e1 [0212b4], commit total et push de main sur ordre de l'utilisateur, 2026-09-26
+
+- Ordre explicite de l'utilisateur (donne dans la session e1, il quitte le poste) :
+  tout committer, tout mettre sur `main`, POUSSER obligatoirement (un autre PC
+  clone le depot pour brancher le deploiement continu, chaque push deploiera).
+  Les sessions 86, 3d et 3e ont ete prevenues avant, aucune n'a objecte sur le
+  fond ; toutes ont precise que leur silence n'est pas un accord de leur
+  utilisateur et que le push est une action de e1 sous l'ordre de l'utilisateur.
+  Il n'existe qu'une branche (`main`, locale et distante) : aucun merge a faire.
+- Barriere de qualite passee sur l'arbre complet avant le push : `tsc` propre,
+  `eslint` 0 erreur (les 7 avertissements restants sont anciens), `vitest`
+  tous verts, `next build` (production) reussi, et rejeu de TOUTES les
+  migrations depuis une base vide identique au schema Prisma
+  (`prisma migrate diff --from-migrations`, "No difference detected").
+- Deux defauts de l'historique corriges au passage :
+  1. `package.json` ne declarait pas `cloudinary` ni `nodemailer` alors que le
+     code commite les importe : un clone neuf ne demarrait pas.
+  2. `/mot-de-passe-oublie/nouveau` utilisait `useSearchParams()` sans
+     Suspense : invisible en dev, `next build` echouait (donc tout deploiement).
+  Plus 5 erreurs `react-hooks/set-state-in-effect` (lint) et plusieurs modules
+  importes par du code commite mais jamais suivis par git (fuseau-horaire,
+  limite-debit, verification-publique).
+- A retenir pour le deploiement : lancer `prisma migrate deploy` AVANT de
+  demarrer l'application (session.ts ecrit dans SessionActive a chaque
+  connexion), puis `prisma generate`, `next build`. Variables : voir
+  `.env.example`. Sous Windows, `prisma generate` echoue avec EPERM si un
+  serveur de dev tient la DLL du moteur.
+- Les fichiers de recherche `docs/recherche-transfert/` (3e, 3d, 86) sont
+  maintenant suivis : recherche publique, aucun secret.
 - 2026-09-26.

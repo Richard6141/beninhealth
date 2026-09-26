@@ -228,12 +228,42 @@ function construireFormData(
   return donnees;
 }
 
+/** Valeur d'un champ cache ordinaire (pas un champ $ACTION_*), ex. name="preAuthToken" value="...". */
+function extraireValeurChampCache(formulaireHtml: string, nom: string): string {
+  const match = formulaireHtml.match(new RegExp(`name="${nom}" value="([^"]*)"`));
+  assert(
+    match,
+    `Champ cache "${nom}" introuvable dans le formulaire. Extrait : ${extrait(formulaireHtml)}`
+  );
+  return decoderEntitesHtml(match[1]);
+}
+
 // ---------------------------------------------------------------------------
-// Etape generique de connexion : POST du formulaire de connexion, puis
-// verification stricte que la reponse est bien une redirection vers la cible
-// attendue (pas un formulaire encore affiche avec une erreur, pas un ecran de
-// double authentification que ce script ne sait pas franchir automatiquement).
+// Etape generique de connexion : POST du formulaire de connexion, franchit
+// automatiquement l'etape obligatoire de code de verification par e-mail
+// (Phase 7-durcissement) en lisant le code affiche a l'ecran hors production
+// (AuthActionState.codeDemo, voir src/modules/identity/actions.ts), puis
+// verifie stricte que la reponse finale est bien une redirection vers la
+// cible attendue (pas un ecran de double authentification TOTP que ce script
+// ne sait pas franchir automatiquement, celui-la reste gere en echec explicite).
 // ---------------------------------------------------------------------------
+
+async function franchirEtapeCodeEmail(email: string, reponseConnexion: ReponseBrute): Promise<ReponseBrute> {
+  const formulaireCode = extraireFormulaire(reponseConnexion.corps, "code");
+  const champs = extraireChampsAction(formulaireCode);
+  const preAuthToken = extraireValeurChampCache(formulaireCode, "preAuthToken");
+
+  const codeMatch = reponseConnexion.corps.match(/chiffres font-semibold">(\d{6})</);
+  assert(
+    codeMatch,
+    `Connexion de ${email} : etape "code recu par e-mail" affichee mais aucun code de ` +
+      "demonstration trouve dans la page (AuthActionState.codeDemo n'est jamais renvoye en " +
+      `production). Extrait recu : ${extrait(reponseConnexion.corps)}`
+  );
+
+  const corps = construireFormData(champs, { preAuthToken, code: codeMatch[1] });
+  return requete("/connexion", { method: "POST", corps });
+}
 
 async function seConnecter(email: string, cibleAttendue: string): Promise<void> {
   const pageConnexion = await requete("/connexion");
@@ -246,9 +276,15 @@ async function seConnecter(email: string, cibleAttendue: string): Promise<void> 
   const champs = extraireChampsAction(formulaire);
   const corps = construireFormData(champs, { email, motDePasse: MOT_DE_PASSE_DEMO });
 
-  const reponse = await requete("/connexion", { method: "POST", corps });
+  let reponse = await requete("/connexion", { method: "POST", corps });
 
-  if (reponse.status !== 303 && reponse.status !== 302 && reponse.status !== 307) {
+  const estRedirection = (r: ReponseBrute) => r.status === 303 || r.status === 302 || r.status === 307;
+
+  if (!estRedirection(reponse) && /Vérification par e-mail|emailCodeRequis/.test(reponse.corps)) {
+    reponse = await franchirEtapeCodeEmail(email, reponse);
+  }
+
+  if (!estRedirection(reponse)) {
     if (/Double authentification|mfaRequis/.test(reponse.corps)) {
       echouer(
         `Connexion de ${email} bloquee : la double authentification (MFA) est active sur ce ` +
@@ -256,9 +292,9 @@ async function seConnecter(email: string, cibleAttendue: string): Promise<void> 
           "Desactivez la MFA sur ce compte (page /app/securite) puis relancez ce script."
       );
     }
-    if (/Connexion impossible|Identifiants incorrects/.test(reponse.corps)) {
+    if (/Connexion impossible|Identifiants incorrects|Code refuse/.test(reponse.corps)) {
       echouer(
-        `Connexion de ${email} refusee par le serveur (identifiants rejetes). ` +
+        `Connexion de ${email} refusee par le serveur (identifiants ou code rejetes). ` +
           "Verifiez que le jeu de donnees de demonstration (prisma/seed.ts) est bien charge."
       );
     }
@@ -440,8 +476,8 @@ async function main(): Promise<void> {
     "Tableau de bord patient charge"
   );
   assert(
-    dashboardPatient.includes("BJ-SANTE-0001"),
-    "L'identifiant sante \"BJ-SANTE-0001\" du patient de demonstration est absent du tableau de bord."
+    dashboardPatient.includes("BJ-SANTE-PAT-0001"),
+    "L'identifiant sante \"BJ-SANTE-PAT-0001\" du patient de demonstration est absent du tableau de bord."
   );
   assert(
     dashboardPatient.includes("O+"),

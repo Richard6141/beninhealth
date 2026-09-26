@@ -50,12 +50,12 @@ l'interdit explicitement pour toute notification, sensible ou non.
 
 | Fiche | Statut | Commentaire |
 |---|---|---|
-| F-LAB-01 Demander un examen | Partiel | Fonctionne, mais patientId est une saisie texte libre (pas de sélecteur de patient comme côté consultation/prescription), et typeExamen n'est pas choisi dans un référentiel par famille (hématologie, sérologie...). Pas de niveau d'urgence, pas de renseignements cliniques dédiés, pas de "à jeun requis", pas de numéro LB-XXXX-XXXX ni de QR. |
-| F-LAB-02 Recevoir la demande et enregistrer le prélèvement | Non fait | Pas de vérification d'identité formelle, pas d'enregistrement de prélèvement (type d'échantillon, préleveur), pas de rejet d'échantillon. Le laboratoire passe directement de "demande" à la saisie du résultat. |
+| F-LAB-01 Demander un examen | Partiel | Mise à jour 2026-09-26 (cette ligne était périmée : le sélecteur de patient et le référentiel par famille existent déjà, voir `FormulaireDemandeExamen.tsx`/`referentiel-examens.ts`, faits par une autre session entre-temps). Reste manquant : niveau d'urgence, renseignements cliniques dédiés, "à jeun requis", numéro LB-XXXX-XXXX et QR. |
+| F-LAB-02 Recevoir la demande et enregistrer le prélèvement | **Fait** | Périmée également : vérification d'identité (`identiteVerifiee`), enregistrement du prélèvement (type d'échantillon, préleveur, `enregistrerPrelevementAction`) et rejet d'échantillon (`rejeterEchantillonAction`, remet en attente sans effacer la trace du rejet) existent déjà dans `src/modules/laboratoire/actions.ts`, voir `docs/coordination-agents.md` pour le détail. |
 | F-LAB-03 Saisir un résultat | Partiel | **Corrigé aujourd'hui pour la confidentialité** (voir ci-dessus). Résultat toujours en texte libre, pas de paramètres structurés par examen (unité, valeur de référence, indicateur N/L/H/LL/HH), pas de contrôle de plage physiologique, pas d'alerte sur valeur critique. |
-| F-LAB-04 Valider un résultat (principe des quatre yeux) | Non fait | Aucune étape de validation séparée par un responsable : celui qui saisit le résultat le rend visible directement. Pas de rôle `LAB_SUPERVISOR` distinct dans la matrice RBAC actuelle. |
-| F-LAB-05 Mise à disposition et annonce | Fait pour la partie "annonce" | Corrigé aujourd'hui, mais seulement le mécanisme d'annonce lui-même ; le principe des quatre yeux (F-LAB-04) qui devrait précéder la mise à disposition n'existe pas. |
-| F-LAB-06 Annuler une demande | **Fait** (périmètre réduit, médecin uniquement) | `annulerExamenAction` (`src/modules/laboratoire/actions.ts`) : le médecin demandeur peut annuler sa propre demande (Zero Trust, vérifié en base), tant qu'aucun résultat n'existe encore (statuts `demande`/`en_cours`), refusée dès `correction_demandee` puisque l'ancien résultat y est encore conservé. Bouton « Annuler cette demande » avec confirmation à deux temps sur `/app/medecin/examens`. Vérifié en direct (création, annulation, statut `annule` persistant après rechargement). Non fait : aucune action symétrique côté laboratoire pour libérer/rejeter une demande déjà prise en charge. |
+| F-LAB-04 Valider un résultat (principe des quatre yeux) | **Fait** (adapté) | Nouveau statut intermédiaire `resultat_saisi` (au lieu de passer directement à `termine`). `validerResultatExamenAction` exige la re-saisie du mot de passe, calcule une empreinte SHA-256, et **refuse réellement** si le validateur est la même personne que celle ayant saisi le résultat (`saisiParId === valideParId`), testé pour de vrai (pas seulement en théorie). Adaptation documentée : pas de rôle `LAB_SUPERVISOR` distinct dans ce dépôt, la validation est ouverte à tout autre professionnel du rôle laboratoire du même établissement (quatre yeux entre pairs plutôt qu'une hiérarchie). `renvoyerPourCorrectionAction` (statut `correction_demandee`) conserve l'ancienne valeur du résultat dans `JournalAudit` avant resaisie (RG-ROL-31). |
+| F-LAB-05 Mise à disposition et annonce | **Fait** | Le principe des quatre yeux (F-LAB-04) précède désormais réellement la mise à disposition : `getMesExamens`/`getExamensDemandesParProfessionnel` masquent le résultat tant que `statut !== "termine"` (RG-LAB-30), vérifié à l'écran côté médecin et côté patient. |
+| F-LAB-06 Annuler une demande | **Fait** | Périmée aussi : `annulerExamenAction` existe (réservée au médecin demandeur, tant qu'aucun résultat n'existe), bouton `BoutonAnnulerExamen.tsx` câblé à l'écran. |
 
 ## Limites assumées
 
@@ -65,15 +65,17 @@ l'interdit explicitement pour toute notification, sensible ou non.
   inhabituelle ne le serait pas. La vraie solution est un référentiel
   d'examens structuré (le pack en fournit la table, section 18.4), qui
   n'existe pas encore dans ce dépôt pour aucun examen.
-- Le principe des quatre yeux (F-LAB-04, RG-ROL-30) reste le trou le plus
-  important après celui corrigé aujourd'hui : rien n'empêche aujourd'hui
-  qu'un résultat, sensible ou non, soit rendu visible sans second regard.
+- Le principe des quatre yeux (F-LAB-04) est fait mais adapté : sans rôle
+  hiérarchique `LAB_SUPERVISOR`, c'est un pair du même établissement qui
+  valide plutôt qu'un responsable désigné. Cohérent avec le modèle de rôles
+  de ce dépôt, à revoir si un jour une hiérarchie de laboratoire est modélisée.
 
 ## Recommandation
 
-Le correctif du jour traite le risque le plus grave (confidentialité d'un
-résultat sensible) avec un changement de portée raisonnable, sans refondre le
-cycle de vie complet de l'examen. Le prochain effort à plus forte valeur serait
-soit un vrai référentiel d'examens (condition préalable à des contrôles de
-plage fiables et à une détection de sensibilité robuste), soit le principe des
-quatre yeux (F-LAB-04), qui touche la confiance dans les résultats eux-mêmes.
+Les deux risques les plus graves identifiés (confidentialité d'un résultat
+sensible, absence de second regard avant qu'un résultat ne devienne définitif)
+sont maintenant traités et vérifiés à l'écran. Le prochain effort à plus forte
+valeur serait un vrai référentiel d'examens structuré (condition préalable à
+des contrôles de plage fiables et à une détection de sensibilité robuste que
+le simple filtrage par mots-clés actuel), suivi de F-LAB-02 (enregistrement du
+prélèvement) et F-LAB-06 (annulation), tous deux encore non faits.
