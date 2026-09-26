@@ -52,6 +52,11 @@ const navigationPatient: ElementNavigation[] = [
     icon: <CalendarClock size={tailleIconeNav} aria-hidden="true" />,
   },
   {
+    label: "Mes proches",
+    href: "/app/patient/proches",
+    icon: <Users size={tailleIconeNav} aria-hidden="true" />,
+  },
+  {
     label: "Mon dossier",
     href: "/app/patient/dossier",
     icon: <FolderOpen size={tailleIconeNav} aria-hidden="true" />,

@@ -611,3 +611,74 @@ une nouvelle session sans contexte.
     public/ » restée dans le texte malgré la migration Cloudinary déjà
     committée).
 - 2026-09-26.
+
+### Point projet-gouv-ae, 2026-09-26 (suite, tâche assignée par projet-gouv-05)
+
+- Tâche proposée par **projet-gouv-05** par message direct pendant que
+  j'étais libre : F-CIT-07/08 du pack (`docs/pack claude/specs/08-fiches-citoyen.md`,
+  "personnes à charge / tutelle"), marqué P1 dans l'audit
+  (`docs/audit-cote-patient.md`). Consigne : "faisable sans décision produit
+  lourde", en réutilisant le patient "sans compte" déjà existant
+  (`creerPatientParProfessionnelAction`, `src/modules/identity/actions.ts`)
+  plutôt qu'une nouvelle structure.
+- Périmètre volontairement réduit par rapport au pack complet (le pack
+  suppose des concepts absents de ce dépôt : niveaux de citoyen N1/N2,
+  vérification de tutelle en établissement, notification/acceptation par
+  une personne majeure, tâche planifiée de fin de tutelle à 18 ans) :
+  limites documentées en tête de `src/modules/proches/actions.ts` et dans
+  la ligne F-CIT-07/08 de `docs/audit-cote-patient.md`. Seul le cas "enfant
+  mineur créé par son tuteur" est construit.
+- Fait et vérifié de bout en bout (tsc propre, vitest 63/63, vérification
+  réelle Playwright + requête base de données directe) :
+  - **Aucune migration de schéma** : réutilise le patient "sans compte"
+    (`User` placeholder statut `"sans_compte"`, même mécanisme que
+    `creerPatientParProfessionnelAction`) et `Consentement`
+    (`typeAcces: "dossier_complet"`, accordé automatiquement au tuteur
+    créateur puisqu'un compte sans connexion ne peut pas l'accorder
+    lui-même). Une personne à charge est identifiée par la combinaison
+    (`Consentement.acteurAutoriseId` = tuteur, `Patient.user.statut` =
+    `"sans_compte"`), faute d'un marqueur dédié : simplification assumée et
+    documentée plutôt qu'un champ de schéma pour ce seul besoin.
+  - Nouveau module `src/modules/proches/actions.ts` : création (enfant
+    mineur uniquement, RG-CIT-61 : maximum 10 personnes à charge par
+    compte), liste, détail (Zero Trust : reverifie le `Consentement` actif
+    à chaque appel, jamais supposé depuis l'id transmis), prise de
+    rendez-vous en son nom (nouvelle action dédiée plutôt que de modifier
+    `creerRendezVousAction` dans `src/modules/facility/actions.ts`, fichier
+    partagé avec plusieurs autres chantiers ce soir), fin de gestion
+    (`Consentement` passe à `"retire"`, jamais supprimé).
+  - Écrans `/app/patient/proches` (liste + ajout via Modal) et
+    `/app/patient/proches/[id]` (identité, rendez-vous, prise de
+    rendez-vous, fin de gestion). Lien "Mes proches" ajouté à la navigation
+    patient (`src/app/app/layout.tsx`, icône `Users` déjà importée,
+    réutilisée). Uniquement des composants du design system existants.
+  - Bug détecté avant la vérification réelle (pas après) : mon schéma
+    initial utilisait `sexe: "masculin"/"feminin"`, alors que la convention
+    réelle de ce dépôt est `"M"/"F"` (vérifié via
+    `src/modules/identity/actions.ts` et `ModalNouveauPatient.tsx`) :
+    corrigé avant tout test.
+  - Vérification réelle : création d'un enfant mineur ("Junior Agossou")
+    par le compte `patient.demo@benin-health.test`, confirmé visible dans
+    la liste après rechargement, dossier détail correct (nom, sexe),
+    rendez-vous pris en son nom, confirmé en base par requête directe :
+    `RendezVous.patientId` = l'id de l'enfant (pas du tuteur),
+    `Consentement.acteurAutoriseId` = l'id du tuteur, `typeAcces` =
+    `"dossier_complet"`, `statut` = `"actif"`.
+  - Incident pendant la vérification, sans lien avec ce chantier : le
+    serveur de dev a cessé de répondre (`ERR_CONNECTION_REFUSED`, rien
+    n'écoutait sur le port 3000) pendant les tests, système à 99 % de CPU
+    (240 processus, plusieurs sessions concurrentes) ; redémarré proprement
+    (`npm run dev`), confirmé sans conflit de port avant de continuer.
+  - Incident de coordination pendant ce chantier : ma première tentative
+    d'isoler l'entrée de navigation "Mes proches" dans
+    `src/app/app/layout.tsx` via patch chirurgical a été perdue (écrasée
+    par la sauvegarde d'une autre session travaillant sur le même fichier
+    au même moment, probablement l'ajout du logo dans le pied de page et
+    les nouvelles entrées de navigation pharmacien/laboratoire/ministère
+    visibles dans ce fichier). Reconstruite une seconde fois contre l'état
+    courant du fichier et committée immédiatement pour réduire la fenêtre
+    de collision. À garder en tête : la technique du patch chirurgical
+    protège contre les conflits de staging/commit, pas contre une
+    écriture concurrente en temps réel sur le même fichier par une autre
+    session au même instant.
+- 2026-09-26.
