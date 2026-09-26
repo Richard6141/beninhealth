@@ -64,6 +64,9 @@ export interface VaccinationResume {
 
 const REGEX_DATE_ISO = /^\d{4}-\d{2}-\d{2}$/;
 
+/** Types de consentement qui autorisent a ECRIRE dans le carnet de vaccination (meme regle que la creation d'une consultation). */
+const TYPES_ACCES_ECRITURE_VACCINATION = ["dossier_complet", "consultations"] as const;
+
 const schemaEnregistrementVaccination = z.object({
   patientId: z.string().trim().min(1, "Le patient est obligatoire."),
   vaccin: z.string().trim().min(1, "Le vaccin est obligatoire.").max(100, "100 caracteres maximum."),
@@ -134,11 +137,18 @@ async function professionnelDeLaSessionCourante() {
 /**
  * Verifie qu'un Consentement actif existe pour (patientId, session.userId),
  * meme controle que getResumePatient (src/modules/clinical/actions.ts) :
- * statut actif et date de fin non depassee (ou absente). Jamais de
- * restriction par typeAcces ici (ce depot n'a qu'un seul niveau d'acces
- * reel pour ce module).
+ * statut actif et date de fin non depassee (ou absente). Sans
+ * typesAcceptes, tout type d'acces convient (lecture) ; pour une ECRITURE
+ * (enregistrer ou retirer une vaccination), l'appelant passe
+ * TYPES_ACCES_ECRITURE_VACCINATION : un consentement "urgence" ou limite a
+ * un autre domaine (examens, documents...) ne donne pas le droit d'ecrire
+ * dans le carnet de vaccination.
  */
-async function consentementActifPour(patientId: string, acteurAutoriseId: string): Promise<boolean> {
+async function consentementActifPour(
+  patientId: string,
+  acteurAutoriseId: string,
+  typesAcceptes?: readonly string[]
+): Promise<boolean> {
   const consentement = await prisma.consentement.findUnique({
     where: { patientId_acteurAutoriseId: { patientId, acteurAutoriseId } },
   });
@@ -146,7 +156,8 @@ async function consentementActifPour(patientId: string, acteurAutoriseId: string
   return (
     consentement !== null &&
     consentement.statut === "actif" &&
-    (consentement.dateFin === null || consentement.dateFin > new Date())
+    (consentement.dateFin === null || consentement.dateFin > new Date()) &&
+    (typesAcceptes === undefined || typesAcceptes.includes(consentement.typeAcces))
   );
 }
 
@@ -228,7 +239,11 @@ export async function enregistrerVaccinationAction(
       return { error: "Ce patient est introuvable.", success: false };
     }
 
-    const consentementValide = await consentementActifPour(patientId, session.userId);
+    const consentementValide = await consentementActifPour(
+      patientId,
+      session.userId,
+      TYPES_ACCES_ECRITURE_VACCINATION
+    );
 
     if (!consentementValide) {
       return {
@@ -368,7 +383,11 @@ export async function retirerVaccinationAction(
       return { error: "Cette vaccination a deja ete retiree.", success: false };
     }
 
-    const consentementValide = await consentementActifPour(vaccination.patientId, session.userId);
+    const consentementValide = await consentementActifPour(
+      vaccination.patientId,
+      session.userId,
+      TYPES_ACCES_ECRITURE_VACCINATION
+    );
 
     if (!consentementValide) {
       return {

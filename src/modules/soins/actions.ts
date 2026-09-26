@@ -77,6 +77,9 @@ export interface PriseEnChargeInfirmiereResume {
 }
 
 /** Champ numerique facultatif : une chaine vide devient undefined plutot qu'une erreur de coercion. */
+/** Types de consentement qui autorisent a ECRIRE une prise en charge infirmiere (meme regle que la creation d'une consultation). */
+const TYPES_ACCES_ECRITURE_SOINS = ["dossier_complet", "consultations"] as const;
+
 const champNumeriqueOptionnel = z.preprocess(
   (valeur) => (typeof valeur === "string" && valeur.trim() === "" ? undefined : valeur),
   z.coerce.number().optional()
@@ -317,10 +320,14 @@ export async function enregistrerPriseEnChargeAction(
       },
     });
 
+    // Ecriture : un consentement "urgence" ou limite a un autre domaine
+    // (examens, documents...) ne donne pas le droit de creer une prise en
+    // charge, meme regle que la creation d'une consultation.
     const consentementValide =
       consentement !== null &&
       consentement.statut === "actif" &&
-      (consentement.dateFin === null || consentement.dateFin > new Date());
+      (consentement.dateFin === null || consentement.dateFin > new Date()) &&
+      (TYPES_ACCES_ECRITURE_SOINS as readonly string[]).includes(consentement.typeAcces);
 
     if (!consentementValide) {
       return {
