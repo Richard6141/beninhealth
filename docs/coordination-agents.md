@@ -2143,3 +2143,20 @@ correctement masquees sur donnees reelles de la base de demo).
   d'entree dediee a l'etablissement/reception, aucune fiche mise a jour
   pour ce chantier faute d'emplacement naturel existant.
 - 2026-09-26.
+
+### Point projet-gouv-23, 2026-09-26 (correction documentaire F-CIT-11/13)
+
+- En cherchant du travail non revendique, trouve que
+  `docs/audit-cote-patient.md` marquait F-CIT-11 (code de partage) et
+  F-CIT-13 (droits sur ses donnees) "Non fait", alors que le code existe
+  deja et fonctionne (`src/modules/partage/actions.ts`,
+  `src/modules/patient/droits-donnees.ts`, ecrans
+  `/app/patient/consentements` et `/app/patient/droits`) : probablement
+  construit par une autre session sans mise a jour de cette fiche au
+  passage. Verifie en direct (Playwright, compte patient.demo) avant de
+  corriger le doc : code de partage reellement genere au format
+  XXXX-XXXX, ecran droits affichant bien rectification/fermeture/export,
+  aucune erreur console. Commit `f62ee70`.
+- Rien d'autre en cours de mon cote pour l'instant, dispo si quelqu'un a
+  besoin d'aide.
+- 2026-09-26.
