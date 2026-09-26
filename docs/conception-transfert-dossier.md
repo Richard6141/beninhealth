@@ -4,7 +4,7 @@ Note de conception du 2026-09-26. Elle répond à deux questions du produit : (1
 
 ## 1. Recommandation en bref
 
-1. **Garder l'idée de départ (NPI ou téléphone, puis code envoyé au patient), en la durcissant.** Le patient consent en donnant un code reçu sur son propre téléphone. Le code n'est jamais visible du professionnel, il est lié à une demande précise (qui demande, pour quoi, combien de temps, écrit dans le message reçu), il expire en 10 minutes, se tape 3 fois au plus, et donne un accès borné, retirable et tracé.
+1. **Garder l'idée de départ (NPI ou téléphone, puis confirmation par le patient), en la durcissant, avec deux voies de confirmation.** (a) *Dans l'espace patient* : le patient voit une demande lisible (qui, quel établissement, pour quoi, combien de temps) et clique Autoriser ou Refuser, sans transmettre aucun secret. (b) *Par code* reçu sur WhatsApp ou SMS et dicté au professionnel, pour le patient sans smartphone ni compte. Le code n'est jamais visible du professionnel, il est lié à une demande précise, expire en 10 minutes, se tape 3 fois au plus. Dans les deux cas l'accès est borné, retirable et tracé. La voie (a) est préférée : le benchmark international montre que dicter un code est la faiblesse de ce type de parcours (le Kenya a supprimé son OTP en août 2025 parce que des codes étaient partagés).
 2. **Le professionnel ne doit jamais apprendre si un patient existe** avant que le patient lui ait dicté le code (règle RG-CLI-10 du pack). Sinon, saisir des NPI à la chaîne deviendrait un moyen de savoir qui est patient de la plateforme.
 3. **Le canal ne doit pas être unique.** WhatsApp (Wapy) d'abord, SMS en repli, puis les moyens déjà construits qui ne dépendent d'aucun canal : code de partage généré par le patient (F-CIT-11), référence entre établissements (F-CLI-14), accès d'urgence (F-CLI-10).
 4. **Le NPI est derrière un interrupteur, désactivé par défaut** (`access.by_npi`). Le Code du numérique (art. 407) exige l'autorisation préalable de l'APDP pour tout traitement d'un numéro national d'identification (V, texte lu). Le mode téléphone + date de naissance n'utilise pas de NPI et reste disponible.
@@ -17,22 +17,24 @@ Note de conception du 2026-09-26. Elle répond à deux questions du produit : (1
 | Client WhatsApp Wapy.pro (clé côté serveur, idempotence, gestion des 400/401/403/404/429/502/503) | `src/lib/wapy.ts` |
 | Normalisation des numéros béninois (8 chiffres et 10 chiffres, +229) | `src/lib/telephone.ts` |
 | Règles pures : code à 6 chiffres, empreinte du critère, limites, texte du message | `src/modules/transfert/code-acces.ts` |
-| Acheminement du code : WhatsApp puis SMS | `src/modules/transfert/envoi-code.ts` |
-| Trois actions : demander, renvoyer, confirmer | `src/modules/transfert/actions.ts` |
+| Acheminement : notification dans l'espace patient, code par WhatsApp puis SMS | `src/modules/transfert/envoi-code.ts` |
+| Octroi de l'accès, commun aux deux voies (jamais de rétrogradation d'un accès plus large) | `src/modules/transfert/octroi.ts` |
+| Côté patient : voir, autoriser ou refuser une demande | `src/modules/transfert/demandes-patient.ts`, `src/app/app/patient/demandes-acces/` |
+| Côté professionnel : demander, renvoyer, confirmer par code, sonder l'état | `src/modules/transfert/actions.ts` |
 | Table de demandes `DemandeAccesDossier`, NPI unique sur `Patient`, index de date de naissance | `prisma/schema.prisma`, migration `20260926160500_ajout_demande_acces_dossier` |
 | Écran professionnel (sur "Mes patients") | `src/app/app/medecin/patients/FormulaireAccesParCode.tsx` |
 | Interrupteur `access.by_npi`, permissions médecin et infirmier | `fonctionnalites-catalogue.ts`, `permissions.ts` |
-| Tests (81, dont les scénarios de sécurité de la section 4) | `wapy.test.ts`, `telephone.test.ts`, `code-acces.test.ts`, `actions.test.ts` |
+| Tests unitaires (105, dont les scénarios de sécurité de la section 4) | `wapy.test.ts`, `telephone.test.ts`, `code-acces.test.ts`, `actions.test.ts`, `demandes-patient.test.ts` |
 
 Le résultat de la confirmation est un `Consentement` de type "consultations", de la même nature que celui de F-CIT-11 : aucune voie d'accès parallèle, toutes les lectures existantes s'appliquent telles quelles, y compris l'historique d'accès côté patient et le retrait par le patient.
 
 ## 3. Parcours
 
 1. Le professionnel (médecin ou infirmier validé) ouvre "Mes patients", choisit NPI ou téléphone + date de naissance, un motif et une durée (24 h, 3 jours, 7 jours).
-2. L'écran répond toujours la même chose : "Code envoyé au patient, si un dossier correspond". L'envoi a lieu après la réponse (`after()`), pour que le temps de réponse ne trahisse pas l'existence du dossier.
-3. Le patient reçoit sur WhatsApp : qui demande (nom, établissement), pour quel motif, pour combien de temps, le code, et la consigne de ne le donner à personne s'il ne reconnaît pas la demande. Sans WhatsApp, un SMS équivalent (limité à 160 caractères, code en premier).
-4. Le patient dicte le code au professionnel, qui le saisit. Bon code : consentement créé, patient notifié dans l'application (retrait possible à tout moment), tout est journalisé. Mauvais code : message générique, 3 essais par code.
-5. Le professionnel est redirigé vers le dossier, avec les mêmes contrôles d'accès qu'ailleurs.
+2. L'écran répond toujours la même chose : "Demande envoyée au patient, si un dossier correspond". L'envoi a lieu après la réponse (`after()`), pour que le temps de réponse ne trahisse pas l'existence du dossier.
+3. Le patient est joint de deux façons à la fois. Dans son espace : une notification puis une carte lisible (qui, établissement, motif, durée) avec Autoriser et Refuser. Sur son téléphone : un message WhatsApp (sinon SMS, 160 caractères, code en premier) qui dit la même chose, porte le code, et demande de ne le donner à personne si la demande est inconnue.
+4. Voie (a) : le patient autorise dans son espace ; l'écran du professionnel sonde l'état toutes les 4 secondes et ouvre le dossier tout seul. Un refus est signalé au professionnel. Voie (b) : le patient dicte le code, le professionnel le saisit. Bon code : consentement créé, patient notifié, tout journalisé. Mauvais code : message générique, 3 essais par code.
+5. Le professionnel arrive sur le dossier, avec les mêmes contrôles d'accès qu'ailleurs. La première voie confirmée clôt la demande : l'autre ne crée pas de second accès.
 
 ## 4. Menaces et parades
 
@@ -46,6 +48,7 @@ Le résultat de la confirmation est un `Consentement` de type "consultations", d
 | Deux dossiers avec le même téléphone et la même date de naissance (jumeaux) | Ambiguïté traitée comme "aucun résultat" : jamais de choix arbitraire |
 | Confirmations simultanées | Validation conditionnelle en base : la seconde ne crée pas de second accès |
 | Rétrogradation d'un accès déjà accordé par le patient | Un accès "dossier complet" ou plus long déjà en place n'est jamais réduit |
+| Code partagé ou relayé à des tiers (cause de la suppression de l'OTP au Kenya, où des médecins partageaient des codes) | Chaque code est lié à un demandeur, un patient et une demande précis, à usage unique, 10 minutes ; il ne sert à aucun autre professionnel (la confirmation est cherchée par identifiant de demande ET demandeur). La voie dans l'espace patient supprime tout code à transmettre. Reste possible : un professionnel légitime mais malhonnête qui convainc le patient par téléphone, d'où le contenu explicite du message et le journal visible du patient |
 | Le code lu dans une base ou un journal | Jamais stocké en clair, jamais journalisé, jamais renvoyé dans une réponse ; en production le repli SMS est coupé (la boîte d'envoi est simulée et consultable par l'administration) |
 | Numéro recyclé (SIM réattribuée) | Non couvert par le code : voir section 9 |
 
@@ -91,8 +94,9 @@ Lien avec ce qui est construit : `DemandeAccesDossier` enregistre l'établisseme
 - **Un canal de fuite résiduel** : même avec l'envoi différé, un attaquant qui mesure finement les temps de réponse pourrait percevoir une différence (une requête de plus quand un patient est trouvé). Atténué par les limites de débit, non supprimé.
 - **Numéro vérifié n'égale pas titulaire actuel** : les SIM non mises à jour ont pu être réattribuées. Le code ne conserve pas la date de dernière vérification du téléphone. À ajouter : vérification périodique et à chaque changement, et refus du mode téléphone pendant 72 h après un changement de numéro.
 - Le NPI est contrôlé seulement sur sa longueur (13 chiffres, source tierce, non confirmée par l'ANIP), sans clé de contrôle inventée, et aucune API ANIP n'est branchée (accès santé non confirmé, NV). Le téléphone utilisé est celui déjà enregistré dans le dossier, pas celui de l'ANIP.
-- Aucun écran patient n'a été modifié : il reçoit une notification dans l'application et voit l'accès dans ses consentements et son historique existants. Un écran "demandes reçues" n'est pas construit.
-- Les tests d'actions utilisent une base simulée. Le parcours complet dans le navigateur est à vérifier (voir le compte rendu de session).
+- **Vérifié dans un navigateur** (Chromium piloté par Playwright, données de démonstration, base réelle, canal SMS simulé, sans WhatsApp réel) : parcours par code, par confirmation du patient, refus, mode NPI avec interrupteur, réponse identique patient existant ou non, aucune donnée en clair dans les demandes ni le journal. Les données créées par ces essais ont été supprimées.
+- Le patient qui n'a ni smartphone ni compte dépend du code par SMS, donc d'un fournisseur SMS réel qui n'existe pas encore (voir section 5).
+- Un patient ne voit les demandes reçues que depuis la notification (pas encore d'entrée dans son menu).
 
 ## 10. Décisions attendues du produit
 
@@ -102,3 +106,20 @@ Lien avec ce qui est construit : `DemandeAccesDossier` enregistre l'établisseme
 4. **Consentement** lié à la personne ou à l'affiliation, une fois les affiliations multiples en place.
 5. **Lancer la phase A de l'identité des professionnels** (additive) puis planifier la phase B hors des périodes de travail parallèle ?
 6. **Juriste** : faire relire l'accès sans relation préalable et le contact WhatsApp des patients créés sans compte.
+
+## 11. Ce que le benchmark international change (`benchmark-consentement.md`, session projet-gouv-86)
+
+Sept systèmes étudiés (Inde ABDM, Rwanda, Kenya, Estonie, Angleterre, Belgique, France) et le contexte ouest-africain. Faits marqués verifie ou non verifie dans le fichier source ; sites officiels souvent illisibles, donc sources secondaires signalées. Ce qui a été retenu, et ce qui ne l'est pas encore :
+
+| Leçon | Décision |
+|---|---|
+| Ne pas apprendre aux patients à lire un code à voix haute (Kenya, arnaques au code WhatsApp) | **Adoptée** : confirmation dans l'espace patient, le code devient la voie de secours |
+| Prouver la présence du professionnel, pas seulement la possession du téléphone du patient (lecture de la carte à puce en Belgique, QR de la carte de santé, rendez-vous du jour) | **Non construite.** À décider : exiger un rendez-vous enregistré ce jour dans l'établissement, ou la lecture du QR de la carte de santé, sinon plafond réduit |
+| Consentement lié à un professionnel nommé, une finalité, une durée courte, des catégories | **Partiellement** : professionnel, motif et durée (24 h par défaut) sont explicites ; **les catégories de données ne sont pas différenciées** (les données sensibles, par exemple VIH ou santé mentale, ne sont pas exclues par défaut) |
+| Audit actif, pas seulement un journal visible | **Non construit.** Brancher les demandes d'accès sur la détection d'anomalies existante (F-AUD-03) : demandes en rafale, refus répétés du même patient, mêmes patients demandés par des professionnels d'un même établissement |
+| L'urgence a son circuit propre | **Déjà en place** (F-CLI-10), inchangé |
+| Patients sans smartphone : SMS, USSD, appel vocal, mode assisté en établissement, personne de confiance | **Non construit.** Le code par SMS couvre le téléphone basique dès qu'un fournisseur SMS réel existe ; USSD initié par le réseau et appel vocal : disponibilité chez les opérateurs béninois non vérifiée |
+| Le numéro de téléphone n'est pas l'identité (SIM swap organisé en Côte d'Ivoire, au Ghana, au Kenya, au Nigeria) | **Non construit** : délai de carence après un changement de numéro, notification à l'ancien numéro, interrogation de l'opérateur si une API existe |
+| Plafonner les demandes, réponse identique | **Adoptée** (section 4) |
+| La menace dominante est interne ; un OTP ne protège pas une base qui fuit | Compartimentation par rôle existante ; aucun NPI complet n'est jamais renvoyé par la recherche ; audit actif à construire (ci-dessus) |
+| Trois dépendances béninoises : autorisation APDP, ANIP (consentement du titulaire dans son flux, accès santé), juriste | **Interrupteur `access.by_npi`** ; questions à poser à l'ANIP par écrit ; relecture juridique demandée (section 10) |

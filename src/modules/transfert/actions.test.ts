@@ -47,6 +47,7 @@ import {
   confirmerCodeAccesAction,
   demanderAccesDossierAction,
   renvoyerCodeAccesAction,
+  statutDemandeAccesAction,
 } from "@/modules/transfert/actions";
 import { envoyerCodeDemande } from "@/modules/transfert/envoi-code";
 
@@ -459,5 +460,48 @@ describe("renvoyerCodeAccesAction", () => {
     p.demandeAccesDossier.updateMany.mockResolvedValue({ count: 0 });
     expect((await renvoyerCodeAccesAction(etatInitial, formulaire({ demandeId: "dem-1" }))).success).toBe(false);
     expect(afterMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("statutDemandeAccesAction", () => {
+  const dansDixMinutes = () => new Date(Date.now() + 10 * 60_000);
+
+  it("une demande en attente reste en attente", async () => {
+    p.demandeAccesDossier.findFirst.mockResolvedValue({ statut: "en_attente", patientId: "pat-1", expireLe: dansDixMinutes() });
+    expect(await statutDemandeAccesAction("dem-1")).toEqual({ statut: "en_attente" });
+  });
+
+  it("une demande confirmee donne le patient a ouvrir", async () => {
+    p.demandeAccesDossier.findFirst.mockResolvedValue({ statut: "valide", patientId: "pat-1", expireLe: dansDixMinutes() });
+    expect(await statutDemandeAccesAction("dem-1")).toEqual({ statut: "accordee", patientId: "pat-1" });
+  });
+
+  it("un refus du patient est signale", async () => {
+    p.demandeAccesDossier.findFirst.mockResolvedValue({ statut: "refusee", patientId: "pat-1", expireLe: dansDixMinutes() });
+    expect(await statutDemandeAccesAction("dem-1")).toEqual({ statut: "refusee" });
+  });
+
+  it("une demande sans patient est en attente puis expiree, comme une demande sans reponse", async () => {
+    p.demandeAccesDossier.findFirst.mockResolvedValue({ statut: "en_attente", patientId: null, expireLe: dansDixMinutes() });
+    expect(await statutDemandeAccesAction("dem-1")).toEqual({ statut: "en_attente" });
+    p.demandeAccesDossier.findFirst.mockResolvedValue({ statut: "en_attente", patientId: null, expireLe: new Date(Date.now() - 1000) });
+    expect(await statutDemandeAccesAction("dem-1")).toEqual({ statut: "expiree" });
+  });
+
+  it("une demande bloquee ou remplacee est expiree", async () => {
+    p.demandeAccesDossier.findFirst.mockResolvedValue({ statut: "bloque", patientId: "pat-1", expireLe: dansDixMinutes() });
+    expect(await statutDemandeAccesAction("dem-1")).toEqual({ statut: "expiree" });
+  });
+
+  it("ne repond que pour une demande du professionnel connecte", async () => {
+    p.demandeAccesDossier.findFirst.mockResolvedValue(null);
+    expect(await statutDemandeAccesAction("dem-1")).toBeNull();
+    expect(p.demandeAccesDossier.findFirst.mock.calls[0][0].where).toMatchObject({ demandeurId: "pro-1" });
+  });
+
+  it("ne repond pas a un role sans la permission", async () => {
+    getSessionMock.mockResolvedValue({ userId: "u", roles: ["patient"] });
+    expect(await statutDemandeAccesAction("dem-1")).toBeNull();
+    expect(p.demandeAccesDossier.findFirst).not.toHaveBeenCalled();
   });
 });

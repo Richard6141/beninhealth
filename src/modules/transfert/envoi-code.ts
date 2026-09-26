@@ -12,6 +12,7 @@ import { getEnv } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
 import { normaliserTelephoneBenin } from "@/lib/telephone";
 import { envoyerMessageWapy, wapyConfigure } from "@/lib/wapy";
+import { creerNotification } from "@/modules/notification/actions";
 import { envoyerSms } from "@/modules/notification/sms/envoyer";
 import {
   DUREE_VALIDITE_CODE_MINUTES,
@@ -63,6 +64,22 @@ export async function envoyerCodeDemande(params: {
     const titre = estMedecin ? "Dr." : "Infirmier(ère)";
     const nom = `${demande.demandeur.prenom} ${demande.demandeur.nom}`;
     const telephone = normaliserTelephoneBenin(demande.patient.user.telephone);
+    const compteActif = demande.patient.user.statut === "actif";
+
+    // Le patient qui utilise l'application voit la demande, lisible, dans ses
+    // notifications : il peut l'autoriser ou la refuser sans dicter de code.
+    if (compteActif && params.numeroEnvoi === 0) {
+      try {
+        await creerNotification(
+          demande.patient.userId,
+          "demande_acces_dossier",
+          `${titre} ${nom} (${demande.etablissement.nom}) demande l'accès à votre dossier (${libelleDuree(demande.dureeAccesHeures)}). Répondez depuis votre espace patient dans les ${DUREE_VALIDITE_CODE_MINUTES} minutes.`,
+          "/app/patient/demandes-acces"
+        );
+      } catch {
+        // Le code par WhatsApp ou SMS reste disponible.
+      }
+    }
 
     let canal: CanalEnvoi = "aucun";
 
@@ -81,6 +98,7 @@ export async function envoyerCodeDemande(params: {
           etablissementNom: demande.etablissement.nom,
           motif: demande.motif as MotifAcces,
           dureeAccesHeures: demande.dureeAccesHeures,
+          confirmationEnLigne: compteActif,
         }),
         consentement: `dossier-${demande.patient.identifiantSante}`,
         cleIdempotence: `acces-dossier-${demande.id}-${params.numeroEnvoi}`,

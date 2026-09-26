@@ -97,6 +97,8 @@ export interface ParametresMessageCode {
   etablissementNom: string;
   motif: MotifAcces;
   dureeAccesHeures: number;
+  /** Vrai si le destinataire a un espace patient : il peut alors repondre sans donner le code. */
+  confirmationEnLigne?: boolean;
 }
 
 /**
@@ -112,6 +114,9 @@ export function composerMessageCode(p: ParametresMessageCode): string {
     `BHIP Santé : ${demandeur} (${p.etablissementNom}) demande l'accès à votre dossier médical pour ${libelleDuree(p.dureeAccesHeures)}, pour ${MOTIFS_ACCES[p.motif]}.`,
     "",
     `Si vous êtes bien en consultation avec cette personne, donnez-lui ce code : ${p.code}`,
+    ...(p.confirmationEnLigne
+      ? ["", "Vous pouvez aussi répondre à cette demande dans votre espace patient BHIP (Notifications), sans donner le code."]
+      : []),
     "",
     `Ce code expire dans ${DUREE_VALIDITE_CODE_MINUTES} minutes. Si vous ne reconnaissez pas cette demande, ne donnez ce code à personne et ignorez ce message. Vous pouvez retirer cet accès à tout moment depuis votre espace patient.`,
   ].join("\n");

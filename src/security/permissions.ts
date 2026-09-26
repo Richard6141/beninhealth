@@ -62,6 +62,10 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     // F-CIT-11 : generer un code de partage temporaire de son propre dossier.
     'create:code_partage',
     'read:code_partage',
+    // Demandes d'acces par NPI ou telephone : voir et repondre depuis son
+    // espace (voir src/modules/transfert/demandes-patient.ts).
+    'read:demande_acces_recue',
+    'update:demande_acces_recue',
   ]),
 
   medecin: new Set<Permission>([

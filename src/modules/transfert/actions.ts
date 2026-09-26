@@ -56,6 +56,7 @@ import {
   type ModeRecherche,
 } from "./code-acces";
 import { envoyerCodeDemande } from "./envoi-code";
+import { accorderAcces } from "./octroi";
 
 const ROUNDS_BCRYPT = 10;
 const UNE_HEURE_MS = 60 * 60 * 1000;
@@ -313,6 +314,53 @@ export async function demanderAccesDossierAction(
   }
 }
 
+export interface StatutDemandeAcces {
+  statut: "en_attente" | "accordee" | "refusee" | "expiree";
+  patientId?: string;
+}
+
+/**
+ * Etat d'une demande du professionnel connecte, sonde par l'ecran pendant
+ * l'attente. Une demande sans patient reste "en_attente" puis devient
+ * "expiree", exactement comme une demande dont le patient ne repond pas : rien
+ * ne distingue les deux avant qu'un patient reel ait decide.
+ */
+export async function statutDemandeAccesAction(demandeId: string): Promise<StatutDemandeAcces | null> {
+  const session = await getSession();
+
+  if (!session || !session.roles.some((role) => can(role, "create", "demande_acces_dossier"))) {
+    return null;
+  }
+
+  const identifiant = demandeId.trim();
+
+  if (identifiant.length === 0) {
+    return null;
+  }
+
+  const demande = await prisma.demandeAccesDossier.findFirst({
+    where: { id: identifiant, demandeurId: session.userId },
+  });
+
+  if (!demande) {
+    return null;
+  }
+
+  if (demande.statut === "valide" && demande.patientId) {
+    return { statut: "accordee", patientId: demande.patientId };
+  }
+
+  if (demande.statut === "refusee") {
+    return { statut: "refusee" };
+  }
+
+  if (demande.statut !== "en_attente" || demande.expireLe <= new Date()) {
+    return { statut: "expiree" };
+  }
+
+  return { statut: "en_attente" };
+}
+
 /**
  * Renvoie un nouveau code pour une demande en cours (l'ancien devient
  * invalide). Meme reponse que la demande, patient trouve ou non.
@@ -471,53 +519,15 @@ export async function confirmerCodeAccesAction(
     }
 
     const patient = demande.patient;
-    const maintenant = new Date();
-    const finDemandee = new Date(maintenant.getTime() + demande.dureeAccesHeures * UNE_HEURE_MS);
 
-    const accorde = await prisma.$transaction(async (tx) => {
-      const validation = await tx.demandeAccesDossier.updateMany({
-        where: { id: demande.id, statut: "en_attente" },
-        data: { statut: "valide", valideLe: maintenant },
-      });
-
-      if (validation.count === 0) {
-        return null;
-      }
-
-      // Jamais de retrogradation : un acces plus large ou plus long deja
-      // accorde par le patient lui-meme reste tel quel.
-      const existant = await tx.consentement.findUnique({
-        where: { patientId_acteurAutoriseId: { patientId: patient.id, acteurAutoriseId: session.userId } },
-      });
-      const existantActif =
-        existant !== null &&
-        existant.statut === "actif" &&
-        (existant.dateFin === null || existant.dateFin > maintenant);
-      const typeAcces = existantActif && existant.typeAcces === "dossier_complet" ? "dossier_complet" : "consultations";
-      const dateFin =
-        existantActif && (existant.dateFin === null || existant.dateFin > finDemandee)
-          ? existant.dateFin
-          : finDemandee;
-
-      await tx.consentement.upsert({
-        where: { patientId_acteurAutoriseId: { patientId: patient.id, acteurAutoriseId: session.userId } },
-        create: { patientId: patient.id, acteurAutoriseId: session.userId, typeAcces, dateFin, statut: "actif" },
-        update: { typeAcces, dateFin, statut: "actif" },
-      });
-
-      await journaliser(
-        {
-          utilisateurId: session.userId,
-          action: "acces_dossier_code_reussi",
-          donneeConcernee: `patient:${patient.id}`,
-          adresseTechnique,
-          justification: `Acces "${typeAcces}" accorde par code de confirmation (mode ${demande.modeRecherche}, motif ${demande.motif}), jusqu'au ${dateFin ? dateFin.toISOString() : "retrait par le patient"}.`,
-        },
-        tx
-      );
-
-      return { typeAcces, dateFin };
-    });
+    const accorde = await prisma.$transaction((tx) =>
+      accorderAcces(tx, {
+        demande: { ...demande, patientId: patient.id },
+        professionnelUserId: session.userId,
+        adresseTechnique,
+        voie: "code",
+      })
+    );
 
     if (!accorde) {
       return echouer("Demande deja utilisee.");

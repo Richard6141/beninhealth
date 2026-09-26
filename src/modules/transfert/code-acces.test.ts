@@ -98,6 +98,20 @@ describe("composerMessageCode", () => {
     expect(message).toContain("ne donnez ce code à personne");
   });
 
+  it("indique la confirmation en ligne seulement pour un patient qui a un espace patient", () => {
+    const base = {
+      code: "482913",
+      titreProfessionnel: "Dr.",
+      nomProfessionnel: "Awa Sossou",
+      etablissementNom: "CNHU-HKM",
+      motif: "consultation" as const,
+      dureeAccesHeures: 24,
+    };
+    expect(composerMessageCode({ ...base, confirmationEnLigne: true })).toContain("sans donner le code");
+    expect(composerMessageCode({ ...base, confirmationEnLigne: false })).not.toContain("sans donner le code");
+    expect(composerMessageCode(base)).not.toContain("sans donner le code");
+  });
+
   it("reste sous la limite de 1000 caracteres de Wapy meme avec de longs noms", () => {
     const long = composerMessageCode({
       code: "000000",
@@ -106,6 +120,7 @@ describe("composerMessageCode", () => {
       etablissementNom: "E".repeat(200),
       motif: "hospitalisation",
       dureeAccesHeures: 168,
+      confirmationEnLigne: true,
     });
     expect(long.length).toBeLessThan(1000);
   });

@@ -7,8 +7,10 @@ import {
   confirmerCodeAccesAction,
   demanderAccesDossierAction,
   renvoyerCodeAccesAction,
+  statutDemandeAccesAction,
   type ConfirmationAccesState,
   type DemandeAccesState,
+  type StatutDemandeAcces,
 } from "@/modules/transfert/actions";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
@@ -46,6 +48,8 @@ function Assistant({ npiActif, optionsMotif, optionsDuree, onRecommencer }: Prop
     etatConfirmationInitial
   );
 
+  const [statut, setStatut] = useState<StatutDemandeAcces | null>(null);
+
   useEffect(() => {
     if (confirmation.success && confirmation.patientId) {
       router.push(`/app/medecin/patients/${confirmation.patientId}`);
@@ -55,13 +59,76 @@ function Assistant({ npiActif, optionsMotif, optionsDuree, onRecommencer }: Prop
   const demandeId = renvoi.success && renvoi.demandeId ? renvoi.demandeId : demande.demandeId;
   const expireLe = renvoi.success && renvoi.expireLe ? renvoi.expireLe : demande.expireLe;
 
+  // Sonde l'etat de la demande : un patient qui repond depuis son espace
+  // (sans dicter de code) ouvre le dossier ici sans autre action.
+  useEffect(() => {
+    if (!demande.success || !demandeId) {
+      return;
+    }
+
+    let actif = true;
+    const minuteur = setInterval(async () => {
+      const resultat = await statutDemandeAccesAction(demandeId);
+
+      if (!actif) {
+        return;
+      }
+
+      setStatut(resultat);
+
+      if (resultat?.statut === "accordee" && resultat.patientId) {
+        router.push(`/app/medecin/patients/${resultat.patientId}`);
+      }
+
+      if (resultat === null || resultat.statut !== "en_attente") {
+        clearInterval(minuteur);
+      }
+    }, 4000);
+
+    return () => {
+      actif = false;
+      clearInterval(minuteur);
+    };
+  }, [demande.success, demandeId, router]);
+
+  if (demande.success && demandeId && statut?.statut === "refusee") {
+    return (
+      <div className="flex flex-col gap-4">
+        <Alert level="critical" title="Le patient a refusé la demande">
+          Aucun accès n&apos;a été accordé. Ne renouvelez pas la demande sans en parler avec le patient.
+        </Alert>
+        <div>
+          <Button type="button" variant="secondary" size="sm" onClick={onRecommencer}>
+            Nouvelle recherche
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (demande.success && demandeId && statut?.statut === "expiree") {
+    return (
+      <div className="flex flex-col gap-4">
+        <Alert level="warning" title="La demande a expiré">
+          Aucune réponse n&apos;a été reçue à temps. Vous pouvez recommencer la recherche.
+        </Alert>
+        <div>
+          <Button type="button" variant="secondary" size="sm" onClick={onRecommencer}>
+            Nouvelle recherche
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   if (demande.success && demandeId) {
     return (
       <div className="flex flex-col gap-4">
-        <Alert level="info" title="Code envoyé au patient, si un dossier correspond">
-          Le code lui est envoyé sur son téléphone (WhatsApp ou SMS){expireLe ? ` et expire à ${heureLocale(expireLe)}` : ""}.
-          Demandez-le lui à voix haute. Par sécurité, cet écran ne dit pas si un dossier a été trouvé : si aucun code
-          n&apos;arrive, vérifiez le numéro ou le NPI, ou utilisez le code de partage du patient.
+        <Alert level="info" title="Demande envoyée au patient, si un dossier correspond">
+          Le patient reçoit un code sur son téléphone (WhatsApp ou SMS){expireLe ? ` valable jusqu'à ${heureLocale(expireLe)}` : ""}.
+          Demandez-le lui. S&apos;il a un espace patient BHIP, il peut aussi autoriser la demande depuis son téléphone,
+          sans vous donner de code : le dossier s&apos;ouvre alors ici. Par sécurité, cet écran ne dit pas si un dossier
+          a été trouvé : si rien n&apos;arrive, vérifiez le numéro ou le NPI, ou utilisez le code de partage du patient.
         </Alert>
 
         <form action={confirmerAction} className="flex flex-col gap-4 sm:flex-row sm:items-end">

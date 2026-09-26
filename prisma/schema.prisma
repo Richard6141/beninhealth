@@ -1104,7 +1104,7 @@ model DemandeAccesDossier {
   codeHash         String
   tentatives       Int                    @default(0)
   renvois          Int                    @default(0)
-  // en_attente | valide | expire | bloque
+  // en_attente | valide | refusee | expire | bloque
   statut           String                 @default("en_attente")
   // whatsapp | sms_simule | aucun : renseigne apres l'envoi, jamais montre au professionnel
   canal            String?
