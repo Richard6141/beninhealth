@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { Settings } from "lucide-react";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { getMesNotifications } from "@/modules/notification/actions";
@@ -21,15 +23,24 @@ export default async function NotificationsPage() {
 
   return (
     <div className="conteneur-page mx-auto flex flex-col gap-8 px-4 py-8 sm:px-6">
-      <header className="flex flex-col gap-2">
-        <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-accent">
-          Notifications
-        </p>
-        <h1 className="text-[28px] font-black text-encre">Mes notifications</h1>
-        <p className="max-w-2xl text-[15px] text-encre-secondaire">
-          Rendez-vous confirmés, résultats d&apos;examens disponibles et autres
-          événements concernant votre espace.
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex flex-col gap-2">
+          <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-accent">
+            Notifications
+          </p>
+          <h1 className="text-[28px] font-black text-encre">Mes notifications</h1>
+          <p className="max-w-2xl text-[15px] text-encre-secondaire">
+            Rendez-vous confirmés, résultats d&apos;examens disponibles et autres
+            événements concernant votre espace.
+          </p>
+        </div>
+        <Link
+          href="/app/notifications/preferences"
+          className="inline-flex w-fit items-center gap-1.5 text-[13px] font-semibold text-accent hover:underline"
+        >
+          <Settings size={14} aria-hidden="true" />
+          Préférences
+        </Link>
       </header>
 
       <Card>

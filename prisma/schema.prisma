@@ -58,6 +58,7 @@ model User {
   consentementsRecus Consentement[]
   evenementsPrescription EvenementPrescription[]
   notifications Notification[]
+  preferencesNotification PreferenceNotification[]
   addendaConsultation AddendumConsultation[]
   documentsMedicaux DocumentMedical[]
   codesVerificationEmail CodeVerificationEmail[]
@@ -672,6 +673,25 @@ model Notification {
   lien          String?
   lu            Boolean  @default(false)
   date          DateTime @default(now())
+  @@schema("public")
+}
+
+// Correspond a F-NOT-03 du pack ("Preferences de notification") : pour
+// chaque categorie modifiable (voir src/modules/notification/categories.ts),
+// l'utilisateur choisit les canaux SMS/email (le canal interne est toujours
+// actif, jamais stocke ici). RG-NOT-10 : les categories "securite" et
+// "codes" ne peuvent jamais etre desactivees, elles n'ont donc aucune ligne
+// dans cette table (etat fixe, non modifiable). Une ligne absente pour une
+// categorie modifiable equivaut a SMS/email desactives (valeur par defaut).
+model PreferenceNotification {
+  id            String  @id @default(cuid())
+  utilisateurId String
+  utilisateur   User    @relation(fields: [utilisateurId], references: [id], onDelete: Cascade)
+  // rendez_vous | resultats_documents | traitements | acces_dossier | informations_generales
+  categorie     String
+  sms           Boolean @default(false)
+  email         Boolean @default(false)
+  @@unique([utilisateurId, categorie])
   @@schema("public")
 }
 
