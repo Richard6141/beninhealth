@@ -64,6 +64,8 @@ model User {
   revuesAccesUrgence RevueAccesUrgence[]
   alertesRevues HealthAlertReview[]
   traitementsDemandesPersonnes TraitementDemandePersonne[]
+  signalementsAnomalies SignalementAnomalieAcces[] @relation("UtilisateurSignale")
+  signalementsRevises SignalementAnomalieAcces[] @relation("ReviewerSignalement")
   @@schema("public")
 }
 
@@ -882,5 +884,39 @@ model TraitementDemandePersonne {
   reponse        String
   date           DateTime @default(now())
 
+  @@schema("public")
+}
+
+// Correspond a F-AUD-03 du pack ("Detection d'anomalies d'acces"). Version
+// reduite et volontaire : detection a la demande (au chargement de l'ecran
+// admin), pas une tache planifiee horaire comme le demande le pack, pour ne
+// pas dependre du planificateur de F-PIL-07 (src/modules/pilotage/planificateur.ts,
+// proprietaire d'une autre session ce soir). 4 des 7 regles du pack sont
+// honnetement calculables a partir des donnees JournalAudit existantes sans
+// ajouter de journalisation ailleurs dans le depot (acces d'urgence
+// frequents, connexions multi-IP, nom de famille identique, dossiers
+// distincts eleves) ; les 3 autres (recherches sans resultat, acces
+// refuses, arrivees verifiees "sur piece") supposeraient de journaliser de
+// nouveaux evenements a travers de nombreux fichiers, hors de portee ce
+// soir. Cle (regle, utilisateurId) plutot qu'un lien vers une seule ligne
+// JournalAudit : chaque signalement est un agregat sur plusieurs entrees,
+// pas un evenement individuel. Une detection deja ouverte (statut "nouveau")
+// pour le meme (regle, utilisateurId) n'est jamais dupliquee.
+model SignalementAnomalieAcces {
+  id            String    @id @default(cuid())
+  // acces_urgence_frequents | connexions_ip_multiples | nom_famille_identique | dossiers_distincts_eleves
+  regle         String
+  utilisateurId String
+  utilisateur   User      @relation("UtilisateurSignale", fields: [utilisateurId], references: [id])
+  detail        String
+  dateDetection DateTime  @default(now())
+  // nouveau | ferme
+  statut        String    @default("nouveau")
+  commentaire   String?
+  reviewerId    String?
+  reviewer      User?     @relation("ReviewerSignalement", fields: [reviewerId], references: [id])
+  dateRevue     DateTime?
+
+  @@index([statut])
   @@schema("public")
 }
