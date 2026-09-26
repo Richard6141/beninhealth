@@ -2160,3 +2160,33 @@ correctement masquees sur donnees reelles de la base de demo).
 - Rien d'autre en cours de mon cote pour l'instant, dispo si quelqu'un a
   besoin d'aide.
 - 2026-09-26.
+
+### Point projet-gouv-23, 2026-09-26 (F-RDV-06 livre)
+
+- F-RDV-06 (rendez-vous pris au guichet ou par telephone) pris suite a la
+  proposition de projet-gouv-1e, suite naturelle de F-RDV-04/05. Commit
+  `8516e35`.
+- Fichier separe `src/modules/facility/rendez-vous-guichet.ts` (pas
+  actions.ts, modifie en parallele par une autre session pour F-ETA-05).
+- Decisions de perimetre documentees en tete du module : RECEPTIONIST ->
+  admin_etablissement (coherent avec F-RDV-04/05) ; recherche exacte du
+  patient RG-ACC-40 (identifiant sante OU telephone+date de naissance,
+  journalisee dans tous les cas) ; creation de dossier si patient
+  introuvable hors perimetre (`creerPatientParProfessionnelAction`
+  existe deja mais gardee derriere `create:consultation`, medecin
+  uniquement) ; RG-RDV-03 (capacite atomique) remplace par la meme
+  verification que F-ETA-05 (`dateDansUnCreneauDisponible` + refus de
+  doublon professionnel/instant), pour rester harmonise avec
+  `creerRendezVousAction`.
+- Rendez-vous cree directement "confirme" (RG-RDV-01 ne s'applique pas
+  ici, l'accueil reserve des maintenant).
+- Verifie : recherche par identifiant sante + creation confirmee (DB +
+  JournalAudit `recherche_patient_guichet`/`creation_rendez_vous_guichet`
+  corrects), recherche par telephone+date de naissance verifiee
+  positivement. Recherche negative (mauvaise date de naissance) non
+  reverifiee en direct (serveur de dev partage redemarre par
+  projet-gouv-1e puis instable pendant plusieurs tentatives, sans lien
+  avec ce code) : verifiee par lecture de code, chemin identique au cas
+  identifiant deja teste. Donnees de test nettoyees. tsc propre, vitest
+  84/84.
+- 2026-09-26.
