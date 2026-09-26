@@ -71,9 +71,12 @@ import {
   NOMBRE_LIGNES_MAX,
   debutFenetrePoids,
   poidsRecent,
+  dateFinValiditeOrdonnance,
+  ordonnanceExpiree,
   poidsRequisPourPatient,
   type PoidsRetenu,
 } from "./regles-ordonnance";
+import { verrouillerOrdonnance } from "./verrou";
 
 /** Etat renvoye par chaque Server Action de ce module, consomme via useActionState. */
 export interface PrescriptionActionState {
@@ -2015,17 +2018,11 @@ export async function getDetailPrescriptionPourDelivrance(
  *
  * RG-PHA-11 : la quantite delivree cumulee par ligne ne doit jamais depasser
  * la quantite prescrite, meme si deux delivrances sont tentees au meme
- * moment. La quantite deja livree par ligne est donc relue ici, a
- * l'interieur de cette meme transaction, jamais deduite des donnees
- * affichees au pharmacien au chargement de l'ecran (qui peuvent etre
- * perimees si une autre delivrance a eu lieu entre-temps). Ce depot tourne
- * sur SQLite en developpement, ou un seul writer ecrit a la fois (voir
- * l'en-tete de prisma/schema.prisma) : ce controle "lire puis ecrire" a
- * l'interieur d'un seul prisma.$transaction suffit donc ici a garantir
- * l'exclusion mutuelle. Une migration vers PostgreSQL (deja prevue par ce
- * projet) exigerait, elle, un vrai verrou de ligne (`SELECT ... FOR UPDATE`)
- * ou une colonne de version optimiste sur LignePrescription pour conserver
- * la meme garantie en concurrence reelle multi-connexions.
+ * moment. La transaction commence donc par un verrou de ligne sur
+ * l'ordonnance (`SELECT ... FOR UPDATE`, voir verrou.ts) : une seconde
+ * delivrance attend la fin de la premiere, puis relit la quantite deja
+ * livree, jamais deduite des donnees affichees au pharmacien au chargement
+ * de l'ecran (qui peuvent etre perimees). PostgreSQL, READ COMMITTED.
  */
 export async function delivrerPrescriptionAction(
   prevState: PrescriptionActionState,
@@ -2086,6 +2083,10 @@ export async function delivrerPrescriptionAction(
 
   try {
     const resultat = await prisma.$transaction(async (tx) => {
+      if (!(await verrouillerOrdonnance(tx, prescriptionId))) {
+        return { ok: false as const, error: "Cette prescription est introuvable." };
+      }
+
       const prescriptionActuelle = await tx.prescription.findUnique({
         where: { id: prescriptionId },
         include: {
@@ -2114,6 +2115,14 @@ export async function delivrerPrescriptionAction(
                 : prescriptionActuelle.statut === "arretee"
                   ? "Cette prescription a ete arretee par le medecin et ne peut plus etre delivree."
                   : "Cette prescription n'est pas dans un etat permettant une delivrance.",
+        };
+      }
+
+      // RG-PHA-10 : une ordonnance perimee n'est plus delivrable.
+      if (ordonnanceExpiree(prescriptionActuelle.date, new Date())) {
+        return {
+          ok: false as const,
+          error: `Cette ordonnance a expire le ${dateFinValiditeOrdonnance(prescriptionActuelle.date).toLocaleDateString("fr-FR")} et ne peut plus etre delivree.`,
         };
       }
 
@@ -2230,6 +2239,13 @@ export async function delivrerPrescriptionAction(
           numeroLot: ligneSoumise.numeroLot.length > 0 ? ligneSoumise.numeroLot : null,
           datePeremption: ligneSoumise.datePeremption.length > 0 ? new Date(ligneSoumise.datePeremption) : null,
         });
+      }
+
+      if (lignesAEnregistrer.every((ligne) => ligne.quantiteDelivree === 0)) {
+        return {
+          ok: false as const,
+          error: "Aucune quantite n'est delivree : renseignez au moins une quantite superieure a zero.",
+        };
       }
 
       const delivranceCreee = await tx.delivrance.create({
@@ -2367,6 +2383,13 @@ export async function annulerDelivranceAction(
 
   try {
     const resultat = await prisma.$transaction(async (tx) => {
+      // Meme verrou que la delivrance : corriger une delivrance ne doit pas
+      // s'entrelacer avec une autre delivrance de la meme ordonnance.
+      const cible = await tx.delivrance.findUnique({ where: { id: delivranceId }, select: { prescriptionId: true } });
+      if (cible) {
+        await verrouillerOrdonnance(tx, cible.prescriptionId);
+      }
+
       const delivrance = await tx.delivrance.findUnique({
         where: { id: delivranceId },
         include: { prescription: { include: { lignes: true } } },

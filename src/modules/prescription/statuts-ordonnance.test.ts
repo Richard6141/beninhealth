@@ -10,6 +10,7 @@ vi.mock("@/lib/prisma", () => {
     evenementPrescription: { create: vi.fn() },
     delivrance: { findUnique: vi.fn(), update: vi.fn() },
     ligneDelivrance: { groupBy: vi.fn() },
+    $queryRaw: vi.fn(async () => [{ id: "presc-1" }]),
     $transaction: vi.fn(),
   };
   prisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(prisma));

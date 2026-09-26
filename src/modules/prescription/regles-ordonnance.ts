@@ -20,6 +20,7 @@ export const NOMBRE_LIGNES_MAX = 10;
 export const DUREE_TRAITEMENT_MAX_JOURS = 90;
 export const AGE_POIDS_REQUIS_ANS = 12;
 export const FENETRE_POIDS_JOURS = 30;
+export const JOURS_VALIDITE_ORDONNANCE = 90;
 
 const MS_PAR_JOUR = 24 * 60 * 60 * 1000;
 
@@ -64,6 +65,15 @@ export function poidsRecent(mesures: MesurePoids[], maintenant: Date): PoidsRete
   }
 
   return retenu;
+}
+
+/** Fin de validite d'une ordonnance signee a cette date (RG-PHA-10). */
+export function dateFinValiditeOrdonnance(dateOrdonnance: Date): Date {
+  return new Date(dateOrdonnance.getTime() + JOURS_VALIDITE_ORDONNANCE * MS_PAR_JOUR);
+}
+
+export function ordonnanceExpiree(dateOrdonnance: Date, maintenant: Date): boolean {
+  return maintenant.getTime() > dateFinValiditeOrdonnance(dateOrdonnance).getTime();
 }
 
 export const MESSAGE_POIDS_MANQUANT =

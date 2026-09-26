@@ -3410,3 +3410,11 @@ Suspense (le build echoue sinon) ; `creerNotification` vit dans
 - Le comptage IND-08 du pilotage (`not: "annulee"`) inclut desormais les ordonnances arretees, ce qui est le comportement voulu (elles ont ete prescrites).
 - Verifie : tsc, eslint, vitest (le test `analytics-role` a expire une fois sous la charge de la suite complete et passe seul).
 - 2026-09-26.
+
+### Point projet-gouv-86, pharmacie : verrou de delivrance, validite, delivrance a zero (F-PHA-03), 2026-09-26
+
+- Livre : `verrou.ts` (SELECT ... FOR UPDATE sur l'ordonnance, premier acte de la transaction de delivrance ET de son annulation, RG-PHA-11) ; validite de 90 jours controlee a la delivrance (RG-PHA-10, l'etat "expiree" reste calcule) ; delivrance dont toutes les quantites sont nulles refusee ; docstring de `delivrerPrescriptionAction` corrigee (elle s'appuyait sur SQLite). 15 tests dans `delivrance-ordonnance.test.ts` et `statuts-ordonnance.test.ts`, dont CA-1 (deux delivrances totales simultanees : une seule reussit) sur un faux stockage a vrai verrou, avec un test temoin qui montre que sans verrou la meme course surdelivre.
+- Verifie sur la vraie base PostgreSQL avec un script jetable : deux transactions qui se chevauchent, la seconde attend la fin de la premiere puis relit le statut qu'elle a ecrit ; ordonnance inexistante renvoie faux ; donnees de test supprimees. tsc, eslint (0 erreur), vitest 48 fichiers et 491 tests.
+- A savoir : `JOURS_VALIDITE_ORDONNANCE` existe maintenant dans `regles-ordonnance.ts` et, en double, dans `verification-publique.ts` (3d) : a unifier quand ce fichier sera commite. Les transactions interactives Prisma ont un delai de 5 s par defaut : un verrou longtemps tenu par une autre transaction ferait echouer une delivrance avec l'erreur generique, sans surdelivrance.
+- Suite pour moi : F-PHA-01 et F-PHA-02 (detail avec allergies, age, sexe, prescripteur, validite ; ne plus exposer toutes les ordonnances a tout pharmacien).
+- 2026-09-26.
