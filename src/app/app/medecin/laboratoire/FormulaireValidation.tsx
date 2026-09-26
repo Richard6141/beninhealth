@@ -45,108 +45,113 @@ function ChampCommentaire() {
 }
 
 /**
- * Bouton "Valider" + re-authentification par mot de passe repliee par defaut
- * (meme convention que FormulaireRetrait.tsx dans
- * src/app/app/medecin/consultations/) : la fiche F-LAB-04 du pack demande une
- * re-authentification si la derniere connexion date de plus de 5 minutes ;
- * ce depot ne tracant pas cet horodatage au niveau de la session, le mot de
- * passe est re-saisi systematiquement, a chaque validation.
+ * Bouton "Valider" et bouton "Renvoyer pour correction", avec leurs deux
+ * formulaires replies par defaut (F-LAB-04). Les deux useActionState sont
+ * geres ici, dans le meme composant, plutot que dans deux composants freres
+ * independants : une fois que l'un des deux aboutit, l'autre doit disparaitre
+ * plutot que de rester affiche (et cliquable) sur un resultat qui n'est plus
+ * "en attente de validation" cote serveur.
  */
-function BoutonValider({ examenId }: { examenId: string }) {
-  const [ouvert, setOuvert] = useState(false);
-  const [state, formAction, pending] = useActionState(validerResultatExamenAction, etatInitial);
-
-  if (state.success) {
-    return <p className="text-[13px] font-semibold text-bon">Resultat valide.</p>;
-  }
-
-  if (!ouvert) {
-    return (
-      <Button type="button" variant="primary" size="sm" onClick={() => setOuvert(true)}>
-        Valider
-      </Button>
-    );
-  }
-
-  return (
-    <form
-      action={formAction}
-      aria-busy={pending}
-      className="flex flex-col gap-3 rounded-champ border border-bordure bg-surface p-3"
-    >
-      <input type="hidden" name="examenId" value={examenId} />
-
-      {state.error ? (
-        <Alert level="critical" title="Validation impossible">
-          {state.error}
-        </Alert>
-      ) : null}
-
-      <TextField
-        label="Votre mot de passe"
-        name="motDePasse"
-        type="password"
-        required
-        hint="Confirmation obligatoire avant de verrouiller un resultat (principe des quatre yeux)."
-      />
-
-      <div className="flex flex-wrap gap-2">
-        <Button type="submit" variant="primary" size="sm" disabled={pending}>
-          {pending ? "Validation en cours..." : "Confirmer la validation"}
-        </Button>
-        <Button type="button" variant="secondary" size="sm" onClick={() => setOuvert(false)}>
-          Annuler
-        </Button>
-      </div>
-    </form>
+function ControlesValidation({ examenId }: { examenId: string }) {
+  const [ouvertValider, setOuvertValider] = useState(false);
+  const [stateValider, formActionValider, pendingValider] = useActionState(
+    validerResultatExamenAction,
+    etatInitial
   );
-}
-
-/** Bouton "Renvoyer pour correction" + champ de motif obligatoire, replie par defaut. */
-function BoutonRenvoyer({ examenId }: { examenId: string }) {
-  const [ouvert, setOuvert] = useState(false);
-  const [state, formAction, pending] = useActionState(
+  const [ouvertRenvoyer, setOuvertRenvoyer] = useState(false);
+  const [stateRenvoyer, formActionRenvoyer, pendingRenvoyer] = useActionState(
     renvoyerPourCorrectionAction,
     etatInitial
   );
 
-  if (state.success) {
+  if (stateValider.success) {
+    return <p className="text-[13px] font-semibold text-bon">Resultat valide.</p>;
+  }
+
+  if (stateRenvoyer.success) {
     return <p className="text-[13px] font-semibold text-vigilance">Renvoye pour correction.</p>;
   }
 
-  if (!ouvert) {
-    return (
-      <Button type="button" variant="danger" size="sm" onClick={() => setOuvert(true)}>
-        Renvoyer pour correction
-      </Button>
-    );
-  }
-
   return (
-    <form
-      action={formAction}
-      aria-busy={pending}
-      className="flex flex-col gap-3 rounded-champ border border-critique bg-critique-clair p-3"
-    >
-      <input type="hidden" name="examenId" value={examenId} />
+    <div className="flex flex-wrap gap-2">
+      {ouvertValider ? (
+        <form
+          action={formActionValider}
+          aria-busy={pendingValider}
+          className="flex flex-col gap-3 rounded-champ border border-bordure bg-surface p-3"
+        >
+          <input type="hidden" name="examenId" value={examenId} />
 
-      {state.error ? (
-        <Alert level="critical" title="Renvoi impossible">
-          {state.error}
-        </Alert>
-      ) : null}
+          {stateValider.error ? (
+            <Alert level="critical" title="Validation impossible">
+              {stateValider.error}
+            </Alert>
+          ) : null}
 
-      <ChampCommentaire />
+          <TextField
+            label="Votre mot de passe"
+            name="motDePasse"
+            type="password"
+            required
+            hint="Confirmation obligatoire avant de verrouiller un resultat (principe des quatre yeux)."
+          />
 
-      <div className="flex flex-wrap gap-2">
-        <Button type="submit" variant="danger" size="sm" disabled={pending}>
-          {pending ? "Envoi en cours..." : "Confirmer le renvoi"}
+          <div className="flex flex-wrap gap-2">
+            <Button type="submit" variant="primary" size="sm" disabled={pendingValider}>
+              {pendingValider ? "Validation en cours..." : "Confirmer la validation"}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setOuvertValider(false)}
+            >
+              Annuler
+            </Button>
+          </div>
+        </form>
+      ) : (
+        <Button type="button" variant="primary" size="sm" onClick={() => setOuvertValider(true)}>
+          Valider
         </Button>
-        <Button type="button" variant="secondary" size="sm" onClick={() => setOuvert(false)}>
-          Annuler
+      )}
+
+      {ouvertRenvoyer ? (
+        <form
+          action={formActionRenvoyer}
+          aria-busy={pendingRenvoyer}
+          className="flex flex-col gap-3 rounded-champ border border-critique bg-critique-clair p-3"
+        >
+          <input type="hidden" name="examenId" value={examenId} />
+
+          {stateRenvoyer.error ? (
+            <Alert level="critical" title="Renvoi impossible">
+              {stateRenvoyer.error}
+            </Alert>
+          ) : null}
+
+          <ChampCommentaire />
+
+          <div className="flex flex-wrap gap-2">
+            <Button type="submit" variant="danger" size="sm" disabled={pendingRenvoyer}>
+              {pendingRenvoyer ? "Envoi en cours..." : "Confirmer le renvoi"}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setOuvertRenvoyer(false)}
+            >
+              Annuler
+            </Button>
+          </div>
+        </form>
+      ) : (
+        <Button type="button" variant="danger" size="sm" onClick={() => setOuvertRenvoyer(true)}>
+          Renvoyer pour correction
         </Button>
-      </div>
-    </form>
+      )}
+    </div>
   );
 }
 
@@ -174,10 +179,5 @@ export function SectionValidation({
     );
   }
 
-  return (
-    <div className="flex flex-wrap gap-2">
-      <BoutonValider examenId={examen.id} />
-      <BoutonRenvoyer examenId={examen.id} />
-    </div>
-  );
+  return <ControlesValidation examenId={examen.id} />;
 }
