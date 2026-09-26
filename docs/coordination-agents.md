@@ -3493,3 +3493,12 @@ Suspense (le build echoue sinon) ; `creerNotification` vit dans
 - A savoir : la confidentialite "sensible" d'un document reste un simple badge (jamais appliquee au telechargement ni a la liste), ce qui est deja note dans `docs/reste-a-faire.md`.
 - Suite : referentiel des jours feries (F-ADM-04, RG-ETA-42).
 - 2026-09-26.
+
+### Point projet-gouv-3e, lot 5 (laboratoire: reference par age, antecedents, relances), 2026-09-27
+
+- F-LAB-03 : valeurs de reference par age (`f9fadaa`). Limite basse de l'hemoglobine ajustee pour l'enfant d'apres les seuils OMS 2011 ; pour tout autre parametre chez un patient de moins de 15 ans, plage adulte marquee "reference adulte" (aucune valeur pediatrique inventee).
+- F-LAB-04 : antecedents du patient pour le meme examen sur l'ecran du laboratoire (`89a351d`), 3 derniers resultats valides plus anciens, calcul pur sans requete supplementaire.
+- RG-LAB-21 et F-LAB-05 : tache planifiee toutes les 15 minutes (`646572f`), escalade d'un resultat critique non lu sous 2 h vers les responsables d'etablissement, rappel au prescripteur d'un resultat sensible non annonce sous 30 jours. Migration `20260927010000` (`Notification.escaladeLe`, `ExamenMedical.relanceAnnonceLe`). Codes N-LAB-CANCELLED, N-LAB-CRITICAL-ESCALATION et N-LAB-ANNOUNCE-OVERDUE ajoutes au catalogue.
+- Tirets cadratins : purge terminee dans tout l'arbre hors documents sources (`262e401`, `bc20f10`, `57449eb`), garde `src/security/tirets-interdits.test.ts` (src, prisma, scripts, README, CONTRIBUTING).
+- Piege de l'index partage : apres un commit par index prive, un `git reset` du chemin dans l'index partage peut retirer le hunk indexe d'une autre session sur ce meme fichier (arrive une fois sur `prisma/schema.prisma`, session prevenue). Preferer ne remettre a niveau que les entrees dont le contenu est encore celui de l'ancien HEAD.
+- 2026-09-27.
