@@ -85,8 +85,6 @@ const LECTURES_PUBLIQUES: Record<string, string> = {
   "src/modules/administration/parametres.ts:estFonctionnaliteActive": "lecture d'un interrupteur (booleen), aucune donnee",
   "src/modules/facility/actions.ts:listEtablissements": "catalogue public : meme contenu que l'annuaire public",
   "src/modules/laboratoire/actions.ts:listLaboratoires": "catalogue public : etablissements de type laboratoire (nom et localisation)",
-  "src/modules/facility/disponibilites.ts:listerCreneauxProfessionnel": "DETTE (3d) : creneaux d'un professionnel lisibles sans session",
-  "src/modules/facility/disponibilites.ts:dateDansUnCreneauDisponible": "DETTE (3d) : verification interne, a sortir de \"use server\"",
 };
 
 /** Fonctions internes qui contiennent le controle de session ou de role (la fonction exportee les appelle ou leur delegue). */

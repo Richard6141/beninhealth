@@ -20,7 +20,8 @@ vi.mock("@/lib/prisma", () => ({
 
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
-import { ajouterCreneauAction, dateDansUnCreneauDisponible } from "./disponibilites";
+import { ajouterCreneauAction } from "./disponibilites";
+import { dateDansUnCreneauDisponible } from "./creneau-disponible";
 
 const prismaMock = prisma as unknown as {
   professionnelSante: { findUnique: Mock };

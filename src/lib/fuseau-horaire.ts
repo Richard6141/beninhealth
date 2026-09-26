@@ -10,7 +10,7 @@
  * manipule une heure de rendez-vous ou de rappel (voir
  * docs/coordination-agents.md, F-ETA-05, pour l'incident d'origine).
  *
- * `src/modules/facility/disponibilites.ts` (dateDansUnCreneauDisponible)
+ * `src/modules/facility/creneau-disponible.ts` (dateDansUnCreneauDisponible)
  * appliquait deja ce principe independamment, avec le meme calcul manuel :
  * ce fichier n'y touche pas (deja correct, pas son perimetre), mais tout
  * nouveau code devrait utiliser ces fonctions plutot que redupliquer le
@@ -53,7 +53,7 @@ export function dateDepuisChaineLocaleBenin(valeur: string): Date {
 /**
  * Jour de la semaine (0 = dimanche) et minutes depuis minuit, en heure LOCALE
  * Africa/Porto-Novo, pour un instant UTC donne (meme calcul que
- * dateDansUnCreneauDisponible dans disponibilites.ts).
+ * dateDansUnCreneauDisponible dans creneau-disponible.ts).
  */
 export function jourEtMinutesLocalesBenin(dateUtc: Date): { jourSemaine: number; minutes: number } {
   const dateLocale = new Date(dateUtc.getTime() + DECALAGE_BENIN_MS);

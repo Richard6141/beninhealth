@@ -30,6 +30,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/modules/audit/journaliser";
 import { creerNotification } from "@/modules/notification/creer";
+import { TRANSITIONS, transitionnerRendezVous } from "@/modules/facility/rendez-vous-etats";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
 
@@ -357,18 +358,15 @@ export async function changerStatutEtablissementAction(
           where: {
             etablissementId,
             date: { gt: maintenant },
-            statut: { notIn: ["annule", "termine"] },
+            statut: { in: [...TRANSITIONS.annuler.depuis] },
           },
           include: { patient: { select: { userId: true } } },
         });
 
         for (const rendezVous of rendezVousFuturs) {
-          await tx.rendezVous.update({
-            where: { id: rendezVous.id },
-            data: { statut: "annule" },
-          });
-
-          patientsANotifier.push({ userId: rendezVous.patient.userId, dateRendezVous: rendezVous.date });
+          if (await transitionnerRendezVous(tx, rendezVous.id, "annuler")) {
+            patientsANotifier.push({ userId: rendezVous.patient.userId, dateRendezVous: rendezVous.date });
+          }
         }
       }
 

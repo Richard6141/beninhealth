@@ -45,6 +45,7 @@ import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
+import { TRANSITIONS, transitionnerRendezVous } from "./rendez-vous-etats";
 
 function nomComplet(utilisateur: { nom: string; prenom: string }): string {
   return `${utilisateur.prenom} ${utilisateur.nom}`;
@@ -194,26 +195,30 @@ export async function enregistrerArriveeAction(
       return { error: "Ce rendez-vous est introuvable.", success: false };
     }
 
-    if (rendezVous.statut === "termine" || rendezVous.statut === "annule") {
-      return { error: "Ce rendez-vous est deja cloture.", success: false };
-    }
-
     const adresseTechnique = await adresseTechniqueCourante();
     const maintenant = new Date();
 
-    await prisma.$transaction([
-      prisma.rendezVous.update({
-        where: { id: rendezVousId },
-        data: { heureArrivee: maintenant, statut: "confirme" },
-      }),
-      journaliser({
-        utilisateurId: session.userId,
-        action: "arrivee_rendez_vous",
-        donneeConcernee: `rendez_vous:${rendezVousId}`,
-        adresseTechnique,
-        justification: "Arrivee enregistree a l'accueil de l'etablissement",
-      }),
-    ]);
+    const enregistree = await prisma.$transaction(async (tx) => {
+      const transition = await transitionnerRendezVous(tx, rendezVousId, "enregistrer_arrivee", {
+        donnees: { heureArrivee: maintenant },
+      });
+      if (!transition) return false;
+      await journaliser(
+        {
+          utilisateurId: session.userId,
+          action: "arrivee_rendez_vous",
+          donneeConcernee: `rendez_vous:${rendezVousId}`,
+          adresseTechnique,
+          justification: "Arrivee enregistree a l'accueil de l'etablissement",
+        },
+        tx
+      );
+      return true;
+    });
+
+    if (!enregistree) {
+      return { error: TRANSITIONS.enregistrer_arrivee.refus, success: false };
+    }
 
     return { error: null, success: true };
   } catch (erreur) {

@@ -22,6 +22,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/modules/audit/journaliser";
 import { publierEvenementPilotage } from "@/modules/pilotage/file-taches";
+import { transitionnerRendezVous } from "@/modules/facility/rendez-vous-etats";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
 import {
@@ -1389,10 +1390,9 @@ export async function enregistrerConsultationAction(
       });
 
       if (cible.rendezVousId) {
-        await tx.rendezVous.update({
-          where: { id: cible.rendezVousId },
-          data: { statut: "termine" },
-        });
+        // Un rendez-vous deja annule ou termine reste tel quel : la signature
+        // d'un acte clinique n'est jamais bloquee par l'etat administratif.
+        await transitionnerRendezVous(tx, cible.rendezVousId, "terminer");
       }
 
       await journaliser(

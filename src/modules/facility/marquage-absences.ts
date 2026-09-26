@@ -6,6 +6,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import { transitionnerRendezVousEnMasse } from "./rendez-vous-etats";
 
 const DELAI_ABSENCE_MS = 60 * 60 * 1000; // 1h (RG-RDV-33/40)
 const INTERVALLE_VERIFICATION_MS = 60 * 60 * 1000; // horaire (RG-RDV-40)
@@ -19,16 +20,12 @@ const INTERVALLE_VERIFICATION_MS = 60 * 60 * 1000; // horaire (RG-RDV-40)
 export async function marquerAbsencesDues(maintenant: Date = new Date()): Promise<number> {
   const borneBasse = new Date(maintenant.getTime() - 3 * 24 * 60 * 60 * 1000);
 
-  const resultat = await prisma.rendezVous.updateMany({
-    where: {
-      statut: "confirme",
+  return transitionnerRendezVousEnMasse(prisma, "marquer_absent", {
+    conditions: {
       heureArrivee: null,
       date: { gte: borneBasse, lt: new Date(maintenant.getTime() - DELAI_ABSENCE_MS) },
     },
-    data: { statut: "absent" },
   });
-
-  return resultat.count;
 }
 
 declare global {

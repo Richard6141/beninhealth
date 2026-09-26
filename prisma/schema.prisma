@@ -217,6 +217,18 @@ model ProfessionnelSante {
   // titulaire (voir docs/recherche-transfert/identite-professionnels.md).
   profession          String?
   numeroOrdre         String?
+  // F-ADM-03 : verification humaine du numero aupres de l'Ordre par le
+  // validateur du ministere (procedure manuelle hors plateforme). Null = jamais
+  // verifie ; une verification de plus d'un an est a renouveler (revalidation
+  // periodique). ordreVerifiePar = userId du validateur.
+  ordreVerifieLe      DateTime?
+  ordreVerifiePar     String?
+  // Derniere decision du validateur : approuve | refuse | complement. Le
+  // message est le motif du refus ou le complement demande. L'historique
+  // complet est dans JournalAudit.
+  validationDecision  String?
+  validationMessage   String?
+  validationDecideLe  DateTime?
   affiliations        AffiliationProfessionnelle[]
   @@unique([profession, numeroOrdre])
 
@@ -352,6 +364,14 @@ model RendezVous {
   heureArrivee              DateTime?
 
   consultation Consultation?
+  // RG-RDV-03 : index UNIQUE PARTIEL "RendezVous_professionnelId_date_actif_key"
+  // sur (professionnelId, date) WHERE professionnelId IS NOT NULL AND statut <> 'annule'
+  // (migration 20260926213000_unicite_rendez_vous_actif). Prisma ne sait pas
+  // l'exprimer : il n'apparait pas ici. Verifie apres application : `prisma
+  // migrate diff` reste vide et ne propose pas de le supprimer (le commentaire
+  // contraire de migration.sql est inexact, ce fichier n'est pas modifie car
+  // sa somme de controle est deja enregistree en base).
+  // Le statut ne s'ecrit que par src/modules/facility/rendez-vous-etats.ts.
   @@schema("public")
 }
 

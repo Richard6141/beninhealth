@@ -52,6 +52,9 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
+import { dateDepuisChaineLocaleBenin } from "@/lib/fuseau-horaire";
+import { dateDansUnCreneauDisponible } from "@/modules/facility/creneau-disponible";
+import { estConflitDeCreneau, MESSAGE_CRENEAU_PRIS } from "@/modules/facility/rendez-vous-etats";
 import { CODES_IDENTIFIANT_PAR_ROLE, prefixeIdentifiant, prochainIdentifiant } from "@/modules/identity/identifiants";
 
 const ROUNDS_BCRYPT = 12;
@@ -95,7 +98,16 @@ const schemaRendezVousProche = z.object({
   procheId: z.string().trim().min(1, "La personne a charge est obligatoire."),
   etablissementId: z.string().trim().min(1, "L'etablissement est obligatoire."),
   professionnelId: z.string().trim().optional().default(""),
-  date: z.string().trim().min(1, "La date est obligatoire."),
+  date: z
+    .string()
+    .trim()
+    .min(1, "La date est obligatoire.")
+    // Heure LOCALE Africa/Porto-Novo (RG-ETA-43), comme pour le rendez-vous du titulaire.
+    .refine((valeur) => !Number.isNaN(dateDepuisChaineLocaleBenin(valeur).getTime()), "Date invalide.")
+    .refine(
+      (valeur) => dateDepuisChaineLocaleBenin(valeur).getTime() > Date.now(),
+      "La date du rendez-vous doit etre dans le futur."
+    ),
   motif: z.string().trim().min(1, "Le motif est obligatoire.").max(300, "300 caracteres maximum."),
 });
 
@@ -413,6 +425,7 @@ export async function creerRendezVousPourProcheAction(
   }
 
   const { procheId, etablissementId, professionnelId, date, motif } = validation.data;
+  const dateRendezVous = dateDepuisChaineLocaleBenin(date);
 
   try {
     const proche = await procheAutorise(procheId, session.userId);
@@ -444,31 +457,53 @@ export async function creerRendezVousPourProcheAction(
           success: false,
         };
       }
+
+      if (!(await dateDansUnCreneauDisponible(professionnelId, dateRendezVous))) {
+        return {
+          error: "Ce professionnel n'est pas disponible à cette heure. Merci de choisir un autre créneau.",
+          success: false,
+        };
+      }
+
+      const dejaPris = await prisma.rendezVous.findFirst({
+        where: { professionnelId, date: dateRendezVous, statut: { not: "annule" } },
+      });
+      if (dejaPris) {
+        return { error: MESSAGE_CRENEAU_PRIS, success: false };
+      }
     }
 
     const adresseTechnique = await adresseTechniqueCourante();
 
-    const rendezVous = await prisma.rendezVous.create({
-      data: {
-        patientId: procheId,
-        etablissementId,
-        professionnelId: professionnelId.length > 0 ? professionnelId : null,
-        date: new Date(date),
-        motif,
-        statut: "demande",
-      },
-    });
+    await prisma.$transaction(async (tx) => {
+      const rendezVous = await tx.rendezVous.create({
+        data: {
+          patientId: procheId,
+          etablissementId,
+          professionnelId: professionnelId.length > 0 ? professionnelId : null,
+          date: dateRendezVous,
+          motif,
+          statut: "demande",
+        },
+      });
 
-    await journaliser({
-      utilisateurId: session.userId,
-      action: "creation_rendez_vous_proche",
-      donneeConcernee: `rendez_vous:${rendezVous.id}`,
-      adresseTechnique,
-      justification: `Demande de rendez-vous creee au nom de la personne a charge ${procheId}, aupres de l'etablissement ${etablissementId}`,
+      await journaliser(
+        {
+          utilisateurId: session.userId,
+          action: "creation_rendez_vous_proche",
+          donneeConcernee: `rendez_vous:${rendezVous.id}`,
+          adresseTechnique,
+          justification: `Demande de rendez-vous creee au nom de la personne a charge ${procheId}, aupres de l'etablissement ${etablissementId}`,
+        },
+        tx
+      );
     });
 
     return { error: null, success: true };
   } catch (erreur) {
+    if (estConflitDeCreneau(erreur)) {
+      return { error: MESSAGE_CRENEAU_PRIS, success: false };
+    }
     console.error("Erreur lors de la creation du rendez-vous pour une personne a charge :", erreur);
     return {
       error: "Une erreur est survenue lors de la creation du rendez-vous. Veuillez reessayer.",

@@ -20,7 +20,8 @@ import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
 import { dateDepuisChaineLocaleBenin } from "@/lib/fuseau-horaire";
-import { dateDansUnCreneauDisponible } from "./disponibilites";
+import { dateDansUnCreneauDisponible } from "./creneau-disponible";
+import { estConflitDeCreneau, MESSAGE_CRENEAU_PRIS, TRANSITIONS, transitionnerRendezVous } from "./rendez-vous-etats";
 
 /** Etat renvoye par chaque Server Action de ce module, consomme via useActionState. */
 export interface FacilityActionState {
@@ -298,36 +299,45 @@ export async function creerRendezVousAction(
         },
       });
       if (dejaPris) {
-        return {
-          error: "Ce créneau vient d'être réservé par un autre patient. Merci de choisir un autre horaire.",
-          success: false,
-        };
+        return { error: MESSAGE_CRENEAU_PRIS, success: false };
       }
     }
 
     const adresseTechnique = await adresseTechniqueCourante();
 
-    const rendezVous = await prisma.rendezVous.create({
-      data: {
-        patientId: patient.id,
-        etablissementId,
-        professionnelId: professionnelIdNettoye.length > 0 ? professionnelIdNettoye : null,
-        date: dateRendezVous,
-        motif,
-        statut: "demande",
-      },
-    });
+    // Creation et journal dans la meme transaction : pas de rendez-vous sans trace d'audit.
+    await prisma.$transaction(async (tx) => {
+      const rendezVous = await tx.rendezVous.create({
+        data: {
+          patientId: patient.id,
+          etablissementId,
+          professionnelId: professionnelIdNettoye.length > 0 ? professionnelIdNettoye : null,
+          date: dateRendezVous,
+          motif,
+          statut: "demande",
+        },
+      });
 
-    await journaliser({
-      utilisateurId: session.userId,
-      action: "creation",
-      donneeConcernee: `rendez_vous:${rendezVous.id}`,
-      adresseTechnique,
-      justification: `Demande de rendez-vous creee aupres de l'etablissement ${etablissementId}`,
+      await journaliser(
+        {
+          utilisateurId: session.userId,
+          action: "creation",
+          donneeConcernee: `rendez_vous:${rendezVous.id}`,
+          adresseTechnique,
+          justification: `Demande de rendez-vous creee aupres de l'etablissement ${etablissementId}`,
+        },
+        tx
+      );
     });
 
     return { error: null, success: true };
   } catch (erreur) {
+    // RG-RDV-03 : le controle ci-dessus est une courtoisie ; c'est l'index
+    // unique partiel de la base qui garantit l'absence de double reservation
+    // quand deux demandes arrivent en meme temps.
+    if (estConflitDeCreneau(erreur)) {
+      return { error: MESSAGE_CRENEAU_PRIS, success: false };
+    }
     console.error("Erreur lors de la creation du rendez-vous :", erreur);
     return {
       error: "Une erreur est survenue lors de la creation du rendez-vous. Veuillez reessayer.",
@@ -379,16 +389,24 @@ export async function annulerRendezVousAction(
 
     const adresseTechnique = await adresseTechniqueCourante();
 
-    await prisma.$transaction([
-      prisma.rendezVous.update({ where: { id: rendezVous.id }, data: { statut: "annule" } }),
-      journaliser({
-        utilisateurId: session.userId,
-        action: "modification",
-        donneeConcernee: `rendez_vous:${rendezVous.id}`,
-        adresseTechnique,
-        justification: "Rendez-vous annule par le patient",
-      }),
-    ]);
+    const annule = await prisma.$transaction(async (tx) => {
+      if (!(await transitionnerRendezVous(tx, rendezVous.id, "annuler"))) return false;
+      await journaliser(
+        {
+          utilisateurId: session.userId,
+          action: "modification",
+          donneeConcernee: `rendez_vous:${rendezVous.id}`,
+          adresseTechnique,
+          justification: "Rendez-vous annule par le patient",
+        },
+        tx
+      );
+      return true;
+    });
+
+    if (!annule) {
+      return { error: TRANSITIONS.annuler.refus, success: false };
+    }
 
     return { error: null, success: true };
   } catch (erreur) {
@@ -530,16 +548,24 @@ export async function confirmerRendezVousAction(
 
     const adresseTechnique = await adresseTechniqueCourante();
 
-    await prisma.$transaction([
-      prisma.rendezVous.update({ where: { id: rendezVous.id }, data: { statut: "confirme" } }),
-      journaliser({
-        utilisateurId: session.userId,
-        action: "modification",
-        donneeConcernee: `rendez_vous:${rendezVous.id}`,
-        adresseTechnique,
-        justification: "Rendez-vous confirme par le professionnel de sante",
-      }),
-    ]);
+    const confirme = await prisma.$transaction(async (tx) => {
+      if (!(await transitionnerRendezVous(tx, rendezVous.id, "confirmer"))) return false;
+      await journaliser(
+        {
+          utilisateurId: session.userId,
+          action: "modification",
+          donneeConcernee: `rendez_vous:${rendezVous.id}`,
+          adresseTechnique,
+          justification: "Rendez-vous confirme par le professionnel de sante",
+        },
+        tx
+      );
+      return true;
+    });
+
+    if (!confirme) {
+      return { error: TRANSITIONS.confirmer.refus, success: false };
+    }
 
     // Notification interne (Phase 10) : hors de la transaction ci-dessus,
     // une notification manquee ne doit jamais faire echouer la confirmation
@@ -613,16 +639,24 @@ export async function annulerRendezVousProfessionnelAction(
 
     const adresseTechnique = await adresseTechniqueCourante();
 
-    await prisma.$transaction([
-      prisma.rendezVous.update({ where: { id: rendezVous.id }, data: { statut: "annule" } }),
-      journaliser({
-        utilisateurId: session.userId,
-        action: "modification",
-        donneeConcernee: `rendez_vous:${rendezVous.id}`,
-        adresseTechnique,
-        justification: "Rendez-vous annule par le professionnel de sante",
-      }),
-    ]);
+    const annule = await prisma.$transaction(async (tx) => {
+      if (!(await transitionnerRendezVous(tx, rendezVous.id, "annuler"))) return false;
+      await journaliser(
+        {
+          utilisateurId: session.userId,
+          action: "modification",
+          donneeConcernee: `rendez_vous:${rendezVous.id}`,
+          adresseTechnique,
+          justification: "Rendez-vous annule par le professionnel de sante",
+        },
+        tx
+      );
+      return true;
+    });
+
+    if (!annule) {
+      return { error: TRANSITIONS.annuler.refus, success: false };
+    }
 
     return { error: null, success: true };
   } catch (erreur) {

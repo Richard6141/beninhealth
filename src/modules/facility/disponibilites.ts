@@ -111,6 +111,9 @@ export async function professionnelIdDepuisUserId(userId: string): Promise<strin
 }
 
 export async function listerCreneauxProfessionnel(professionnelId: string): Promise<CreneauDisponibiliteResume[] | null> {
+  const session = await getSession();
+  if (!session || !session.roles.includes("admin_etablissement")) return null;
+
   const professionnel = await professionnelGereParAdminCourant(professionnelId);
   if (!professionnel) return null;
 
@@ -227,36 +230,4 @@ export async function supprimerCreneauAction(
   });
 
   return { error: null, success: true };
-}
-
-/**
- * Utilise par creerRendezVousAction (src/modules/facility/actions.ts) :
- * verifie qu'un instant UTC donne tombe dans un creneau defini pour ce
- * professionnel, en heure LOCALE Africa/Porto-Novo (RG-ETA-43, UTC+1 fixe,
- * sans heure d'ete : un simple decalage d'une heure suffit).
- *
- * Limite assumee (perimetre reduit F-ETA-05) : si ce professionnel n'a
- * ENCORE aucun creneau configure, renvoie true (comportement inchange par
- * rapport a avant cette fiche), pour ne pas bloquer retroactivement la prise
- * de rendez-vous aupres de tous les professionnels deja existants qui n'ont
- * jamais defini d'agenda. Des qu'un professionnel definit au moins un
- * creneau, seules les heures qu'il a explicitement ouvertes deviennent
- * reservables pour lui.
- */
-export async function dateDansUnCreneauDisponible(professionnelId: string, dateUtc: Date): Promise<boolean> {
-  const creneaux = await prisma.creneauDisponibilite.findMany({ where: { professionnelId } });
-  if (creneaux.length === 0) {
-    return true;
-  }
-
-  const dateLocale = new Date(dateUtc.getTime() + 60 * 60 * 1000);
-  const jourSemaineLocal = dateLocale.getUTCDay();
-  const minutesLocal = dateLocale.getUTCHours() * 60 + dateLocale.getUTCMinutes();
-
-  return creneaux.some(
-    (creneau) =>
-      creneau.jourSemaine === jourSemaineLocal &&
-      minutesLocal >= creneau.heureDebutMinutes &&
-      minutesLocal < creneau.heureFinMinutes
-  );
 }

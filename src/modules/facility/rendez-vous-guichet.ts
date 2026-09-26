@@ -50,7 +50,8 @@ import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
 import { dateDepuisChaineLocaleBenin } from "@/lib/fuseau-horaire";
-import { dateDansUnCreneauDisponible } from "./disponibilites";
+import { dateDansUnCreneauDisponible } from "./creneau-disponible";
+import { estConflitDeCreneau } from "./rendez-vous-etats";
 
 async function adresseTechniqueCourante(): Promise<string> {
   try {
@@ -306,27 +307,36 @@ export async function creerRendezVousGuichetAction(
 
     const adresseTechnique = await adresseTechniqueCourante();
 
-    const rendezVous = await prisma.rendezVous.create({
-      data: {
-        patientId,
-        etablissementId: admin.etablissementId,
-        professionnelId: professionnelIdNettoye.length > 0 ? professionnelIdNettoye : null,
-        date: dateRendezVous,
-        motif,
-        statut: "confirme",
-      },
-    });
+    await prisma.$transaction(async (tx) => {
+      const rendezVous = await tx.rendezVous.create({
+        data: {
+          patientId,
+          etablissementId: admin.etablissementId,
+          professionnelId: professionnelIdNettoye.length > 0 ? professionnelIdNettoye : null,
+          date: dateRendezVous,
+          motif,
+          statut: "confirme",
+        },
+      });
 
-    await journaliser({
-      utilisateurId: admin.userId,
-      action: "creation_rendez_vous_guichet",
-      donneeConcernee: `rendez_vous:${rendezVous.id}`,
-      adresseTechnique,
-      justification: "Rendez-vous pris au guichet par l'accueil de l'etablissement, confirme directement",
+      await journaliser(
+        {
+          utilisateurId: admin.userId,
+          action: "creation_rendez_vous_guichet",
+          donneeConcernee: `rendez_vous:${rendezVous.id}`,
+          adresseTechnique,
+          justification: "Rendez-vous pris au guichet par l'accueil de l'etablissement, confirme directement",
+        },
+        tx
+      );
     });
 
     return { error: null, success: true };
   } catch (erreur) {
+    // RG-RDV-03 : index unique partiel de la base (deux demandes simultanees).
+    if (estConflitDeCreneau(erreur)) {
+      return { error: "Ce créneau est déjà pris. Merci de choisir un autre horaire.", success: false };
+    }
     console.error("Erreur lors de la creation du rendez-vous au guichet :", erreur);
     return { error: "Une erreur est survenue. Veuillez reessayer.", success: false };
   }
