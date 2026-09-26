@@ -1069,3 +1069,29 @@ model VaccinReferentiel {
 
   @@schema("public")
 }
+
+// F-ADM-04 du pack ("Gerer les referentiels"), 3e referentiel administrable
+// concret parmi les sept listes (apres vaccins, medicaments), meme principe :
+// remplace le tableau statique historique REFERENTIEL_EXAMENS
+// (src/modules/laboratoire/referentiel-examens.ts). Nom distinct de
+// l'interface TypeScript ExamenReferentiel deja existante dans ce meme
+// fichier (structuration de la SAISIE, aucun lien avec ce modele Prisma) :
+// "Admin" evite toute collision de nom en TypeScript pour qui importerait
+// les deux dans le meme fichier.
+// RG-ADM-20 (desactivation seule, jamais suppression) : ExamenMedical.typeExamen
+// reste un simple texte libre (aucune cle etrangere vers ce referentiel),
+// pour ne jamais bloquer un examen deja enregistre ni un futur "Autre" en
+// texte libre. RG-ADM-21 (versionnement) hors perimetre, meme limite assumee
+// que les 2 referentiels precedents.
+model ExamenReferentielAdmin {
+  id               String   @id @default(cuid())
+  code             String   @unique
+  libelle          String
+  famille          String
+  ordre            Int      @default(0)
+  actif            Boolean  @default(true)
+  dateCreation     DateTime @default(now())
+  dateModification DateTime @default(now())
+
+  @@schema("public")
+}

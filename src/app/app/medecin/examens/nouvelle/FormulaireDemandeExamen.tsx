@@ -7,6 +7,7 @@ import {
   type LaboratoireActionState,
   type LaboratoireOption,
 } from "@/modules/laboratoire/actions";
+import type { GroupeExamensActifs } from "@/modules/administration/referentiel-examens";
 import { ModalNouveauPatient, type PatientCree } from "@/app/app/medecin/patients/ModalNouveauPatient";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
@@ -15,6 +16,8 @@ import { SelectField } from "@/components/ui/SelectField";
 import { TextField } from "@/components/ui/TextField";
 
 const etatInitial: LaboratoireActionState = { error: null, success: false };
+
+const CODE_AUTRE_EXAMEN = "AUTRE";
 
 export interface PatientPourSelection {
   patientId: string;
@@ -29,6 +32,12 @@ export interface FormulaireDemandeExamenProps {
   consultationId: string;
   /** PatientId a pre-selectionner quand la demande part d'une consultation precise. */
   patientIdPreselectionne: string;
+  /**
+   * Referentiel des examens (F-ADM-04), recupere cote serveur (page.tsx) :
+   * ne peut plus etre importe directement en module pur cote client depuis
+   * que ce referentiel vit en base plutot que dans un tableau statique.
+   */
+  optionsExamensReferentiel: GroupeExamensActifs[];
 }
 
 /**
@@ -45,10 +54,33 @@ export function FormulaireDemandeExamen({
   patients: patientsInitiaux,
   consultationId,
   patientIdPreselectionne,
+  optionsExamensReferentiel,
 }: FormulaireDemandeExamenProps) {
   const [state, formAction, pending] = useActionState(demanderExamenAction, etatInitial);
   const [patients, setPatients] = useState(patientsInitiaux);
   const [patientId, setPatientId] = useState(patientIdPreselectionne);
+  const [codeTypeExamen, setCodeTypeExamen] = useState("");
+  const [precisionAutreExamen, setPrecisionAutreExamen] = useState("");
+
+  const OPTIONS_TYPE_EXAMEN = [
+    ...optionsExamensReferentiel.flatMap(({ famille, examens }) =>
+      examens.map((examen) => ({ value: examen.code, label: `${famille} · ${examen.libelle}` }))
+    ),
+    { value: CODE_AUTRE_EXAMEN, label: "Autre (préciser)" },
+  ];
+
+  function libelleExamen(code: string): string | undefined {
+    for (const { examens } of optionsExamensReferentiel) {
+      const trouve = examens.find((examen) => examen.code === code);
+      if (trouve) return trouve.libelle;
+    }
+    return undefined;
+  }
+
+  const estAutreExamen = codeTypeExamen === CODE_AUTRE_EXAMEN;
+  const typeExamenFinal = estAutreExamen
+    ? precisionAutreExamen.trim()
+    : (libelleExamen(codeTypeExamen) ?? "");
 
   const optionsLaboratoires = laboratoires.map((laboratoire) => ({
     value: laboratoire.id,
@@ -149,14 +181,31 @@ export function FormulaireDemandeExamen({
           placeholder="Choisir un laboratoire"
         />
 
-        <TextField
+        <input type="hidden" name="typeExamen" value={typeExamenFinal} />
+        <SelectField
           label="Type d'examen"
-          name="typeExamen"
           required
-          placeholder="Ex. Numeration formule sanguine"
+          options={OPTIONS_TYPE_EXAMEN}
+          placeholder="Choisir un type d'examen"
+          value={codeTypeExamen}
+          onChange={(event) => setCodeTypeExamen(event.target.value)}
         />
+        {estAutreExamen ? (
+          <TextField
+            label="Préciser le type d'examen"
+            required
+            placeholder="Ex. Test auditif"
+            value={precisionAutreExamen}
+            onChange={(event) => setPrecisionAutreExamen(event.target.value)}
+          />
+        ) : null}
 
-        <Button type="submit" variant="primary" className="w-fit" disabled={pending || !patientId}>
+        <Button
+          type="submit"
+          variant="primary"
+          className="w-fit"
+          disabled={pending || !patientId || !typeExamenFinal}
+        >
           {pending ? "Envoi en cours..." : "Envoyer la demande"}
         </Button>
       </form>

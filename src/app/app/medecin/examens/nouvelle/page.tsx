@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { getPatientsAvecConsentement } from "@/modules/clinical/actions";
 import { getConsultationPourExamen, listLaboratoires } from "@/modules/laboratoire/actions";
+import { getReferentielExamensActifs } from "@/modules/administration/referentiel-examens";
 import { FormulaireDemandeExamen } from "./FormulaireDemandeExamen";
 
 interface NouvelExamenPageProps {
@@ -38,10 +39,11 @@ export default async function NouvelExamenPage({ searchParams }: NouvelExamenPag
   const consultationId = premiereValeur(params.consultationId).trim();
   const patientIdParam = premiereValeur(params.patientId).trim();
 
-  const [laboratoires, patients, consultation] = await Promise.all([
+  const [laboratoires, patients, consultation, optionsExamensReferentiel] = await Promise.all([
     listLaboratoires(),
     getPatientsAvecConsentement(),
     consultationId ? getConsultationPourExamen(consultationId) : Promise.resolve(null),
+    getReferentielExamensActifs(),
   ]);
 
   return (
@@ -63,6 +65,7 @@ export default async function NouvelExamenPage({ searchParams }: NouvelExamenPag
         patients={patients}
         consultationId={consultationId}
         patientIdPreselectionne={consultation?.patientId ?? patientIdParam}
+        optionsExamensReferentiel={optionsExamensReferentiel}
       />
     </div>
   );

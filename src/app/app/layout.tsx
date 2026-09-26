@@ -230,6 +230,11 @@ const navigationAdminNational: ElementNavigation[] = [
     href: "/app/ministere/tutelles",
     icon: <UserX size={tailleIconeNav} aria-hidden="true" />,
   },
+  {
+    label: "Référentiel des examens",
+    href: "/app/ministere/referentiels/examens",
+    icon: <FlaskConical size={tailleIconeNav} aria-hidden="true" />,
+  },
 ];
 
 function getNavigationPourRole(role: NomRole | undefined): ElementNavigation[] {

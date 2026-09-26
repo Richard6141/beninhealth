@@ -189,6 +189,11 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     // reclamation par SMS, voir src/modules/administration/tutelles.ts).
     'read:tutelle',
     'update:tutelle',
+    // F-ADM-04 (partie 3) : referentiel des examens medicaux administrable
+    // (voir src/modules/administration/referentiel-examens.ts).
+    'read:referentiel_examens',
+    'create:referentiel_examens',
+    'update:referentiel_examens',
   ]),
 };
 
