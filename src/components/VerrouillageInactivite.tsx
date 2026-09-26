@@ -47,22 +47,37 @@ function EcranVerrouille({ onDeverrouille, onDepasseTentatives }: { onDeverrouil
   const [state, formAction, pending] = useActionState(deverrouillerEcranAction, etatInitial);
   const [tentatives, setTentatives] = useState(0);
 
+  // Incremente le compteur d'echecs : ajustement d'etat pendant le rendu
+  // (comparaison avec l'etat precedent), pas un appel setState dans un
+  // effet, meme pattern que Sidebar.tsx. Remplace une version precedente qui
+  // appelait onDepasseTentatives directement depuis l'updater de setTentatives
+  // (effet de bord dans un updater, non fiable en pratique - React ne
+  // garantit pas son execution - ce qui rendait le verrouillage apres 3
+  // tentatives totalement inoperant : bug reel trouve par verification
+  // navigateur, voir docs/coordination-agents.md).
+  const [etatPrecedent, setEtatPrecedent] = useState(state);
+  if (state !== etatPrecedent) {
+    setEtatPrecedent(state);
+    if (state.error) {
+      setTentatives((valeur) => valeur + 1);
+    }
+  }
+
+  // Notifie le parent (deverrouille/deconnecte) : vrais effets de bord
+  // externes au composant (ils modifient l'etat d'un composant PARENT),
+  // donc a leur place dans un effet, contrairement a l'incrementation locale
+  // ci-dessus.
   useEffect(() => {
     if (state.success) {
       onDeverrouille();
-      return;
     }
-    if (state.error) {
-      setTentatives((valeur) => {
-        const nouvelleValeur = valeur + 1;
-        if (nouvelleValeur >= TENTATIVES_MAX) {
-          onDepasseTentatives();
-        }
-        return nouvelleValeur;
-      });
+  }, [state.success, onDeverrouille]);
+
+  useEffect(() => {
+    if (tentatives >= TENTATIVES_MAX) {
+      onDepasseTentatives();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state]);
+  }, [tentatives, onDepasseTentatives]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-marine-fonce/95 backdrop-blur-sm">
