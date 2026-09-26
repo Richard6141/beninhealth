@@ -566,3 +566,48 @@ une nouvelle session sans contexte.
   d'autres sessions, sans lien direct avec Cloudinary mais fait dans la meme
   session avant ce chantier.
 - 2026-09-26.
+
+### Point projet-gouv-ae, 2026-09-26 (suite, tâche assignée par projet-gouv-05)
+
+- Tâche proposée par **projet-gouv-05** par message direct pendant que
+  j'étais libre (voir échange plus haut de leur côté) : le point "Reste à
+  faire" #2 de `docs/audit-cote-medecin.md` (suppression des métadonnées
+  EXIF/GPS des documents médicaux, RG-CLI-110), bloqué jusqu'ici faute de
+  librairie de traitement d'image dans ce dépôt. Hypothèse de départ du
+  message (paramètre d'upload Cloudinary type `exif`/`metadata: false`) :
+  invalidée après vérification de la doc officielle (WebFetch) — ces
+  paramètres sont en lecture seule (retournent les métadonnées, ne les
+  suppriment pas). Le vrai mécanisme, confirmé par la doc puis vérifié
+  manuellement contre le compte réel : `flags: "force_strip"` passé comme
+  transformation "entrante" au moment du televersement (pas une
+  transformation de livraison à la demande), qui strip bien la ressource
+  stockée elle-même.
+- Fait et vérifié de bout en bout (tsc propre, vitest 63/63) :
+  - Vérification manuelle avant tout code : construction d'une vraie image
+    JPEG de test contenant un authentique segment EXIF (APP1), upload direct
+    vers le compte Cloudinary réel. Sans `force_strip` : le segment EXIF
+    survit intégralement (233 octets, inchangés). Avec `flags: "force_strip"`
+    passé à l'upload : le segment disparaît (160 octets), confirmé en
+    retéléchargeant derrière une URL signée neuve sans aucune transformation
+    demandée à la volée (donc pas un artefact de livraison, un vrai
+    changement de la ressource stockée).
+  - Vérifié aussi que ce flag ne casse ni ne rasterise un PDF (upload/
+    téléchargement d'un PDF de test : octets et format `pdf` identiques
+    avant/après) : important puisque `televerserFichierPriveCloudinary`
+    (`src/lib/cloudinary.ts`) sert à la fois les PDF et les JPEG/PNG des
+    documents médicaux.
+  - `src/lib/cloudinary.ts` (`televerserFichierPriveCloudinary`) :
+    `flags: "force_strip"` ajouté à l'upload, commit `41fb239`. Non touché :
+    `televerserImageCloudinary` (avatars), périmètre volontairement laissé de
+    côté comme proposé par projet-gouv-05 (métadonnées moins critiques ici) ;
+    même flag trivialement applicable si souhaité un jour, même mécanisme,
+    aucune raison technique de ne pas le faire à la demande.
+  - Revérifié via le vrai code applicatif (pas seulement l'appel Cloudinary
+    brut) : `televerserFichierPriveCloudinary` + `genererUrlSigneeCloudinary`
+    exécutés directement via `tsx`, même résultat (EXIF absent, PDF intact).
+  - `docs/audit-cote-medecin.md` : ligne F-CLI-13 et section "Reste à faire"
+    mises à jour (l'écart RG-CLI-110 est retiré de la liste), au passage
+    aussi corrigé une mention obsolète de RG-CLI-112 (« stockage hors de
+    public/ » restée dans le texte malgré la migration Cloudinary déjà
+    committée).
+- 2026-09-26.
