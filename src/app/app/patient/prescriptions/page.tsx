@@ -6,6 +6,7 @@ import {
 } from "@/modules/prescription/actions";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
+import { BoutonTelechargerOrdonnance } from "./BoutonTelechargerOrdonnance";
 import { statutPrescriptionAffichage } from "./lib";
 
 function formaterDate(date: string): string {
@@ -98,7 +99,12 @@ export default async function PrescriptionsPage() {
                     ? `Prescrit par ${prescription.medecinNomComplet}`
                     : "Médecin prescripteur non précisé"
                 }
-                actions={<Badge tone={statut.tone}>{statut.texte}</Badge>}
+                actions={
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge tone={statut.tone}>{statut.texte}</Badge>
+                    <BoutonTelechargerOrdonnance prescriptionId={prescription.id} />
+                  </div>
+                }
               >
                 <div className="flex flex-col gap-4">
                   <div className="flex flex-col gap-1 border-b border-bordure pb-4">
