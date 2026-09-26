@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { getPatientsAvecConsentement } from "@/modules/clinical/actions";
+import { getReferentielVaccinsActifs } from "@/modules/administration/referentiel-vaccinal";
 import { FormulaireVaccination } from "./FormulaireVaccination";
 
 interface NouvelleVaccinationPageProps {
@@ -35,7 +36,10 @@ export default async function NouvelleVaccinationPage({ searchParams }: Nouvelle
   const params = await searchParams;
   const patientIdParam = premiereValeur(params.patientId).trim();
 
-  const patients = await getPatientsAvecConsentement();
+  const [patients, optionsVaccinsReferentiel] = await Promise.all([
+    getPatientsAvecConsentement(),
+    getReferentielVaccinsActifs(),
+  ]);
 
   return (
     <div className="conteneur-page mx-auto flex flex-col gap-8 px-4 py-8 sm:px-6">
@@ -53,7 +57,11 @@ export default async function NouvelleVaccinationPage({ searchParams }: Nouvelle
         </p>
       </header>
 
-      <FormulaireVaccination patients={patients} patientIdPreselectionne={patientIdParam} />
+      <FormulaireVaccination
+        patients={patients}
+        patientIdPreselectionne={patientIdParam}
+        optionsVaccinsReferentiel={optionsVaccinsReferentiel}
+      />
     </div>
   );
 }

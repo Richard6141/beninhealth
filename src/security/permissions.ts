@@ -158,6 +158,12 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     // depot, routee vers admin_national).
     'read:signalement_anomalie',
     'update:signalement_anomalie',
+    // F-ADM-04 : referentiels administrables, perimetre reduit a un seul
+    // referentiel (vaccins, role PLATFORM_ADMIN absent de ce depot,
+    // adaptation documentee dans src/modules/administration/referentiel-vaccinal.ts).
+    'read:referentiel_vaccinal',
+    'create:referentiel_vaccinal',
+    'update:referentiel_vaccinal',
   ]),
 };
 

@@ -213,6 +213,11 @@ const navigationAdminNational: ElementNavigation[] = [
     href: "/app/ministere",
     icon: <Building2 size={tailleIconeNav} aria-hidden="true" />,
   },
+  {
+    label: "Référentiel vaccinal",
+    href: "/app/ministere/referentiels/vaccins",
+    icon: <ClipboardList size={tailleIconeNav} aria-hidden="true" />,
+  },
 ];
 
 function getNavigationPourRole(role: NomRole | undefined): ElementNavigation[] {

@@ -10,9 +10,9 @@ import {
   type VaccinationResume,
 } from "@/modules/vaccination/actions";
 import {
-  OPTIONS_VACCINS,
   OPTIONS_VOIES_ADMINISTRATION,
   VALEUR_VACCIN_AUTRE,
+  type OptionReferentiel,
 } from "@/modules/vaccination/referentiel";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
@@ -33,6 +33,9 @@ export interface FormulaireVaccinationProps {
   patients: PatientPourSelection[];
   /** Chaine vide si aucun patient n'est preselectionne par la query string. */
   patientIdPreselectionne: string;
+  /** Vaccins actifs du referentiel administrable (F-ADM-04), sans l'option
+   * "Autre" : ajoutee ici (voir VALEUR_VACCIN_AUTRE), jamais stockee en base. */
+  optionsVaccinsReferentiel: OptionReferentiel[];
 }
 
 function dateDuJourISO(): string {
@@ -62,7 +65,15 @@ function dateDuJourISO(): string {
  * (state.avertissementAge), avec la meme case de confirmation a cocher avant
  * de pouvoir renvoyer.
  */
-export function FormulaireVaccination({ patients, patientIdPreselectionne }: FormulaireVaccinationProps) {
+export function FormulaireVaccination({
+  patients,
+  patientIdPreselectionne,
+  optionsVaccinsReferentiel,
+}: FormulaireVaccinationProps) {
+  const optionsVaccins: OptionReferentiel[] = [
+    ...optionsVaccinsReferentiel,
+    { value: VALEUR_VACCIN_AUTRE, label: VALEUR_VACCIN_AUTRE },
+  ];
   const [state, formAction, pending] = useActionState(enregistrerVaccinationAction, etatInitial);
   const [patientId, setPatientId] = useState(patientIdPreselectionne);
   const [vaccinSelectionne, setVaccinSelectionne] = useState("");
@@ -192,7 +203,7 @@ export function FormulaireVaccination({ patients, patientIdPreselectionne }: For
         <SelectField
           label="Vaccin"
           required
-          options={OPTIONS_VACCINS}
+          options={optionsVaccins}
           placeholder="Choisir un vaccin"
           value={vaccinSelectionne}
           onChange={(event: ChangeEvent<HTMLSelectElement>) => setVaccinSelectionne(event.target.value)}

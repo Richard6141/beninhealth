@@ -920,3 +920,24 @@ model SignalementAnomalieAcces {
   @@index([statut])
   @@schema("public")
 }
+
+// Correspond a F-ADM-04 du pack ("Gerer les referentiels"), perimetre reduit
+// a un seul referentiel concret (vaccins) parmi les sept listes par le pack
+// (CIM-10, medicaments, examens, vaccins, motifs de rendez-vous, jours
+// feries, modeles de SMS) : voir docs/audit-cote-administration.md pour le
+// detail des limites assumees. RG-ADM-20 : desactivation seule, jamais de
+// suppression d'une entree deja utilisee par une vraie Vaccination (le nom
+// reste la cle metier lue par Vaccination.vaccin, jamais une cle etrangere,
+// pour ne jamais bloquer une vaccination "Autre" en texte libre ni une
+// entree desactivee entre-temps). RG-ADM-21 (versionnement) hors perimetre :
+// aucun historique de version, seulement l'etat courant.
+model VaccinReferentiel {
+  id               String   @id @default(cuid())
+  nom              String   @unique
+  ordre            Int      @default(0)
+  actif            Boolean  @default(true)
+  dateCreation     DateTime @default(now())
+  dateModification DateTime @default(now())
+
+  @@schema("public")
+}
