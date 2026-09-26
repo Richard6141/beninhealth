@@ -176,6 +176,11 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     // src/modules/notification/sms/dev.ts).
     'read:envoi_sms',
     'create:envoi_sms',
+    // F-CIT-09 : fin de tutelle a la majorite, MVP reduit a une fin manuelle
+    // par l'administrateur (pas de tache planifiee, pas de code de
+    // reclamation par SMS, voir src/modules/administration/tutelles.ts).
+    'read:tutelle',
+    'update:tutelle',
   ]),
 };
 

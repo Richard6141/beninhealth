@@ -15,6 +15,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   Users,
+  UserX,
 } from "lucide-react";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
@@ -217,6 +218,11 @@ const navigationAdminNational: ElementNavigation[] = [
     label: "Référentiel vaccinal",
     href: "/app/ministere/referentiels/vaccins",
     icon: <ClipboardList size={tailleIconeNav} aria-hidden="true" />,
+  },
+  {
+    label: "Tutelles",
+    href: "/app/ministere/tutelles",
+    icon: <UserX size={tailleIconeNav} aria-hidden="true" />,
   },
 ];
 

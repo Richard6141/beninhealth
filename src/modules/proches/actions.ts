@@ -18,8 +18,11 @@
  *   l'acces complet (equivalent "dossier_complet") est accorde des la
  *   creation plutot qu'un acces partiel en attendant une verification qui
  *   n'existe pas.
- * - F-CIT-09 (fin de tutelle a 18 ans) : hors perimetre, P2 dans le pack
- *   lui-meme, aucune tache planifiee dans ce depot.
+ * - F-CIT-09 (fin de tutelle a 18 ans) : pas de tache planifiee automatique
+ *   dans ce depot (P2 dans le pack lui-meme), mais une fin manuelle existe
+ *   desormais cote administration (src/modules/administration/tutelles.ts,
+ *   MVP explicitement accepte par le pack), en plus du retrait volontaire
+ *   par le tuteur lui-meme ci-dessous (retirerProcheAction).
  * - Pas de bandeau "Vous agissez pour" ni de bascule globale de tout
  *   l'espace citoyen (F-CIT-08 complet) : un ecran dedie
  *   (/app/patient/proches/[id]) montre le dossier de base et permet de
