@@ -19,6 +19,8 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
+import { dateDepuisChaineLocaleBenin } from "@/lib/fuseau-horaire";
+import { dateDansUnCreneauDisponible } from "./disponibilites";
 
 /** Etat renvoye par chaque Server Action de ce module, consomme via useActionState. */
 export interface FacilityActionState {
@@ -64,9 +66,11 @@ const schemaCreationRendezVous = z.object({
     .string()
     .trim()
     .min(1, "La date est obligatoire.")
-    .refine((valeur) => !Number.isNaN(Date.parse(valeur)), "Date invalide.")
+    // Interpretee comme une heure LOCALE Africa/Porto-Novo (RG-ETA-43), jamais
+    // le fuseau du serveur : voir src/lib/fuseau-horaire.ts.
+    .refine((valeur) => !Number.isNaN(dateDepuisChaineLocaleBenin(valeur).getTime()), "Date invalide.")
     .refine(
-      (valeur) => new Date(valeur).getTime() > Date.now(),
+      (valeur) => dateDepuisChaineLocaleBenin(valeur).getTime() > Date.now(),
       "La date du rendez-vous doit etre dans le futur."
     ),
   motif: z.string().trim().min(1, "Le motif est obligatoire."),
@@ -232,6 +236,11 @@ export async function creerRendezVousAction(
   }
 
   const { etablissementId, professionnelId, date, motif } = validation.data;
+  // Instant UTC reel du rendez-vous, calcule une seule fois ici et reutilise
+  // partout ci-dessous (disponibilite, doublon, creation) : voir
+  // src/lib/fuseau-horaire.ts, la chaine soumise est une heure LOCALE
+  // Africa/Porto-Novo, jamais le fuseau du serveur.
+  const dateRendezVous = dateDepuisChaineLocaleBenin(date);
 
   try {
     const patient = await prisma.patient.findUnique({ where: { userId: session.userId } });
@@ -265,6 +274,35 @@ export async function creerRendezVousAction(
           success: false,
         };
       }
+
+      // F-ETA-05 (RG-ETA-43) : hors des creneaux qu'il a definis, si il en a
+      // defini au moins un (voir la limite assumee documentee dans
+      // src/modules/facility/disponibilites.ts pour un professionnel sans
+      // aucun creneau configure).
+      const disponible = await dateDansUnCreneauDisponible(professionnelIdNettoye, dateRendezVous);
+      if (!disponible) {
+        return {
+          error: "Ce professionnel n'est pas disponible à cette heure. Merci de choisir un autre créneau.",
+          success: false,
+        };
+      }
+
+      // Empeche un double rendez-vous au meme professionnel et au meme
+      // instant (capacite 1, perimetre reduit F-ETA-05 : pas de gestion de
+      // plusieurs patients en parallele sur un meme creneau).
+      const dejaPris = await prisma.rendezVous.findFirst({
+        where: {
+          professionnelId: professionnelIdNettoye,
+          date: dateRendezVous,
+          statut: { not: "annule" },
+        },
+      });
+      if (dejaPris) {
+        return {
+          error: "Ce créneau vient d'être réservé par un autre patient. Merci de choisir un autre horaire.",
+          success: false,
+        };
+      }
     }
 
     const adresseTechnique = await adresseTechniqueCourante();
@@ -274,7 +312,7 @@ export async function creerRendezVousAction(
         patientId: patient.id,
         etablissementId,
         professionnelId: professionnelIdNettoye.length > 0 ? professionnelIdNettoye : null,
-        date: new Date(date),
+        date: dateRendezVous,
         motif,
         statut: "demande",
       },

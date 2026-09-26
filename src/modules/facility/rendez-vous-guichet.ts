@@ -49,6 +49,7 @@ import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
+import { dateDepuisChaineLocaleBenin } from "@/lib/fuseau-horaire";
 import { dateDansUnCreneauDisponible } from "./disponibilites";
 
 async function adresseTechniqueCourante(): Promise<string> {
@@ -259,7 +260,9 @@ export async function creerRendezVousGuichetAction(
       return { error: "Ce patient est introuvable.", success: false };
     }
 
-    const dateRendezVous = new Date(date);
+    // Chaine soumise interpretee comme une heure LOCALE Africa/Porto-Novo
+    // (jamais le fuseau du serveur), voir src/lib/fuseau-horaire.ts.
+    const dateRendezVous = dateDepuisChaineLocaleBenin(date);
     const professionnelIdNettoye = professionnelId.trim();
 
     if (professionnelIdNettoye.length > 0) {
