@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import { annulerExamenAction, type LaboratoireActionState } from "@/modules/laboratoire/actions";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
+import { TextField } from "@/components/ui/TextField";
 
 const etatInitial: LaboratoireActionState = { error: null, success: false };
 
@@ -46,6 +47,14 @@ export function BoutonAnnulerExamen({ examenId }: { examenId: string }) {
       <p className="text-[13px] font-semibold text-critique">
         Annuler définitivement cette demande d&apos;examen ?
       </p>
+      <TextField
+        label="Motif de l'annulation"
+        name="motif"
+        required
+        minLength={5}
+        maxLength={300}
+        hint="Le laboratoire et le patient sont prévenus de l'annulation."
+      />
       <div className="flex gap-2">
         <Button type="submit" variant="danger" size="sm" disabled={pending}>
           {pending ? "Annulation..." : "Oui, annuler"}

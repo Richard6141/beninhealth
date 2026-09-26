@@ -176,6 +176,11 @@ const schemaAnnonceResultat = z.object({
 
 const schemaAnnulationExamen = z.object({
   examenId: z.string().trim().min(1, "L'examen est obligatoire."),
+  motif: z
+    .string()
+    .trim()
+    .min(5, "Le motif d'annulation est obligatoire (5 caracteres minimum).")
+    .max(300, "Le motif ne peut pas depasser 300 caracteres."),
 });
 
 const schemaValidationResultat = z.object({
@@ -552,6 +557,7 @@ export async function annulerExamenAction(
 
   const validation = schemaAnnulationExamen.safeParse({
     examenId: texte(formData, "examenId"),
+    motif: texte(formData, "motif"),
   });
 
   if (!validation.success) {
@@ -561,7 +567,7 @@ export async function annulerExamenAction(
     };
   }
 
-  const { examenId } = validation.data;
+  const { examenId, motif } = validation.data;
 
   try {
     const professionnel = await prisma.professionnelSante.findUnique({
@@ -572,7 +578,10 @@ export async function annulerExamenAction(
       return { error: "Aucun profil professionnel associe a ce compte.", success: false };
     }
 
-    const examen = await prisma.examenMedical.findUnique({ where: { id: examenId } });
+    const examen = await prisma.examenMedical.findUnique({
+      where: { id: examenId },
+      include: { patient: { select: { userId: true } } },
+    });
 
     if (!examen || examen.demandeurId !== professionnel.id) {
       return { error: "Cet examen est introuvable.", success: false };
@@ -598,8 +607,35 @@ export async function annulerExamenAction(
         action: "modification",
         donneeConcernee: `examen_medical:${examen.id}`,
         adresseTechnique,
-        justification: "Demande d'examen annulee par le medecin demandeur",
+        justification: `Demande d'examen annulee par le medecin demandeur. Motif : ${motif}`,
       }),
+    ]);
+
+    // F-LAB-06 : le patient et le laboratoire rattache sont notifies. Hors
+    // transaction (une notification manquee ne doit pas defaire l'annulation).
+    // Le message au patient ne nomme jamais l'examen ni le motif (un examen
+    // sensible ne doit rien reveler avant annonce, RG-LAB-41) ; le laboratoire,
+    // qui connait deja la demande, recoit le motif.
+    const { creerNotification } = await import("@/modules/notification/creer");
+    const personnelLaboratoire = await prisma.professionnelSante.findMany({
+      where: { etablissementId: examen.laboratoireId, user: { roles: { some: { nom: "laboratoire" } } } },
+      select: { userId: true },
+    });
+    await Promise.all([
+      creerNotification(
+        examen.patient.userId,
+        "examen_annule",
+        "Une demande d'examen vous concernant a ete annulee par votre medecin.",
+        "/app/patient/examens"
+      ),
+      ...personnelLaboratoire.map((membre) =>
+        creerNotification(
+          membre.userId,
+          "examen_annule",
+          `Une demande d'examen a ete annulee par le medecin demandeur. Motif : ${motif}`,
+          "/app/medecin/laboratoire"
+        )
+      ),
     ]);
 
     return { error: null, success: true };
