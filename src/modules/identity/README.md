@@ -19,7 +19,7 @@ Authentification réelle par identifiant/mot de passe, implémentée dans
 `loginAction`, `logoutAction`) et `src/lib/session.ts` (session JWT via jose,
 cookie httpOnly `session`). Le contrôle d'accès par rôle (RBAC) s'appuie sur
 `src/security/permissions.ts`, et la protection des routes `/app/*` sur
-`middleware.ts` à la racine du projet.
+`proxy.ts` à la racine du projet (nom Next.js 16, ancien `middleware.ts`).
 
 Rappel : mot de passe jamais stocké ni journalisé en clair (hash bcryptjs),
 message d'erreur générique à la connexion, traçabilité systématique des

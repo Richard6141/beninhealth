@@ -41,6 +41,7 @@ async function main() {
       capacite: 40,
       communeId: communeCotonouId,
       zoneSanitaireId: zoneLittoral.id,
+      statut: "actif",
     },
   });
 
@@ -60,6 +61,7 @@ async function main() {
       capacite: 120,
       communeId: communeParakouId,
       zoneSanitaireId: zoneBorgou.id,
+      statut: "actif",
     },
   });
 
@@ -79,6 +81,7 @@ async function main() {
       capacite: 25,
       communeId: communeCotonouId,
       zoneSanitaireId: zoneLittoral.id,
+      statut: "actif",
     },
   });
 

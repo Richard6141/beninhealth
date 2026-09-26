@@ -3375,3 +3375,12 @@ un point d'entree (controle session et role dedans) ; `useSearchParams` exige un
 Suspense (le build echoue sinon) ; `creerNotification` vit dans
 `src/modules/notification/creer.ts` ; migration puis `migrate diff` doit dire
 "No difference detected".
+
+### Point projet-gouv-86, item 7 de la vague 1 (en-tetes, proxy, seed), 2026-09-26
+
+- Livre : `middleware.ts` renomme `proxy.ts` (nom Next 16, garde de `/app/*` inchangee, test `src/lib/proxy.test.ts`) ; en-tetes de securite dans `next.config.ts` via `src/lib/en-tetes-securite.ts` (CSP limitee a frame-ancestors, object-src, base-uri, form-action ; X-Frame-Options, nosniff, Referrer-Policy, Permissions-Policy ; HSTS en production seulement, sans preload ; X-Powered-By retire) ; seed : les 3 etablissements sont crees `actif`.
+- Pas fait volontairement : CSP sur `script-src` et `style-src` (exige un nonce par requete donc un rendu dynamique de toutes les pages, a valider ecran par ecran). Les liens carte sante et fiche etablissement sont de 3e (`539988e`), la re-authentification des exports est a 3d.
+- Verifie : tsc, eslint, vitest (10 nouveaux cas), `npm run build` reussi, puis `next start` sur le port 3100 : en-tetes presents, `/app/patient` sans cookie ou avec cookie forge renvoie 307 vers `/connexion`. Serveur arrete apres le test.
+- Effet sur les autres : le premier redemarrage d'un serveur de dev apres ce commit affiche "Compiling proxy". Aucune migration, aucun changement de schema.
+- Suite pour moi, dans l'ordre de e1 : prescription (F-PRE-04, F-PRE-01, F-PRE-05), puis pharmacie (F-PHA-03, F-PHA-01/02), tests, referentiels.
+- 2026-09-26.

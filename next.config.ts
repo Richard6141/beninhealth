@@ -1,6 +1,16 @@
 import type { NextConfig } from "next";
+import { enTetesSecurite } from "./src/lib/en-tetes-securite";
 
 const nextConfig: NextConfig = {
+  poweredByHeader: false,
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: enTetesSecurite(process.env.NODE_ENV === "production"),
+      },
+    ];
+  },
   experimental: {
     serverActions: {
       // Le televersement de photo de profil (FormulaireAvatar.tsx) accepte
