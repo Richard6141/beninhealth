@@ -20,6 +20,49 @@ function formaterDate(dateIso: string): string {
   });
 }
 
+/** Cle de jour calendaire "AAAA-MM-JJ", en heure locale (pas UTC). */
+function cleJour(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+/** Libelle d'en-tete de groupe (F-NOT-01 : "regroupees par jour") : Aujourd'hui / Hier / date complete. */
+function libelleJour(date: Date, maintenant: Date): string {
+  if (cleJour(date) === cleJour(maintenant)) return "Aujourd'hui";
+  const hier = new Date(maintenant);
+  hier.setDate(hier.getDate() - 1);
+  if (cleJour(date) === cleJour(hier)) return "Hier";
+  return date.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+}
+
+interface GroupeJour {
+  cle: string;
+  libelle: string;
+  notifications: NotificationResume[];
+}
+
+/** Regroupe une liste deja triee (plus recent d'abord) par jour calendaire, sans reordonner. */
+function grouperParJour(notifications: NotificationResume[]): GroupeJour[] {
+  const maintenant = new Date();
+  const groupes: GroupeJour[] = [];
+  const index = new Map<string, GroupeJour>();
+
+  for (const notification of notifications) {
+    const date = new Date(notification.date);
+    const cle = cleJour(date);
+    let groupe = index.get(cle);
+
+    if (!groupe) {
+      groupe = { cle, libelle: libelleJour(date, maintenant), notifications: [] };
+      index.set(cle, groupe);
+      groupes.push(groupe);
+    }
+
+    groupe.notifications.push(notification);
+  }
+
+  return groupes;
+}
+
 function LigneNotification({ notification }: { notification: NotificationResume }) {
   const router = useRouter();
   const [state, formAction, pending] = useActionState(marquerNotificationLueAction, {
@@ -81,6 +124,7 @@ export function ListeNotifications({
   const router = useRouter();
   const [enCours, demarrer] = useTransition();
   const nombreNonLues = notifications.filter((n) => !n.lu).length;
+  const groupes = grouperParJour(notifications);
 
   function marquerToutesLues() {
     demarrer(async () => {
@@ -103,9 +147,16 @@ export function ListeNotifications({
           </Button>
         </div>
       ) : null}
-      <div className="flex flex-col gap-2">
-        {notifications.map((notification) => (
-          <LigneNotification key={notification.id} notification={notification} />
+      <div className="flex flex-col gap-4">
+        {groupes.map((groupe) => (
+          <div key={groupe.cle} className="flex flex-col gap-2">
+            <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-encre-attenuee">
+              {groupe.libelle}
+            </p>
+            {groupe.notifications.map((notification) => (
+              <LigneNotification key={notification.id} notification={notification} />
+            ))}
+          </div>
         ))}
       </div>
     </div>
