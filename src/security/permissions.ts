@@ -117,6 +117,10 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     'read:suivi_communautaire',
     'create:suivi_communautaire',
     'update:suivi_communautaire',
+    // F-COM-02 : fiche personne dediee, jamais un dossier Patient (voir
+    // src/modules/communautaire/actions.ts).
+    'read:personne_communautaire',
+    'create:personne_communautaire',
   ]),
 
   pharmacien: new Set<Permission>([
