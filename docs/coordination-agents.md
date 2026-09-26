@@ -1741,3 +1741,285 @@ correctement masquees sur donnees reelles de la base de demo).
   actives sur le meme index ; je continuerai a verifier `git status`
   immediatement APRES chaque commit aussi (pas seulement avant), pour
   detecter ce cas au plus vite.
+
+### Point projet-gouv-23, 2026-09-26 (restauration de contenu perdu)
+
+- **Incident distinct de celui juste au-dessus, plus grave** : ma tentative
+  de committer mon propre point de statut (F-CIT-01/F-PIL-02, plus bas) a
+  fini par committer (`4c70733`) l'etat brut du fichier de travail au lieu
+  de mon patch isole, a cause de `git commit -- <chemin>` qui utilise le
+  contenu de l'arbre de travail sur ce chemin plutot que l'index (meme
+  quand un patch propre y est prealablement stage via `git apply --cached`).
+  Deux consequences : mon propre ajout n'a jamais atterri (perdu, jamais
+  ecrit sur disque, seulement dans l'index), et surtout, la copie de
+  l'arbre de travail que j'ai committee provenait d'une base plus ancienne
+  que `e37b1d7` : elle avait perdu ~189 lignes reellement committees
+  (mon point EXIF/`force_strip` et mon point F-CIT-07/08), ecrasees
+  entre-temps par une autre session ayant repris une copie locale
+  anterieure a ces deux commits.
+  - Verifie via `git diff e37b1d7 HEAD -- docs/coordination-agents.md` :
+    les ~189 lignes disparues ne reapparaissent nulle part ailleurs dans le
+    fichier (pas un simple deplacement), confirmation qu'il s'agissait
+    d'une vraie perte plutot que d'une reorganisation.
+  - Contenu restaure ci-dessous, recopie a l'identique depuis
+    `git show e37b1d7:docs/coordination-agents.md` (seuls deux tirets
+    cadratins de ce texte original ont ete remplaces ici, conformement a
+    la regle 0 de mon CLAUDE.md global, sans toucher au reste).
+  - Lecon retenue pour la suite : ne plus jamais utiliser
+    `git commit -- <chemin>` sur ce fichier (ni sur aucun fichier partage
+    aussi chaud) ; verifier `git diff --cached` juste avant tout commit
+    porte bien sur l'index et non sur l'arbre de travail, et en cas de
+    doute, committer sans pathspec explicite apres un `git add` cible.
+- 2026-09-26.
+
+### Point projet-gouv-ae, 2026-09-26 (suite, tâche assignée par projet-gouv-05)
+
+- Tâche proposée par **projet-gouv-05** par message direct pendant que
+  j'étais libre (voir échange plus haut de leur côté) : le point "Reste à
+  faire" #2 de `docs/audit-cote-medecin.md` (suppression des métadonnées
+  EXIF/GPS des documents médicaux, RG-CLI-110), bloqué jusqu'ici faute de
+  librairie de traitement d'image dans ce dépôt. Hypothèse de départ du
+  message (paramètre d'upload Cloudinary type `exif`/`metadata: false`) :
+  invalidée après vérification de la doc officielle (WebFetch) : ces
+  paramètres sont en lecture seule (retournent les métadonnées, ne les
+  suppriment pas). Le vrai mécanisme, confirmé par la doc puis vérifié
+  manuellement contre le compte réel : `flags: "force_strip"` passé comme
+  transformation "entrante" au moment du televersement (pas une
+  transformation de livraison à la demande), qui strip bien la ressource
+  stockée elle-même.
+- Fait et vérifié de bout en bout (tsc propre, vitest 63/63) :
+  - Vérification manuelle avant tout code : construction d'une vraie image
+    JPEG de test contenant un authentique segment EXIF (APP1), upload direct
+    vers le compte Cloudinary réel. Sans `force_strip` : le segment EXIF
+    survit intégralement (233 octets, inchangés). Avec `flags: "force_strip"`
+    passé à l'upload : le segment disparaît (160 octets), confirmé en
+    retéléchargeant derrière une URL signée neuve sans aucune transformation
+    demandée à la volée (donc pas un artefact de livraison, un vrai
+    changement de la ressource stockée).
+  - Vérifié aussi que ce flag ne casse ni ne rasterise un PDF (upload/
+    téléchargement d'un PDF de test : octets et format `pdf` identiques
+    avant/après) : important puisque `televerserFichierPriveCloudinary`
+    (`src/lib/cloudinary.ts`) sert à la fois les PDF et les JPEG/PNG des
+    documents médicaux.
+  - `src/lib/cloudinary.ts` (`televerserFichierPriveCloudinary`) :
+    `flags: "force_strip"` ajouté à l'upload, commit `41fb239`. Non touché :
+    `televerserImageCloudinary` (avatars), périmètre volontairement laissé de
+    côté comme proposé par projet-gouv-05 (métadonnées moins critiques ici) ;
+    même flag trivialement applicable si souhaité un jour, même mécanisme,
+    aucune raison technique de ne pas le faire à la demande.
+  - Revérifié via le vrai code applicatif (pas seulement l'appel Cloudinary
+    brut) : `televerserFichierPriveCloudinary` + `genererUrlSigneeCloudinary`
+    exécutés directement via `tsx`, même résultat (EXIF absent, PDF intact).
+  - `docs/audit-cote-medecin.md` : ligne F-CLI-13 et section "Reste à faire"
+    mises à jour (l'écart RG-CLI-110 est retiré de la liste), au passage
+    aussi corrigé une mention obsolète de RG-CLI-112 (« stockage hors de
+    public/ » restée dans le texte malgré la migration Cloudinary déjà
+    committée).
+- 2026-09-26.
+
+### Point projet-gouv-ae, 2026-09-26 (suite, tâche assignée par projet-gouv-05)
+
+- Tâche proposée par **projet-gouv-05** par message direct pendant que
+  j'étais libre : F-CIT-07/08 du pack (`docs/pack claude/specs/08-fiches-citoyen.md`,
+  "personnes à charge / tutelle"), marqué P1 dans l'audit
+  (`docs/audit-cote-patient.md`). Consigne : "faisable sans décision produit
+  lourde", en réutilisant le patient "sans compte" déjà existant
+  (`creerPatientParProfessionnelAction`, `src/modules/identity/actions.ts`)
+  plutôt qu'une nouvelle structure.
+- Périmètre volontairement réduit par rapport au pack complet (le pack
+  suppose des concepts absents de ce dépôt : niveaux de citoyen N1/N2,
+  vérification de tutelle en établissement, notification/acceptation par
+  une personne majeure, tâche planifiée de fin de tutelle à 18 ans) :
+  limites documentées en tête de `src/modules/proches/actions.ts` et dans
+  la ligne F-CIT-07/08 de `docs/audit-cote-patient.md`. Seul le cas "enfant
+  mineur créé par son tuteur" est construit.
+- Fait et vérifié de bout en bout (tsc propre, vitest 63/63, vérification
+  réelle Playwright + requête base de données directe) :
+  - **Aucune migration de schéma** : réutilise le patient "sans compte"
+    (`User` placeholder statut `"sans_compte"`, même mécanisme que
+    `creerPatientParProfessionnelAction`) et `Consentement`
+    (`typeAcces: "dossier_complet"`, accordé automatiquement au tuteur
+    créateur puisqu'un compte sans connexion ne peut pas l'accorder
+    lui-même). Une personne à charge est identifiée par la combinaison
+    (`Consentement.acteurAutoriseId` = tuteur, `Patient.user.statut` =
+    `"sans_compte"`), faute d'un marqueur dédié : simplification assumée et
+    documentée plutôt qu'un champ de schéma pour ce seul besoin.
+  - Nouveau module `src/modules/proches/actions.ts` : création (enfant
+    mineur uniquement, RG-CIT-61 : maximum 10 personnes à charge par
+    compte), liste, détail (Zero Trust : reverifie le `Consentement` actif
+    à chaque appel, jamais supposé depuis l'id transmis), prise de
+    rendez-vous en son nom (nouvelle action dédiée plutôt que de modifier
+    `creerRendezVousAction` dans `src/modules/facility/actions.ts`, fichier
+    partagé avec plusieurs autres chantiers ce soir), fin de gestion
+    (`Consentement` passe à `"retire"`, jamais supprimé).
+  - Écrans `/app/patient/proches` (liste + ajout via Modal) et
+    `/app/patient/proches/[id]` (identité, rendez-vous, prise de
+    rendez-vous, fin de gestion). Lien "Mes proches" ajouté à la navigation
+    patient (`src/app/app/layout.tsx`, icône `Users` déjà importée,
+    réutilisée). Uniquement des composants du design system existants.
+  - Bug détecté avant la vérification réelle (pas après) : mon schéma
+    initial utilisait `sexe: "masculin"/"feminin"`, alors que la convention
+    réelle de ce dépôt est `"M"/"F"` (vérifié via
+    `src/modules/identity/actions.ts` et `ModalNouveauPatient.tsx`) :
+    corrigé avant tout test.
+  - Vérification réelle : création d'un enfant mineur ("Junior Agossou")
+    par le compte `patient.demo@benin-health.test`, confirmé visible dans
+    la liste après rechargement, dossier détail correct (nom, sexe),
+    rendez-vous pris en son nom, confirmé en base par requête directe :
+    `RendezVous.patientId` = l'id de l'enfant (pas du tuteur),
+    `Consentement.acteurAutoriseId` = l'id du tuteur, `typeAcces` =
+    `"dossier_complet"`, `statut` = `"actif"`.
+  - Incident pendant la vérification, sans lien avec ce chantier : le
+    serveur de dev a cessé de répondre (`ERR_CONNECTION_REFUSED`, rien
+    n'écoutait sur le port 3000) pendant les tests, système à 99 % de CPU
+    (240 processus, plusieurs sessions concurrentes) ; redémarré proprement
+    (`npm run dev`), confirmé sans conflit de port avant de continuer.
+  - Incident de coordination pendant ce chantier : ma première tentative
+    d'isoler l'entrée de navigation "Mes proches" dans
+    `src/app/app/layout.tsx` via patch chirurgical a été perdue (écrasée
+    par la sauvegarde d'une autre session travaillant sur le même fichier
+    au même moment, probablement l'ajout du logo dans le pied de page et
+    les nouvelles entrées de navigation pharmacien/laboratoire/ministère
+    visibles dans ce fichier). Reconstruite une seconde fois contre l'état
+    courant du fichier et committée immédiatement pour réduire la fenêtre
+    de collision. À garder en tête : la technique du patch chirurgical
+    protège contre les conflits de staging/commit, pas contre une
+    écriture concurrente en temps réel sur le même fichier par une autre
+    session au même instant.
+- 2026-09-26.
+
+### Point projet-gouv-23, 2026-09-26 (suite, tâche assignée par projet-gouv-1e ex-projet-gouv-05)
+
+- Tâche proposée pendant que j'étais libre : F-ADM-04 du pack ("Gérer les
+  référentiels"), scopée par la session assignante à un seul référentiel
+  concret (vaccins) parmi les sept listés (CIM-10, médicaments, examens,
+  vaccins, motifs de rendez-vous, jours fériés, modèles de SMS) : tenter les
+  sept ce soir aurait été hors de portée.
+- Avant de commencer : vérifié l'état de `schema.prisma`
+  (`npx prisma migrate status`) puisque plusieurs sessions y touchent ce
+  soir (migration `enrichissement_referentiel_etablissements` de la session
+  assignante notamment), confirmé "Database schema is up to date", donc
+  sûr d'ajouter mon propre modèle par-dessus.
+- Fait et vérifié de bout en bout (tsc propre, vitest 63/63, vérification
+  réelle Playwright avec les deux rôles concernés + requête base directe) :
+  - **Nouveau modèle Prisma `VaccinReferentiel`** (migration
+    `20260926074240_ajout_referentiel_vaccinal`, purement additive, nouvelle
+    table uniquement). Remplace le tableau statique historique
+    `VACCINS_REFERENTIEL` de `src/modules/vaccination/referentiel.ts`, semé
+    une seule fois avec les 7 vaccins historiques pour ne jamais perturber
+    le comportement existant.
+  - RG-ADM-20 (désactivation seule, jamais de suppression) implémenté :
+    `Vaccination.vaccin` reste un `String` libre, jamais une clé étrangère
+    vers ce référentiel, pour ne jamais bloquer une vaccination "Autre" en
+    texte libre ni une entrée désactivée entre-temps. RG-ADM-21
+    (versionnement) volontairement hors périmètre, documenté comme limite
+    assumée.
+  - Les règles d'âge/intervalle du calendrier PEV
+    (`REGLES_AGE_VACCINS`/`controlerAgeVaccination`) restées codées en dur,
+    comme demandé : seule la LISTE des noms devient administrable.
+  - Nouveau module `src/modules/administration/referentiel-vaccinal.ts` et
+    écran `/app/ministere/referentiels/vaccins` (liste, ajout,
+    activation/désactivation, réordonnancement). Le formulaire
+    d'enregistrement d'une vaccination (`medecin/vaccinations/nouvelle`) lit
+    désormais ce référentiel en base au lieu du tableau statique.
+  - Incident technique en cours de route : `npx prisma generate` a échoué
+    (`EPERM`, verrou Windows classique sur la DLL du query engine tant qu'un
+    process Node a le client Prisma chargé) ; résolu en redémarrant
+    proprement le serveur de dev (le mien, PID identifié via `netstat`),
+    prévenu les autres sessions avant et après.
+  - **Incident de test, corrigé** : ma première tentative de vérification
+    (désactiver le vaccin de test via l'écran admin) a en fait désactivé
+    **BCG** par erreur : chaque ligne du tableau contient 3 `<form>`
+    distincts (réordonner ↑, réordonner ↓, activer/désactiver) partageant
+    tous un input caché `id` de même valeur ; mon sélecteur Playwright
+    (`div` contenant le texte du vaccin) a matché le mauvais formulaire.
+    Détecté immédiatement par une requête base directe (pas supposé
+    correct sans vérifier), corrigé en réactivant BCG avant qu'un autre test
+    en cours ailleurs ne soit affecté, puis revérifié avec un sélecteur
+    précis (ciblage par la valeur exacte de l'input caché via
+    `page.evaluate`, en cherchant explicitement le bon des 3 formulaires par
+    son bouton "Désactiver"). Leçon pour la prochaine fois qu'un tableau de
+    ce type est testé : ne jamais cibler par texte ambiant quand plusieurs
+    formulaires partagent le même id caché.
+  - Vérification finale, avec le bon rôle cette fois (première tentative
+    faite par erreur avec la session ministère, qui n'a pas la permission
+    `create:vaccination` et renvoyait donc une liste vide, pas un bug) :
+    connecté en `medecin.demo@benin-health.test`, formulaire
+    `/app/medecin/vaccinations/nouvelle` contient bien BCG/Polio/Pentavalent/
+    Rougeole/Fièvre jaune/VAT/COVID-19/Autre, le vaccin de test ajouté y
+    apparaît puis en disparaît après désactivation, sans jamais affecter les
+    autres entrées.
+- Fichiers touchés : `prisma/schema.prisma` (+ migration),
+  `src/modules/administration/referentiel-vaccinal.ts` (nouveau),
+  `src/app/app/ministere/referentiels/vaccins/{page.tsx,SectionReferentielVaccinal.tsx}`
+  (nouveaux), `src/security/permissions.ts`
+  (`read`/`create`/`update:referentiel_vaccinal` pour `admin_national`),
+  `src/app/app/medecin/vaccinations/nouvelle/{page.tsx,FormulaireVaccination.tsx}`,
+  `src/app/app/layout.tsx` (lien de nav "Référentiel vaccinal", isolé par
+  patch chirurgical contre l'état courant du fichier).
+- 2026-09-26.
+
+### Point projet-gouv-23, 2026-09-26 (suite, F-CIT-01 puis F-PIL-02)
+
+- **F-CIT-01 (assistant de premiere utilisation)** fait et committe
+  (`714df34`) : wizard 4 etapes (groupe sanguin, allergies, maladies
+  chroniques + grossesse si sexe F, contact d'urgence), affiche une seule
+  fois via la redirection de `registerPatientAction` vers
+  `/app/patient/bienvenue`. Reutilise `updatePatientProfileAction` deja
+  existant, aucune nouvelle Server Action.
+  - Incident de collision sur `src/modules/identity/actions.ts` (meme
+    fichier tres actif ce soir) : mon patch chirurgical isole s'est fait
+    ecraser une fois entre l'application et le commit, probablement par une
+    autre session ayant sauvegarde une version anterieure du fichier au
+    meme instant. Reconstruit une seconde fois contre l'etat courant et
+    committe immediatement.
+  - Limite honnete non resolue malgre investigation poussee (garde de
+    double-soumission par `useRef`, conversion des 3 champs du contact
+    d'urgence en composants controles React, capture directe du payload
+    multipart envoye au serveur) : ces 3 champs precis (derniers du
+    formulaire) arrivent parfois vides au serveur malgre une valeur DOM
+    confirmee juste avant le clic, meme sans Fast Refresh visible au moment
+    du clic. Jamais reproduit sur groupe sanguin/allergies/maladies
+    chroniques dans le meme formulaire, ni sur `/app/patient/dossier`
+    (memes donnees, meme action). Mecanisme exact non identifie avec
+    certitude. Pas bloquant (RG-CIT-01 non compromis) : le contact
+    d'urgence reste modifiable immediatement apres depuis
+    `/app/patient/dossier`.
+  - Au passage, verification croisee independante par projet-gouv-1e
+    [569e9d] (E2E jetable + correction d'un test casse par mon changement de
+    redirection) : rien a signaler de leur cote au-dela du contact
+    d'urgence deja documente ci-dessus.
+  - Incident distinct, sans lien avec mon travail : un Prisma Client perime
+    en memoire dans le serveur de dev partage (apres une regeneration par
+    une autre session pour RG-AUD-02) faisait echouer silencieusement TOUT
+    appel a `journaliser()` (donc la quasi-totalite des Server Actions
+    d'ecriture du depot, pas seulement F-CIT-01) ; diagnostique via un
+    script isole (`require('@prisma/client')` frais reussissait,
+    l'instance du serveur de dev en cours echouait), corrige par un
+    redemarrage propre du serveur partage apres accord des sessions
+    actives.
+- **F-PIL-02 (centre national de pilotage)** : tache proposee alors que
+  j'etais libre, mais deja entierement construite et committee par une
+  session anterieure (probablement orpheline, atterrie dans le commit
+  `b6a6887` sans etre nommee explicitement dans son message). Verifie en
+  direct (connexion ministere, /app/pilotage) : 6 cartes d'indicateurs avec
+  variation, top diagnostics, evolution hebdomadaire 12 semaines, alertes
+  F-PIL-06 integrees, mention permanente, filtre de periode fonctionnel
+  (navigation par URL confirmee). Rien a construire.
+  - Tache de suivi proposee (ajouter filtres territoire/type etablissement) :
+    investigation montre que 5 des 6 indicateurs cles (IND-01/02/04/08/10)
+    n'ont aucune ventilation territoriale dans `AgregatQuotidien`
+    (`src/modules/pilotage/agregation.ts`, ecrits avec `departementId`/
+    `typeEtablissement` implicitement null) ; seul IND-05 (etablissements
+    actifs) en a une. Un vrai filtre fonctionnel demanderait d'etendre le
+    pipeline d'agregation central (volume de lignes en explosion
+    combinatoire, nouvelles donnees visibles seulement au prochain calcul
+    planifie), un chantier bien plus lourd qu'un simple ajout de filtre UI,
+    et qui toucherait un fichier dont depend activement projet-gouv-b3 sur
+    F-PIL-04 (tendances) en ce moment meme. F-PIL-04 (deja lie depuis
+    /app/pilotage) semble par ailleurs etre la fiche dediee a ce type de
+    drill-down territorial dans le pack : y ajouter la meme capacite sur
+    l'ecran principal ferait probablement double emploi. Recommandation
+    transmise a la session assignante, en attente de retour avant de
+    coder quoi que ce soit sur ce point precis.
+- 2026-09-26.
