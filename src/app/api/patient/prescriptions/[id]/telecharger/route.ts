@@ -15,11 +15,12 @@
  * quantite, duree), le numero d'ordonnance, la date et le medecin
  * prescripteur.
  *
- * RG-CIT-51 : le pack exige la mention "verifiable en scannant le QR code",
- * non reprise ici. Limite assumee et documentee : ce depot ne construit pas
- * F-PRE-06 (QR + page de verification publique /v/o/[numero]) ce soir,
- * imprimer cette mention sans verification reelle derriere serait
- * trompeur pour le patient. Le PDF porte une mention honnete a la place.
+ * RG-CIT-51 : le PDF porte la mention "verifiable en scannant le QR code"
+ * et le QR code lui-meme, qui encode l'URL de verification publique
+ * F-PRE-06 (/v/o/[numero]?k=..., src/modules/prescription/verification-publique.ts,
+ * livree par une autre session apres l'ecriture initiale de cette route :
+ * mis a jour pour ne plus promettre une verification qui n'existait pas
+ * encore).
  *
  * Nouvelle route isolee, aucune modification de
  * src/modules/prescription/actions.ts (partage cette nuit avec F-PRE-05).
@@ -27,9 +28,11 @@
 
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { NextResponse } from "next/server";
+import QRCode from "qrcode";
 import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/modules/audit/journaliser";
 import { consommerJetonTelechargement } from "@/modules/prescription/jetons-telechargement";
+import { genererCleVerificationOrdonnance } from "@/modules/prescription/verification-publique";
 
 function adresseTechniqueDepuisRequete(request: Request): string {
   return request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? "inconnue";
@@ -127,10 +130,31 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   });
 
   ecrireLigneVide();
-  ecrireLigne(
-    "Document généré par la Plateforme d'Intelligence Sanitaire du Bénin.",
-    { taille: 9 }
-  );
+
+  const cleVerification = genererCleVerificationOrdonnance(prescription.numero, prescription.id);
+  const urlVerification = `${new URL(request.url).origin}/v/o/${prescription.numero}?k=${cleVerification}`;
+  const tailleQr = 70;
+  nouvellePageSiNecessaire(tailleQr);
+  try {
+    const octetsQr = await QRCode.toBuffer(urlVerification, { width: tailleQr, margin: 0 });
+    const imageQr = await document.embedPng(octetsQr);
+    page.drawImage(imageQr, { x: MARGE, y: y - tailleQr + 10, width: tailleQr, height: tailleQr });
+    page.drawText(
+      "Document généré par BHIP — vérifiable en scannant le QR code.",
+      { x: MARGE + tailleQr + 12, y: y - 20, size: 9, font: policeNormale, color: rgb(0.1, 0.1, 0.1) }
+    );
+    page.drawText(urlVerification, {
+      x: MARGE + tailleQr + 12,
+      y: y - 34,
+      size: 8,
+      font: policeNormale,
+      color: rgb(0.35, 0.35, 0.35),
+    });
+    y -= tailleQr + 10;
+  } catch (erreur) {
+    console.error("Erreur lors de la generation du QR code de verification :", erreur);
+    ecrireLigne("Document généré par la Plateforme d'Intelligence Sanitaire du Bénin.", { taille: 9 });
+  }
 
   const octetsPdf = await document.save();
 
