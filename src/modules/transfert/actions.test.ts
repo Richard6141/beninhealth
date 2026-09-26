@@ -17,6 +17,7 @@ vi.mock("@/lib/prisma", () => {
     },
     consentement: { findUnique: vi.fn(), upsert: vi.fn() },
     journalAudit: { count: vi.fn() },
+    rendezVous: { findFirst: vi.fn() },
     $transaction: vi.fn(),
   };
   prisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(prisma));
@@ -58,6 +59,7 @@ const p = prisma as unknown as {
   demandeAccesDossier: { count: Mock; create: Mock; updateMany: Mock; findFirst: Mock; findUnique: Mock };
   consentement: { findUnique: Mock; upsert: Mock };
   journalAudit: { count: Mock };
+  rendezVous: { findFirst: Mock };
 };
 const getSessionMock = getSession as unknown as Mock;
 const flagMock = estFonctionnaliteActive as unknown as Mock;
@@ -103,10 +105,11 @@ beforeEach(() => {
   }));
   p.demandeAccesDossier.updateMany.mockResolvedValue({ count: 1 });
   p.journalAudit.count.mockResolvedValue(0);
+  p.rendezVous.findFirst.mockResolvedValue(null);
   hashMock.mockResolvedValue("hash-du-code");
 });
 
-const demandeNpi = { mode: "npi", npi: NPI, telephone: "", dateNaissance: "", motif: "consultation", dureeHeures: "24" };
+const demandeNpi = { mode: "npi", npi: NPI, telephone: "", dateNaissance: "", presence: "on", motif: "consultation", dureeHeures: "24" };
 
 describe("demanderAccesDossierAction : garde-fous", () => {
   it("refuse sans session", async () => {
@@ -269,7 +272,7 @@ describe("demanderAccesDossierAction : RG-CLI-10, meme reponse que le patient ex
 });
 
 describe("demanderAccesDossierAction : mode telephone + date de naissance", () => {
-  const demandeTel = { mode: "telephone", npi: "", telephone: "0197000000", dateNaissance: "1990-05-04", motif: "avis_specialise", dureeHeures: "72" };
+  const demandeTel = { mode: "telephone", npi: "", telephone: "0197000000", dateNaissance: "1990-05-04", presence: "on", motif: "avis_specialise", dureeHeures: "72" };
 
   it("rapproche un telephone saisi sous une autre forme que celui enregistre", async () => {
     p.patient.findMany.mockResolvedValue([patientTrouve()]);
@@ -503,5 +506,54 @@ describe("statutDemandeAccesAction", () => {
     getSessionMock.mockResolvedValue({ userId: "u", roles: ["patient"] });
     expect(await statutDemandeAccesAction("dem-1")).toBeNull();
     expect(p.demandeAccesDossier.findFirst).not.toHaveBeenCalled();
+  });
+});
+
+describe("demanderAccesDossierAction : attestation de presence et duree accordee", () => {
+  const demandeTelLongue = { mode: "telephone", npi: "", telephone: "0197000000", dateNaissance: "1990-05-04", presence: "on", motif: "avis_specialise", dureeHeures: "168" };
+
+  it("refuse une demande sans l'attestation de presence, sans interroger les patients", async () => {
+    const { presence, ...sansPresence } = demandeNpi;
+    void presence;
+    const resultat = await demanderAccesDossierAction(etatInitial, formulaire(sansPresence));
+    expect(resultat.success).toBe(false);
+    expect(p.patient.findUnique).not.toHaveBeenCalled();
+    expect(p.demandeAccesDossier.create).not.toHaveBeenCalled();
+  });
+
+  it("sans rendez-vous confirme ni arrivee aujourd'hui, l'acces est plafonne a 24 h, sans le dire au demandeur", async () => {
+    p.patient.findMany.mockResolvedValue([patientTrouve()]);
+    const resultat = await demanderAccesDossierAction(etatInitial, formulaire(demandeTelLongue));
+
+    expect(resultat).toMatchObject({ error: null, success: true });
+    expect(p.demandeAccesDossier.create.mock.calls[0][0].data.dureeAccesHeures).toBe(24);
+  });
+
+  it("avec un signal de presence dans l'etablissement, la duree demandee est accordee", async () => {
+    p.patient.findMany.mockResolvedValue([patientTrouve()]);
+    p.rendezVous.findFirst.mockResolvedValue({ id: "rdv-1" });
+    await demanderAccesDossierAction(etatInitial, formulaire(demandeTelLongue));
+
+    expect(p.demandeAccesDossier.create.mock.calls[0][0].data.dureeAccesHeures).toBe(168);
+    const filtre = p.rendezVous.findFirst.mock.calls[0][0].where;
+    expect(filtre).toMatchObject({ patientId: "pat-1", etablissementId: "etab-1" });
+    expect(filtre.statut).toEqual({ notIn: ["annule", "absent"] });
+    expect(filtre.date.gte).toBeInstanceOf(Date);
+    expect(filtre.date.lt.getTime() - filtre.date.gte.getTime()).toBe(24 * 3600_000);
+  });
+
+  it("le signal n'est cherche que pour un patient trouve : aucune requete supplementaire pour un critere inconnu", async () => {
+    await demanderAccesDossierAction(etatInitial, formulaire(demandeTelLongue));
+    expect(p.rendezVous.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("le journal garde l'attestation et le resultat du signal", async () => {
+    p.patient.findMany.mockResolvedValue([patientTrouve()]);
+    await demanderAccesDossierAction(etatInitial, formulaire(demandeTelLongue));
+    const justification = journaliserMock.mock.calls.at(-1)?.[0].justification as string;
+    expect(justification).toContain("presence attestee");
+    expect(justification).toContain("signal de presence non");
+    expect(justification).toContain("7 jours demandees");
+    expect(justification).toContain("24 heures accordees");
   });
 });

@@ -96,6 +96,13 @@ function ContenuFormulaireAjout({ onFermer }: { onFermer: () => void }) {
         hint="Le cas échéant, précisez la spécialité (ex. pédiatrie, soins infirmiers)."
       />
 
+      <TextField
+        label="Numéro d'inscription à l'Ordre"
+        name="numeroOrdre"
+        autoComplete="off"
+        hint="Recommandé : il identifie la personne de façon unique et évite un second compte si elle exerce déjà ailleurs."
+      />
+
       <Button type="submit" variant="primary" className="w-fit" disabled={pending}>
         {pending ? "Création en cours..." : "Créer le compte"}
       </Button>

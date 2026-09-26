@@ -25,6 +25,7 @@ const ATTENTE_PAR_DEFAUT_SECONDES = 5;
 
 export type RaisonEchecWapy =
   | "non_configure"
+  | "destinataire_non_autorise"
   | "requete_invalide"
   | "refuse"
   | "destinataire_injoignable"
@@ -49,6 +50,22 @@ export function wapyConfigure(): boolean {
   return getEnv().WAPY_PONT_CLE.length > 0;
 }
 
+// Hors production, un envoi reel ne part que vers les numeros de test declares :
+// la base de demonstration contient des numeros plausibles qui peuvent
+// appartenir a de vraies personnes.
+function destinataireAutorise(destinataire: string): boolean {
+  const env = getEnv();
+
+  if (env.NODE_ENV === "production") {
+    return true;
+  }
+
+  return env.WAPY_NUMEROS_TEST.split(",")
+    .map((numero) => numero.trim())
+    .filter((numero) => numero.length > 0)
+    .includes(destinataire);
+}
+
 async function lireDetail(reponse: Response): Promise<string | undefined> {
   try {
     const corps: unknown = await reponse.json();
@@ -67,6 +84,10 @@ export async function envoyerMessageWapy(message: MessageWapy): Promise<Resultat
 
   if (cle.length === 0) {
     return { ok: false, raison: "non_configure" };
+  }
+
+  if (!destinataireAutorise(message.destinataire)) {
+    return { ok: false, raison: "destinataire_non_autorise" };
   }
 
   if (message.texte.trim().length === 0 || message.texte.length > LONGUEUR_MAX_TEXTE) {

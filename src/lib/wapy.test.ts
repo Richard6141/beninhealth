@@ -17,6 +17,7 @@ describe("envoyerMessageWapy", () => {
 
   beforeEach(() => {
     vi.stubEnv("WAPY_PONT_CLE", "cle-de-test");
+    vi.stubEnv("WAPY_NUMEROS_TEST", "+2290197000000, +2290102030405");
     vi.stubGlobal("fetch", fetchMock);
     fetchMock.mockReset();
   });
@@ -31,6 +32,28 @@ describe("envoyerMessageWapy", () => {
     expect(wapyConfigure()).toBe(false);
     expect(await envoyerMessageWapy(message)).toEqual({ ok: false, raison: "non_configure" });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("hors production, n'envoie jamais vers un numero qui n'est pas un numero de test", async () => {
+    const resultat = await envoyerMessageWapy({ ...message, destinataire: "+2290190000005" });
+    expect(resultat).toEqual({ ok: false, raison: "destinataire_non_autorise" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("hors production, sans liste de numeros de test, n'envoie rien", async () => {
+    vi.stubEnv("WAPY_NUMEROS_TEST", "");
+    expect(await envoyerMessageWapy(message)).toMatchObject({ ok: false, raison: "destinataire_non_autorise" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("en production, la liste de numeros de test ne s'applique pas", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    for (const cle of ["DATABASE_URL", "NEXTAUTH_SECRET", "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM"]) {
+      vi.stubEnv(cle, "valeur");
+    }
+    vi.stubEnv("WAPY_NUMEROS_TEST", "");
+    fetchMock.mockResolvedValue(reponse(200, { rejeu: false }));
+    expect(await envoyerMessageWapy({ ...message, destinataire: "+2290190000005" })).toEqual({ ok: true, rejeu: false });
   });
 
   it("envoie la cle en Bearer, la cle d'idempotence en en-tete, et exactement les 3 champs du contrat", async () => {

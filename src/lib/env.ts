@@ -45,6 +45,13 @@ export interface EnvVariables {
    * le code part par SMS simule hors production et n'est pas livre en production.
    */
   WAPY_PONT_CLE: string;
+  /**
+   * Numeros (E.164, separes par des virgules) vers lesquels WhatsApp reel peut
+   * partir HORS production. Vide : aucun envoi reel hors production, pour ne
+   * jamais contacter par erreur le numero d'un patient de demonstration.
+   * Sans effet en production.
+   */
+  WAPY_NUMEROS_TEST: string;
 }
 
 /** Variables sans lesquelles l'application ne doit jamais démarrer en production. */
@@ -103,5 +110,6 @@ export function getEnv(): EnvVariables {
     CLOUDINARY_API_SECRET: lireVariable('CLOUDINARY_API_SECRET') ?? '',
     CLOUDINARY_FOLDER: lireVariable('CLOUDINARY_FOLDER') ?? '',
     WAPY_PONT_CLE: lireVariable('WAPY_PONT_CLE') ?? '',
+    WAPY_NUMEROS_TEST: lireVariable('WAPY_NUMEROS_TEST') ?? '',
   };
 }

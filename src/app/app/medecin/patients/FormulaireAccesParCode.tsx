@@ -236,9 +236,19 @@ function Assistant({ npiActif, optionsMotif, optionsDuree, onRecommencer }: Prop
           required
           options={optionsDuree}
           defaultValue="24"
-          hint="Le patient voit cette durée dans le message qu'il reçoit."
+          hint="Au-delà de 24 heures, l'accès n'est accordé que si le patient a un rendez-vous confirmé ou une arrivée enregistrée aujourd'hui dans votre établissement."
         />
       </div>
+
+      <label className="flex items-start gap-3 text-[15px] text-encre">
+        <input type="checkbox" name="presence" required className="mt-1 h-5 w-5 shrink-0 accent-[var(--marine)]" />
+        <span>
+          <span className="font-semibold">Le patient est présent devant moi.</span>{" "}
+          <span className="text-encre-secondaire">
+            Votre attestation est enregistrée dans le journal d&apos;audit.
+          </span>
+        </span>
+      </label>
 
       {demande.error ? (
         <p className="text-[14px] text-critique" role="alert">

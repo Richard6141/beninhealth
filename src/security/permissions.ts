@@ -190,10 +190,6 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     'read:referentiel_vaccinal',
     'create:referentiel_vaccinal',
     'update:referentiel_vaccinal',
-    // F-NOT-02 : boite d'envoi SMS simulee, consultable et testable (voir
-    // src/modules/notification/sms/dev.ts).
-    'read:envoi_sms',
-    'create:envoi_sms',
     // F-ADM-06 : detection et fusion de dossiers patient en doublon (voir
     // src/modules/patient/fusion-doublons.ts).
     'read:doublon_patient',
@@ -231,6 +227,10 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     'read:referentiel_examens',
     'create:referentiel_examens',
     'update:referentiel_examens',
+    // F-NOT-02 : boite d'envoi SMS simulee, consultable et testable (voir
+    // src/modules/notification/sms/dev.ts).
+    'read:envoi_sms',
+    'create:envoi_sms',
     // F-NOT-04 : catalogue des notifications, 4e referentiel administrable
     // du pack F-ADM-04 (modeles de notifications/SMS, voir
     // src/modules/administration/referentiel-notifications.ts).

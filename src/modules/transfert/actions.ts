@@ -46,6 +46,7 @@ import {
   SANS_CORRESPONDANCE_MAX_PAR_PROFESSIONNEL_PAR_HEURE,
   TENTATIVES_MAX_PAR_CODE,
   codeSaisiAuBonFormat,
+  dureeAccordee,
   empreinteCritere,
   estDureeAcces,
   estMotifAcces,
@@ -56,6 +57,7 @@ import {
   type ModeRecherche,
 } from "./code-acces";
 import { envoyerCodeDemande } from "./envoi-code";
+import { aSignalDePresence } from "./presence";
 import { accorderAcces } from "./octroi";
 
 const ROUNDS_BCRYPT = 10;
@@ -100,6 +102,7 @@ const schemaDemande = z.object({
   npi: z.string().trim(),
   telephone: z.string().trim(),
   dateNaissance: z.string().trim(),
+  presence: z.literal("on", "Confirmez que le patient est présent devant vous."),
   motif: z.string().refine(estMotifAcces, "Motif de l'accès invalide."),
   dureeHeures: z.coerce.number().refine(estDureeAcces, "Durée d'accès invalide."),
 });
@@ -154,6 +157,7 @@ export async function demanderAccesDossierAction(
     npi: texte(formData, "npi"),
     telephone: texte(formData, "telephone"),
     dateNaissance: texte(formData, "dateNaissance"),
+    presence: texte(formData, "presence"),
     motif: texte(formData, "motif"),
     dureeHeures: texte(formData, "dureeHeures"),
   });
@@ -268,6 +272,8 @@ export async function demanderAccesDossierAction(
     }
 
     const cible = patient && !limitationPatient ? patient : null;
+    const signalDePresence = cible ? await aSignalDePresence(cible.id, professionnel.etablissementId) : false;
+    const dureeEffective = dureeAccordee(dureeHeures, signalDePresence);
     const code = genererCodeNumerique();
     const codeHash = await bcrypt.hash(code, ROUNDS_BCRYPT);
     const expireLe = new Date(maintenant + DUREE_VALIDITE_CODE_MINUTES * 60_000);
@@ -288,7 +294,7 @@ export async function demanderAccesDossierAction(
           modeRecherche: mode,
           empreinteCritere: empreinte,
           motif,
-          dureeAccesHeures: dureeHeures,
+          dureeAccesHeures: dureeEffective,
           codeHash,
           expireLe,
         },
@@ -300,7 +306,7 @@ export async function demanderAccesDossierAction(
       action: limitationPatient ? "acces_dossier_demande_limitee" : "acces_dossier_demande",
       donneeConcernee: `demande_acces:${demande.id}`,
       adresseTechnique,
-      justification: `Mode ${mode}, motif ${motif}, ${libelleDuree(dureeHeures)}, critere ${empreinte.slice(0, 16)}.`,
+      justification: `Mode ${mode}, motif ${motif}, ${libelleDuree(dureeHeures)} demandees, presence attestee${cible ? `, signal de presence ${signalDePresence ? "oui" : "non"}, ${libelleDuree(dureeEffective)} accordees` : ""}, critere ${empreinte.slice(0, 16)}.`,
     });
 
     if (cible) {

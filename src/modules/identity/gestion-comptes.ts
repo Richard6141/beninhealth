@@ -35,6 +35,11 @@ import {
   prochainIdentifiant,
   prefixeIdentifiant,
 } from "./identifiants";
+import {
+  normaliserNumeroOrdre,
+  numeroOrdreValide,
+  professionDepuisRole,
+} from "./identite-professionnelle";
 
 /**
  * Etat renvoye par chaque Server Action de ce module, consomme via
@@ -162,6 +167,7 @@ const schemaCreationProfessionnel = z.object({
   telephone: z.string().trim().min(1, "Le telephone est obligatoire."),
   role: z.enum(ROLES_CREABLES_PAR_ETABLISSEMENT, { message: "Role invalide." }),
   specialite: z.string().trim().min(1, "La specialite est obligatoire."),
+  numeroOrdre: z.string(),
 });
 
 const schemaChangementMotDePasse = z
@@ -199,6 +205,17 @@ function estErreurContrainteUnique(erreur: unknown): boolean {
   return (
     erreur instanceof Prisma.PrismaClientKnownRequestError && erreur.code === "P2002"
   );
+}
+
+const MESSAGE_NUMERO_ORDRE_EXISTANT =
+  "Ce numero d'ordre est deja enregistre sur la plateforme. Ne creez pas un second compte pour la meme personne : demandez son rattachement a votre etablissement au ministere.";
+
+function contrainteNumeroOrdre(erreur: unknown): boolean {
+  if (!estErreurContrainteUnique(erreur)) {
+    return false;
+  }
+  const cible = (erreur as Prisma.PrismaClientKnownRequestError).meta?.target;
+  return Array.isArray(cible) && cible.includes("numeroOrdre");
 }
 
 const MAJUSCULES_LISIBLES = "ABCDEFGHJKLMNPQRSTUVWXYZ"; // sans I ni O (ambigus)
@@ -363,6 +380,13 @@ export async function creerEtablissementAction(
           longitude: donnees.longitude,
           servicesDisponibles: servicesJSON,
           capacite: donnees.capacite,
+          // F-ADM-02 du pack : cette action active l'etablissement des sa
+          // creation (invitation immediate de son admin, meme transaction),
+          // saut assume du cycle DRAFT -> controle -> activation de la
+          // fiche : coherent avec la decision deja prise en Phase 6 que
+          // l'admin d'etablissement repond de ses propres recrutements,
+          // sans etape de validation intermediaire (voir aussi F-ADM-03/05).
+          statut: "actif",
         },
       });
 
@@ -393,6 +417,14 @@ export async function creerEtablissementAction(
               numeroProfessionnel,
               etablissementId: etablissement.id,
               statutValidation: "valide",
+              affiliations: {
+                create: {
+                  etablissementId: etablissement.id,
+                  roleNom: "admin_etablissement",
+                  statut: "active",
+                  inviteParUserId: session.userId,
+                },
+              },
             },
           },
         },
@@ -499,6 +531,7 @@ export async function creerProfessionnelAction(
     telephone: formData.get("telephone"),
     role: formData.get("role"),
     specialite: formData.get("specialite"),
+    numeroOrdre: formData.get("numeroOrdre") ?? "",
   });
 
   if (!validation.success) {
@@ -514,6 +547,25 @@ export async function creerProfessionnelAction(
 
   if (compteExistant) {
     return { error: "Un compte existe deja avec cet email.", success: false };
+  }
+
+  const profession = professionDepuisRole(donnees.role);
+  const numeroOrdre = normaliserNumeroOrdre(donnees.numeroOrdre);
+
+  if (numeroOrdre !== null && !numeroOrdreValide(numeroOrdre)) {
+    return { error: "Numero d'ordre invalide : lettres, chiffres et tirets uniquement.", success: false };
+  }
+
+  // Ne pas reveler qui est deja enregistre ni ou : un simple constat d'existence.
+  if (numeroOrdre !== null && profession !== null) {
+    const dejaEnregistre = await prisma.professionnelSante.findFirst({
+      where: { profession, numeroOrdre },
+      select: { id: true },
+    });
+
+    if (dejaEnregistre) {
+      return { error: MESSAGE_NUMERO_ORDRE_EXISTANT, success: false };
+    }
   }
 
   const motDePasseTemporaire = genererMotDePasseTemporaire();
@@ -548,6 +600,16 @@ export async function creerProfessionnelAction(
           numeroProfessionnel,
           etablissementId: adminProfil.etablissementId,
           statutValidation: "valide",
+          profession,
+          numeroOrdre,
+          affiliations: {
+            create: {
+              etablissementId: adminProfil.etablissementId,
+              roleNom: donnees.role,
+              statut: "active",
+              inviteParUserId: session.userId,
+            },
+          },
         },
       });
 
@@ -563,6 +625,10 @@ export async function creerProfessionnelAction(
       );
     });
   } catch (erreur) {
+    if (contrainteNumeroOrdre(erreur)) {
+      return { error: MESSAGE_NUMERO_ORDRE_EXISTANT, success: false };
+    }
+
     if (estErreurContrainteUnique(erreur)) {
       return {
         error: "Un compte existe deja avec cet email.",

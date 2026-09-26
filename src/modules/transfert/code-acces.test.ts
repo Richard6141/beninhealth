@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   LONGUEUR_CODE,
   codeSaisiAuBonFormat,
+  bornesJourneeBenin,
   composerMessageCode,
+  dureeAccordee,
   empreinteCritere,
   estDureeAcces,
   estMotifAcces,
@@ -123,5 +125,39 @@ describe("composerMessageCode", () => {
       confirmationEnLigne: true,
     });
     expect(long.length).toBeLessThan(1000);
+  });
+});
+
+describe("dureeAccordee", () => {
+  it("avec un signal de presence, accorde la duree demandee", () => {
+    expect(dureeAccordee(168, true)).toBe(168);
+    expect(dureeAccordee(72, true)).toBe(72);
+  });
+
+  it("sans signal, plafonne a 24 h et ne rallonge jamais", () => {
+    expect(dureeAccordee(168, false)).toBe(24);
+    expect(dureeAccordee(72, false)).toBe(24);
+    expect(dureeAccordee(24, false)).toBe(24);
+    expect(dureeAccordee(12, false)).toBe(12);
+  });
+});
+
+describe("bornesJourneeBenin", () => {
+  it("la journee beninoise (UTC+1) commence a 23h UTC la veille", () => {
+    const { debut, fin } = bornesJourneeBenin(new Date("2026-09-26T10:30:00Z"));
+    expect(debut.toISOString()).toBe("2026-09-25T23:00:00.000Z");
+    expect(fin.toISOString()).toBe("2026-09-26T23:00:00.000Z");
+  });
+
+  it("apres 23h UTC on est deja le lendemain au Benin", () => {
+    const { debut } = bornesJourneeBenin(new Date("2026-09-26T23:30:00Z"));
+    expect(debut.toISOString()).toBe("2026-09-26T23:00:00.000Z");
+  });
+
+  it("la fin est exactement 24 h apres le debut et l'instant courant est dedans", () => {
+    const instant = new Date("2026-01-01T00:00:00Z");
+    const { debut, fin } = bornesJourneeBenin(instant);
+    expect(fin.getTime() - debut.getTime()).toBe(24 * 3600_000);
+    expect(instant >= debut && instant < fin).toBe(true);
   });
 });

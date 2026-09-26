@@ -22,6 +22,9 @@ export const CODES_MAX_PAR_PATIENT_PAR_24H = 5;
 export const DEMANDES_MAX_PAR_COUPLE_PAR_24H = 3;
 
 export const DUREES_ACCES_HEURES = [24, 72, 168] as const;
+// Sans signal de presence dans l'etablissement (rendez-vous confirme ou arrivee
+// enregistree aujourd'hui), l'acces est plafonne a une journee.
+export const DUREE_MAX_SANS_SIGNAL_DE_PRESENCE_HEURES = 24;
 export type DureeAccesHeures = (typeof DUREES_ACCES_HEURES)[number];
 export const DUREE_ACCES_PAR_DEFAUT_HEURES: DureeAccesHeures = 24;
 
@@ -35,6 +38,22 @@ export type MotifAcces = keyof typeof MOTIFS_ACCES;
 
 export const MODES_RECHERCHE = ["npi", "telephone"] as const;
 export type ModeRecherche = (typeof MODES_RECHERCHE)[number];
+
+/** Duree effectivement accordee : la duree demandee, plafonnee sans signal de presence. */
+export function dureeAccordee(dureeDemandeeHeures: number, signalDePresence: boolean): number {
+  return signalDePresence
+    ? dureeDemandeeHeures
+    : Math.min(dureeDemandeeHeures, DUREE_MAX_SANS_SIGNAL_DE_PRESENCE_HEURES);
+}
+
+const DECALAGE_BENIN_MS = 60 * 60 * 1000; // UTC+1, sans heure d'ete
+
+/** Debut (inclus) et fin (exclue) de la journee courante au Benin (Africa/Porto-Novo), en instants UTC. */
+export function bornesJourneeBenin(instant: Date): { debut: Date; fin: Date } {
+  const local = new Date(instant.getTime() + DECALAGE_BENIN_MS);
+  const debutUtc = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate()) - DECALAGE_BENIN_MS;
+  return { debut: new Date(debutUtc), fin: new Date(debutUtc + 24 * 60 * 60 * 1000) };
+}
 
 export function estMotifAcces(valeur: string): valeur is MotifAcces {
   return Object.hasOwn(MOTIFS_ACCES, valeur);
