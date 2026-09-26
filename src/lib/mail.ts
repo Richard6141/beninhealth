@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import { adresseDemoSansBoite } from "@/lib/demo";
 import { getEnv } from "@/lib/env";
 
 // Transporteur SMTP unique, reutilise entre les rechargements a chaud en
@@ -46,6 +47,12 @@ export interface OptionsEmail {
  */
 export async function envoyerEmail(options: OptionsEmail): Promise<void> {
   const env = getEnv();
+
+  // Serveur de demonstration : les adresses fictives du jeu de demonstration
+  // ne recoivent rien, le code s'affiche a l'ecran (voir src/lib/demo.ts).
+  if (adresseDemoSansBoite(options.to)) {
+    return;
+  }
   const transporteur = getTransporteur();
 
   await transporteur.sendMail({

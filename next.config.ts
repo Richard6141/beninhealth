@@ -2,6 +2,8 @@ import type { NextConfig } from "next";
 import { enTetesSecurite } from "./src/lib/en-tetes-securite";
 
 const nextConfig: NextConfig = {
+  // Image autonome pour le conteneur Docker (voir Dockerfile).
+  output: "standalone",
   poweredByHeader: false,
   async headers() {
     return [
