@@ -375,6 +375,21 @@ function LigneExamen({
               </TuileDetail>
             ) : null}
 
+            {examen.anterieurs && examen.anterieurs.length > 0 ? (
+              <TuileDetail label="Antécédents du patient pour cet examen">
+                <ul className="flex flex-col gap-2">
+                  {examen.anterieurs.map((anterieur) => (
+                    <li key={anterieur.date} className="text-[13px] text-encre-secondaire">
+                      <span className="chiffres font-semibold text-encre">{formaterDateHeure(anterieur.date)}</span>
+                      {anterieur.resultat ? (
+                        <span className="block whitespace-pre-wrap text-encre-attenuee">{anterieur.resultat}</span>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </TuileDetail>
+            ) : null}
+
             {examen.versionsPrecedentes && examen.versionsPrecedentes.length > 0 ? (
               <TuileDetail label="Versions précédentes (archivées)">
                 <ul className="flex flex-col gap-2">

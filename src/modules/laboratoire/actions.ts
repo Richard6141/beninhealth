@@ -53,6 +53,7 @@ import {
 import { journaliser } from "@/modules/audit/journaliser";
 import { creerNotification } from "@/modules/notification/creer";
 import { estCollisionUnicite, genererNumeroExamen } from "./numero-examen";
+import { construireAnterieurs } from "./anterieurs";
 
 /** Une valeur de parametre structure saisie et son indicateur calcule (F-LAB-03). Snapshot autonome, stocke tel quel dans ExamenMedical.resultatsParametres : jamais recalcule depuis le referentiel a l'affichage, pour rester stable si le referentiel change. */
 export interface ResultatParametre {
@@ -128,7 +129,20 @@ export interface ExamenResume {
   // uniquement pour une lecture cote laboratoire, null ailleurs : le medecin et
   // le patient voient la version courante, jamais l'historique interne.
   versionsPrecedentes: VersionPrecedenteResume[] | null;
+  // F-LAB-04 : antecedents du meme patient pour le meme examen dans ce
+  // laboratoire (resultats valides plus anciens, les plus recents d'abord).
+  // Renseigne uniquement pour une lecture cote laboratoire, null ailleurs.
+  anterieurs: AnterieurResultatResume[] | null;
 }
+
+/** Un resultat valide plus ancien du meme patient pour le meme examen, dans le meme laboratoire (F-LAB-04). */
+export interface AnterieurResultatResume {
+  date: string; // ISO, date de la demande
+  resultat: string | null;
+}
+
+/** Nombre maximal d'antecedents affiches sur l'ecran de validation (non exporte : fichier "use server"). */
+const NOMBRE_MAX_ANTERIEURS = 3;
 
 /** Une version validee remplacee par une correction (RG-ROL-31), lecture laboratoire. */
 export interface VersionPrecedenteResume {
@@ -363,6 +377,7 @@ function versExamenResume(
     valideParNomComplet?: string | null;
     commentaireValidation?: string | null;
     versionsPrecedentes?: VersionPrecedenteResume[] | null;
+    anterieurs?: AnterieurResultatResume[] | null;
   }
 ): ExamenResume {
   return {
@@ -393,6 +408,7 @@ function versExamenResume(
     aJeunRequis: examen.aJeunRequis,
     versionResultat: examen.versionResultat,
     versionsPrecedentes: options.versionsPrecedentes ?? null,
+    anterieurs: options.anterieurs ?? null,
   };
 }
 
@@ -845,6 +861,7 @@ export async function getExamensPourLaboratoire(): Promise<ExamenResume[]> {
   const examensTries = [...examens].sort(
     (a, b) => prioriteStatut(a.statut) - prioriteStatut(b.statut)
   );
+  const anterieursDe = construireAnterieurs(examens, NOMBRE_MAX_ANTERIEURS);
 
   // Lecture cote laboratoire (F-LAB-04) : contrairement aux lectures
   // medecin/patient ci-dessus, le resultat brut reste visible quel que soit
@@ -865,6 +882,7 @@ export async function getExamensPourLaboratoire(): Promise<ExamenResume[]> {
         motifCorrection: version.motifCorrection,
         dateCorrection: version.dateCorrection.toISOString(),
       })),
+      anterieurs: anterieursDe(examen.id),
     })
   );
 }
