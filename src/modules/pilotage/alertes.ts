@@ -89,21 +89,41 @@ async function executerDetection(): Promise<void> {
   debutHistorique.setDate(debutHistorique.getDate() - NB_SEMAINES_HISTORIQUE * 7);
 
   try {
+    // Les lignes IND-03 sont ecrites par etablissement (agregation.ts) et ne
+    // portent jamais de zoneSanitaireId : la zone est resolue ici via
+    // l'etablissement. Un etablissement sans zone renseignee ne peut pas
+    // alimenter une alerte par zone et est ignore.
     const lignes = await prisma.agregatQuotidien.findMany({
       where: {
         indicateur: "IND-03",
         date: { gte: debutHistorique, lt: finSemaineCourante },
-        zoneSanitaireId: { not: null },
+        etablissementId: { not: null },
         dimensionLibre: { in: GROUPES_SURVEILLES },
       },
-      select: { date: true, zoneSanitaireId: true, dimensionLibre: true, valeur: true },
+      select: { date: true, etablissementId: true, dimensionLibre: true, valeur: true },
     });
+
+    const etablissementIds = [
+      ...new Set(lignes.map((ligne) => ligne.etablissementId).filter((id): id is string => id !== null)),
+    ];
+    const etablissements = await prisma.etablissementSanitaire.findMany({
+      where: { id: { in: etablissementIds }, zoneSanitaireId: { not: null } },
+      select: { id: true, zoneSanitaireId: true },
+    });
+    const zoneParEtablissement = new Map<string, string>();
+    for (const etablissement of etablissements) {
+      if (etablissement.zoneSanitaireId) {
+        zoneParEtablissement.set(etablissement.id, etablissement.zoneSanitaireId);
+      }
+    }
 
     // casParZoneEtGroupeEtSemaine["zone|groupe"]["AAAA-Wss"] = total de cas
     // de cette semaine-la, pour cette zone et ce groupe.
     const casParZoneEtGroupeEtSemaine = new Map<string, Map<string, number>>();
     for (const ligne of lignes) {
-      const cleZoneGroupe = `${ligne.zoneSanitaireId}|${ligne.dimensionLibre}`;
+      const zoneSanitaireId = ligne.etablissementId ? zoneParEtablissement.get(ligne.etablissementId) : undefined;
+      if (!zoneSanitaireId) continue;
+      const cleZoneGroupe = `${zoneSanitaireId}|${ligne.dimensionLibre}`;
       const semaineLigne = semaineISO(ligne.date);
       const parSemaine = casParZoneEtGroupeEtSemaine.get(cleZoneGroupe) ?? new Map<string, number>();
       parSemaine.set(semaineLigne, (parSemaine.get(semaineLigne) ?? 0) + ligne.valeur);
