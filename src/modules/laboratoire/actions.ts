@@ -103,6 +103,17 @@ export interface ExamenResume {
   saisiParNomComplet: string | null;
   valideParNomComplet: string | null;
   commentaireValidation: string | null;
+  // F-LAB-02 du pack : etape de prelevement, visible cote patient/medecin
+  // aussi (rien de sensible ici, contrairement aux quatre champs ci-dessus).
+  identiteVerifiee: boolean;
+  datePrelevement: string | null; // ISO ou null
+  typeEchantillon: string | null;
+  identifiantEchantillon: string | null;
+  motifRejetEchantillon: string | null;
+  // F-LAB-01 du pack : renseignes a la demande, visibles cote patient/medecin/
+  // laboratoire (rien de sensible ici, comme le prelevement ci-dessus).
+  niveauUrgence: string; // "normal" | "urgent"
+  aJeunRequis: boolean;
 }
 
 /** Types d'acces de consentement autorisant un professionnel a demander un examen. */
@@ -133,11 +144,20 @@ const STATUTS_SAISIE_AUTORISEE = ["demande", "en_cours", "correction_demandee"] 
  */
 const STATUTS_ANNULATION_AUTORISEE = ["demande", "en_cours"] as const;
 
+const NIVEAUX_URGENCE_EXAMEN = ["normal", "urgent"] as const;
+
 const schemaDemandeExamen = z.object({
   patientId: z.string().trim().min(1, "Le patient est obligatoire."),
   consultationId: z.string().trim().optional().default(""),
   laboratoireId: z.string().trim().min(1, "Le laboratoire est obligatoire."),
   typeExamen: z.string().trim().min(1, "Le type d'examen est obligatoire."),
+  // F-LAB-01 du pack. "normal" par defaut si le champ est absent (formulaire
+  // non mis a jour, ou soumission directe), jamais bloquant.
+  niveauUrgence: z
+    .enum(NIVEAUX_URGENCE_EXAMEN, { message: "Le niveau d'urgence est invalide." })
+    .optional()
+    .default("normal"),
+  aJeunRequis: z.coerce.boolean().optional().default(false),
 });
 
 const schemaSaisieResultat = z.object({
@@ -266,6 +286,13 @@ function versExamenResume(
     laboratoire: { nom: string };
     sensible: boolean;
     resultatAnnonceAuPatient: boolean;
+    identiteVerifiee: boolean;
+    datePrelevement: Date | null;
+    typeEchantillon: string | null;
+    identifiantEchantillon: string | null;
+    motifRejetEchantillon: string | null;
+    niveauUrgence: string;
+    aJeunRequis: boolean;
   },
   options: {
     patientNomComplet: string | null;
@@ -296,6 +323,13 @@ function versExamenResume(
     saisiParNomComplet: options.saisiParNomComplet ?? null,
     valideParNomComplet: options.valideParNomComplet ?? null,
     commentaireValidation: options.commentaireValidation ?? null,
+    identiteVerifiee: examen.identiteVerifiee,
+    datePrelevement: examen.datePrelevement ? examen.datePrelevement.toISOString() : null,
+    typeEchantillon: examen.typeEchantillon,
+    identifiantEchantillon: examen.identifiantEchantillon,
+    motifRejetEchantillon: examen.motifRejetEchantillon,
+    niveauUrgence: examen.niveauUrgence,
+    aJeunRequis: examen.aJeunRequis,
   };
 }
 
@@ -383,6 +417,11 @@ export async function demanderExamenAction(
     consultationId: texte(formData, "consultationId"),
     laboratoireId: texte(formData, "laboratoireId"),
     typeExamen: texte(formData, "typeExamen"),
+    // texte() renvoie toujours une chaine (jamais undefined) : "" ne
+    // declencherait pas le .default() de zod (reserve a undefined), d'ou ce
+    // repli explicite plutot qu'un refus surprenant si le champ est absent.
+    niveauUrgence: texte(formData, "niveauUrgence") || "normal",
+    aJeunRequis: texte(formData, "aJeunRequis"),
   });
 
   if (!validation.success) {
@@ -392,7 +431,7 @@ export async function demanderExamenAction(
     };
   }
 
-  const { patientId, consultationId, laboratoireId, typeExamen } = validation.data;
+  const { patientId, consultationId, laboratoireId, typeExamen, niveauUrgence, aJeunRequis } = validation.data;
 
   try {
     const professionnel = await prisma.professionnelSante.findUnique({
@@ -461,6 +500,8 @@ export async function demanderExamenAction(
           typeExamen,
           statut: "demande",
           sensible: estExamenSensible(typeExamen),
+          niveauUrgence,
+          aJeunRequis,
         },
       });
 
@@ -707,6 +748,239 @@ export async function getExamensPourLaboratoire(): Promise<ExamenResume[]> {
       commentaireValidation: examen.commentaireValidation,
     })
   );
+}
+
+const TYPES_ECHANTILLON = ["sang_veineux", "sang_capillaire", "urine", "selles", "autre"] as const;
+const MOTIFS_REJET_ECHANTILLON = [
+  "hemolyse",
+  "quantite_insuffisante",
+  "mauvais_tube",
+  "delai_depasse",
+  "etiquetage_incorrect",
+] as const;
+
+const schemaPrelevement = z.object({
+  examenId: z.string().trim().min(1, "L'examen est obligatoire."),
+  typeEchantillon: z.enum(TYPES_ECHANTILLON, { message: "Type d'echantillon invalide." }),
+  identifiantEchantillon: z.string().trim().min(1, "L'identifiant de l'echantillon est obligatoire."),
+  identiteVerifiee: z.coerce.boolean().refine((valeur) => valeur, {
+    message: "L'identite du patient doit etre verifiee avant d'enregistrer le prelevement.",
+  }),
+});
+
+/**
+ * Enregistre le prelevement d'un examen (F-LAB-02 du pack) : le technicien a
+ * verifie l'identite du patient (nom, date de naissance, case a cocher
+ * obligatoire) et note le type d'echantillon, son identifiant et l'heure du
+ * prelevement. Fait passer le statut de "demande" a "en_cours" (deja prevu
+ * par le champ ExamenMedical.statut, jamais ecrit avant ce chantier).
+ * Meme verification de rattachement que saisirResultatExamenAction : un
+ * examen ne peut etre pris en charge que par le laboratoire auquel il est
+ * assigne (RG-LAB-10 : jamais un autre laboratoire).
+ */
+export async function enregistrerPrelevementAction(
+  prevState: LaboratoireActionState,
+  formData: FormData
+): Promise<LaboratoireActionState> {
+  const session = await getSession();
+
+  if (!session || !session.roles.some((role) => can(role, "update", "examen_medical"))) {
+    return { error: "Action reservee au role laboratoire.", success: false };
+  }
+
+  const validation = schemaPrelevement.safeParse({
+    examenId: texte(formData, "examenId"),
+    typeEchantillon: texte(formData, "typeEchantillon"),
+    identifiantEchantillon: texte(formData, "identifiantEchantillon"),
+    identiteVerifiee: formData.get("identiteVerifiee"),
+  });
+
+  if (!validation.success) {
+    return {
+      error: premierMessageErreur(validation.error, "Donnees de prelevement invalides."),
+      success: false,
+    };
+  }
+
+  const { examenId, typeEchantillon, identifiantEchantillon } = validation.data;
+
+  try {
+    const professionnel = await prisma.professionnelSante.findUnique({
+      where: { userId: session.userId },
+    });
+
+    if (!professionnel) {
+      return { error: "Aucun profil professionnel associe a ce compte.", success: false };
+    }
+
+    const examen = await prisma.examenMedical.findUnique({ where: { id: examenId } });
+
+    if (!examen || examen.laboratoireId !== professionnel.etablissementId) {
+      return { error: "Cet examen est introuvable.", success: false };
+    }
+
+    if (examen.statut !== "demande") {
+      return {
+        error: "Le prelevement ne peut etre enregistre que pour une demande en attente.",
+        success: false,
+      };
+    }
+
+    const adresseTechnique = await adresseTechniqueCourante();
+    const datePrelevement = new Date();
+
+    await prisma.$transaction(async (tx) => {
+      await tx.examenMedical.update({
+        where: { id: examenId },
+        data: {
+          statut: "en_cours",
+          identiteVerifiee: true,
+          datePrelevement,
+          typeEchantillon,
+          identifiantEchantillon,
+          preleveurId: professionnel.id,
+          motifRejetEchantillon: null,
+        },
+      });
+
+      await journaliser(
+        {
+          utilisateurId: session.userId,
+          action: "prelevement_examen",
+          donneeConcernee: `examen_medical:${examenId}`,
+          adresseTechnique,
+          justification: `Prelevement enregistre (${typeEchantillon}, echantillon ${identifiantEchantillon}), identite verifiee.`,
+        },
+        tx
+      );
+    });
+
+    return { error: null, success: true };
+  } catch (erreur) {
+    console.error("Erreur lors de l'enregistrement du prelevement :", erreur);
+    return { error: "Une erreur est survenue. Veuillez reessayer.", success: false };
+  }
+}
+
+const schemaRejetEchantillon = z.object({
+  examenId: z.string().trim().min(1, "L'examen est obligatoire."),
+  motifRejetEchantillon: z.enum(MOTIFS_REJET_ECHANTILLON, { message: "Motif de rejet invalide." }),
+});
+
+/**
+ * Rejette l'echantillon d'un examen deja preleve (F-LAB-02 du pack) : remet
+ * le statut a "demande" pour qu'un nouveau prelevement soit fait, notifie le
+ * prescripteur et le patient qu'un nouveau prelevement est necessaire.
+ * Jamais possible sur un examen dont le resultat a deja ete saisi (le rejet
+ * concerne l'echantillon, pas un resultat deja produit).
+ */
+export async function rejeterEchantillonAction(
+  prevState: LaboratoireActionState,
+  formData: FormData
+): Promise<LaboratoireActionState> {
+  const session = await getSession();
+
+  if (!session || !session.roles.some((role) => can(role, "update", "examen_medical"))) {
+    return { error: "Action reservee au role laboratoire.", success: false };
+  }
+
+  const validation = schemaRejetEchantillon.safeParse({
+    examenId: texte(formData, "examenId"),
+    motifRejetEchantillon: texte(formData, "motifRejetEchantillon"),
+  });
+
+  if (!validation.success) {
+    return {
+      error: premierMessageErreur(validation.error, "Donnees de rejet invalides."),
+      success: false,
+    };
+  }
+
+  const { examenId, motifRejetEchantillon } = validation.data;
+
+  try {
+    const professionnel = await prisma.professionnelSante.findUnique({
+      where: { userId: session.userId },
+    });
+
+    if (!professionnel) {
+      return { error: "Aucun profil professionnel associe a ce compte.", success: false };
+    }
+
+    const examen = await prisma.examenMedical.findUnique({
+      where: { id: examenId },
+      include: { patient: { select: { userId: true } }, demandeur: { select: { userId: true } } },
+    });
+
+    if (!examen || examen.laboratoireId !== professionnel.etablissementId) {
+      return { error: "Cet examen est introuvable.", success: false };
+    }
+
+    if (examen.statut !== "en_cours") {
+      return {
+        error: "Seul un echantillon deja preleve peut etre rejete.",
+        success: false,
+      };
+    }
+
+    const adresseTechnique = await adresseTechniqueCourante();
+
+    await prisma.$transaction(async (tx) => {
+      await tx.examenMedical.update({
+        where: { id: examenId },
+        data: {
+          statut: "demande",
+          motifRejetEchantillon,
+          identiteVerifiee: false,
+          datePrelevement: null,
+          typeEchantillon: null,
+          identifiantEchantillon: null,
+          preleveurId: null,
+        },
+      });
+
+      await journaliser(
+        {
+          utilisateurId: session.userId,
+          action: "rejet_echantillon_examen",
+          donneeConcernee: `examen_medical:${examenId}`,
+          adresseTechnique,
+          justification: `Echantillon rejete (motif : ${motifRejetEchantillon}), nouveau prelevement necessaire.`,
+        },
+        tx
+      );
+    });
+
+    // creerNotification n'est pas transactionnelle (voir le meme choix dans
+    // src/modules/administration/etablissements.ts) : envoyee seulement
+    // apres le commit reel de la transaction ci-dessus.
+    //
+    // RG-LAB-42 du pack : "Aucune notification (SMS ou application) NE DOIT
+    // contenir le nom de l'examen ni la valeur." Corrige ici : les deux
+    // messages ci-dessous incluaient auparavant typeExamen en clair (ex.
+    // "Serologie VIH"), exactement le risque de fuite deja corrige pour les
+    // notifications de resultat (voir docs/audit-cote-laboratoire.md) mais
+    // pas encore applique a ce chemin de rejet d'echantillon.
+    await Promise.all([
+      creerNotification(
+        examen.demandeur.userId,
+        "echantillon_rejete",
+        "L'echantillon d'un examen que vous avez demande a ete rejete. Un nouveau prelevement est necessaire.",
+        "/app/medecin/examens"
+      ),
+      creerNotification(
+        examen.patient.userId,
+        "echantillon_rejete",
+        "Un nouveau prelevement est necessaire pour un examen demande par votre medecin.",
+        "/app/patient/examens"
+      ),
+    ]);
+
+    return { error: null, success: true };
+  } catch (erreur) {
+    console.error("Erreur lors du rejet de l'echantillon :", erreur);
+    return { error: "Une erreur est survenue. Veuillez reessayer.", success: false };
+  }
 }
 
 /**

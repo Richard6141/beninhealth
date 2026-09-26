@@ -19,6 +19,12 @@ const etatInitial: LaboratoireActionState = { error: null, success: false };
 
 const CODE_AUTRE_EXAMEN = "AUTRE";
 
+/** F-LAB-01 du pack : niveau d'urgence de la demande. */
+const OPTIONS_NIVEAU_URGENCE = [
+  { value: "normal", label: "Normal" },
+  { value: "urgent", label: "Urgent" },
+];
+
 export interface PatientPourSelection {
   patientId: string;
   nomComplet: string;
@@ -199,6 +205,19 @@ export function FormulaireDemandeExamen({
             onChange={(event) => setPrecisionAutreExamen(event.target.value)}
           />
         ) : null}
+
+        <SelectField
+          label="Niveau d'urgence"
+          name="niveauUrgence"
+          options={OPTIONS_NIVEAU_URGENCE}
+          defaultValue="normal"
+          hint="« Urgent » signale au laboratoire une demande à traiter en priorité."
+        />
+
+        <label className="flex items-center gap-2 text-[15px] font-semibold text-encre">
+          <input type="checkbox" name="aJeunRequis" value="true" />
+          À jeun requis
+        </label>
 
         <Button
           type="submit"

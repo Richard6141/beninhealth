@@ -53,7 +53,7 @@ export default async function NouvelExamenPage({ searchParams }: NouvelExamenPag
         <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-accent">
           Espace professionnel
         </p>
-        <h1 className="text-[28px] font-black text-encre">Demander un examen</h1>
+        <h1 className="text-[28px] font-bold text-titre">Demander un examen</h1>
         <p className="max-w-2xl text-[15px] text-encre-secondaire">
           Adressez une demande d&apos;examen a un laboratoire partenaire pour
           un patient.
