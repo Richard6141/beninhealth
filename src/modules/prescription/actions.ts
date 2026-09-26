@@ -55,6 +55,7 @@ import {
   precisionAutreManquante,
   composerPosologie,
 } from "./posologie";
+import { ageAnnees } from "@/modules/clinical/controles-constantes";
 
 /** Etat renvoye par chaque Server Action de ce module, consomme via useActionState. */
 export interface PrescriptionActionState {
@@ -1507,7 +1508,7 @@ export async function annulerDelivranceAction(
       if (delaiAnnulationDelivranceDepasse(delivrance.date)) {
         return {
           ok: false as const,
-          error: `Le delai de ${LONGUEUR_MIN_MOTIF_ANNULATION_DELIVRANCE > 0 ? "24 heures" : "24 heures"} suivant la delivrance est depasse : cette annulation n'est plus possible.`,
+          error: `Le delai de ${HEURES_FENETRE_ANNULATION_DELIVRANCE} heures suivant la delivrance est depasse : cette annulation n'est plus possible.`,
         };
       }
 
@@ -1583,4 +1584,160 @@ export async function annulerDelivranceAction(
       success: false,
     };
   }
+}
+
+/** Une ligne delivree, telle qu'affichee dans la vue transversale de l'historique pharmacie (F-PHA-04). */
+export interface LigneDelivranceHistorique {
+  medicamentNom: string;
+  quantiteDelivree: number;
+  medicamentDelivreNom: string | null;
+  motifNonDelivrance: string | null;
+}
+
+/**
+ * Une delivrance telle qu'affichee dans la vue transversale F-PHA-04.
+ * RG-PHA du pack ("aucune donnee de patient au-dela du nom et de l'age") :
+ * jamais l'identifiant sante, jamais le motif de consultation, jamais autre
+ * chose que le nom complet et l'age au jour de la delivrance.
+ */
+export interface DelivranceHistoriqueEtablissement {
+  id: string;
+  date: string; // ISO
+  numeroOrdonnance: string;
+  patientNomComplet: string;
+  patientAge: number;
+  pharmacienNomComplet: string;
+  annulee: boolean;
+  lignes: LigneDelivranceHistorique[];
+}
+
+export interface FiltresHistoriqueDelivrances {
+  /** "AAAA-MM-JJ", incluse. Par defaut, 30 jours avant dateFin. */
+  dateDebut?: string;
+  /** "AAAA-MM-JJ", incluse. Par defaut, aujourd'hui. */
+  dateFin?: string;
+  /** Recherche texte sur le nom du medicament (prescrit ou substitue), insensible a la casse. */
+  medicament?: string;
+}
+
+/**
+ * Resultat de listerDelivrancesEtablissement. Structure explicite plutot
+ * qu'un simple null (meme principe que getStatistiquesNationales dans
+ * src/modules/analytics/actions.ts) : acces=false et plageInvalide=true sont
+ * deux causes distinctes d'une liste vide, que l'ecran doit pouvoir
+ * distinguer pour afficher le bon message (droits insuffisants vs periode a
+ * corriger), plutot qu'un null unique qui les confondrait.
+ */
+export interface ResultatHistoriqueDelivrances {
+  /** false si l'appelant n'est pas pharmacien ou n'a pas de fiche professionnelle associee. */
+  acces: boolean;
+  /** true si la plage demandee est invalide (fin avant debut, ou plus de JOURS_PLAGE_HISTORIQUE_MAXIMUM jours). */
+  plageInvalide: boolean;
+  delivrances: DelivranceHistoriqueEtablissement[];
+}
+
+const JOURS_PLAGE_HISTORIQUE_PAR_DEFAUT = 30;
+/** Plage maximale autorisee pour une recherche (memes principes que rechercherJournalAudit : une requete non bornee sur toute la pharmacie serait couteuse et peu lisible). */
+const JOURS_PLAGE_HISTORIQUE_MAXIMUM = 92;
+
+function dateSeuleVersDate(valeur: string, finDeJournee: boolean): Date | null {
+  const date = new Date(`${valeur}T${finDeJournee ? "23:59:59.999" : "00:00:00.000"}`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+const ACCES_REFUSE: ResultatHistoriqueDelivrances = { acces: false, plageInvalide: false, delivrances: [] };
+const PLAGE_INVALIDE: ResultatHistoriqueDelivrances = { acces: true, plageInvalide: true, delivrances: [] };
+
+/**
+ * Historique des delivrances de la pharmacie du pharmacien connecte
+ * (F-PHA-04 du pack), filtrable par periode et par medicament. Contrairement
+ * a getPrescriptionsADelivrer/getDetailPrescriptionPourDelivrance (ouverts a
+ * tout pharmacien, n'importe quelle pharmacie), cette vue est explicitement
+ * scopee a l'etablissement du pharmacien connecte ("de SA pharmacie", texte
+ * du pack) : Zero Trust, l'etablissement est toujours derive de sa fiche
+ * ProfessionnelSante, jamais d'un identifiant transmis par le client.
+ */
+export async function listerDelivrancesEtablissement(
+  filtres: FiltresHistoriqueDelivrances
+): Promise<ResultatHistoriqueDelivrances> {
+  const session = await getSession();
+
+  if (!session || !session.roles.includes("pharmacien") || !can("pharmacien", "read", "delivrance")) {
+    return ACCES_REFUSE;
+  }
+
+  const professionnel = await professionnelDeLaSessionCourante();
+
+  if (!professionnel) {
+    return ACCES_REFUSE;
+  }
+
+  const maintenant = new Date();
+  const dateFin = filtres.dateFin ? dateSeuleVersDate(filtres.dateFin, true) : maintenant;
+  if (!dateFin) {
+    return PLAGE_INVALIDE;
+  }
+
+  let dateDebut: Date;
+  if (filtres.dateDebut) {
+    const parsee = dateSeuleVersDate(filtres.dateDebut, false);
+    if (!parsee) return PLAGE_INVALIDE;
+    dateDebut = parsee;
+  } else {
+    dateDebut = new Date(dateFin.getTime() - JOURS_PLAGE_HISTORIQUE_PAR_DEFAUT * 24 * 60 * 60 * 1000);
+  }
+
+  if (dateFin < dateDebut) {
+    return PLAGE_INVALIDE;
+  }
+  if (dateFin.getTime() - dateDebut.getTime() > JOURS_PLAGE_HISTORIQUE_MAXIMUM * 24 * 60 * 60 * 1000) {
+    return PLAGE_INVALIDE;
+  }
+
+  const delivrances = await prisma.delivrance.findMany({
+    where: {
+      etablissementId: professionnel.etablissementId,
+      date: { gte: dateDebut, lte: dateFin },
+    },
+    include: {
+      prescription: { include: { patient: { include: { user: true } } } },
+      pharmacien: { include: { user: true } },
+      lignes: {
+        include: {
+          lignePrescription: { include: { medicament: true } },
+          medicamentDelivre: true,
+        },
+      },
+    },
+    orderBy: { date: "desc" },
+  });
+
+  const termeMedicament = filtres.medicament?.trim().toLowerCase();
+
+  const resultat = delivrances
+    .map((delivrance) => ({
+      id: delivrance.id,
+      date: delivrance.date.toISOString(),
+      numeroOrdonnance: delivrance.prescription.numero,
+      patientNomComplet: nomComplet(delivrance.prescription.patient.user),
+      patientAge: ageAnnees(delivrance.prescription.patient.dateNaissance, delivrance.date),
+      pharmacienNomComplet: nomComplet(delivrance.pharmacien.user),
+      annulee: delivrance.annulee,
+      lignes: delivrance.lignes.map((ligne) => ({
+        medicamentNom: ligne.lignePrescription.medicament.nom,
+        quantiteDelivree: ligne.quantiteDelivree,
+        medicamentDelivreNom: ligne.medicamentDelivre?.nom ?? null,
+        motifNonDelivrance: ligne.motifNonDelivrance,
+      })),
+    }))
+    .filter((delivrance) => {
+      if (!termeMedicament) return true;
+      return delivrance.lignes.some(
+        (ligne) =>
+          ligne.medicamentNom.toLowerCase().includes(termeMedicament) ||
+          (ligne.medicamentDelivreNom?.toLowerCase().includes(termeMedicament) ?? false)
+      );
+    });
+
+  return { acces: true, plageInvalide: false, delivrances: resultat };
 }

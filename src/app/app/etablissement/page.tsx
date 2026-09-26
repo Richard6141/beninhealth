@@ -9,12 +9,21 @@ import {
   getStatistiquesEtablissement,
   type StatistiquesEtablissement,
 } from "@/modules/analytics/actions";
+import { getTableauBordEtablissement, type PeriodeTableauBord } from "@/modules/pilotage/lecture";
 import { Alert } from "@/components/ui/Alert";
 import { Badge, type BadgeTone } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { GraphiqueConsultationsMensuelles } from "./GraphiqueConsultationsMensuelles";
+import { SectionPilotage } from "./SectionPilotage";
 import { FormulaireAjoutPersonnel } from "./FormulaireAjoutPersonnel";
 import { FormulaireChangementMotDePasse } from "./FormulaireChangementMotDePasse";
+
+const PERIODES_VALIDES: PeriodeTableauBord[] = ["aujourdhui", "7j", "30j", "mois"];
+
+function periodeDepuisParametre(valeur: string | string[] | undefined): PeriodeTableauBord {
+  const brute = Array.isArray(valeur) ? valeur[0] : valeur;
+  return (PERIODES_VALIDES as string[]).includes(brute ?? "") ? (brute as PeriodeTableauBord) : "7j";
+}
 
 /** Libelles en toutes lettres des roles pouvant apparaitre dans le personnel d'un etablissement. */
 const libellesRolePersonnel: Record<string, string> = {
@@ -66,7 +75,7 @@ function TuileStatistique({
         <span className="text-[12px] font-semibold uppercase tracking-[0.06em] text-encre-attenuee">
           {label}
         </span>
-        <span className="chiffres text-[22px] font-black text-encre">{value}</span>
+        <span className="chiffres text-[22px] font-bold text-encre">{value}</span>
       </div>
     </div>
   );
@@ -265,10 +274,18 @@ function SectionPersonnel({ personnel }: { personnel: MembrePersonnel[] }) {
  * (changerMotDePasseAction, meme module). Aucune donnee simulee : tout
  * provient de ces fonctions serveur.
  */
-export default async function EtablissementPage() {
-  const [statistiques, personnel] = await Promise.all([
+interface EtablissementPageProps {
+  searchParams: Promise<{ periode?: string | string[] }>;
+}
+
+export default async function EtablissementPage({ searchParams }: EtablissementPageProps) {
+  const params = await searchParams;
+  const periode = periodeDepuisParametre(params.periode);
+
+  const [statistiques, personnel, tableauBordPilotage] = await Promise.all([
     getStatistiquesEtablissement(),
     listPersonnelEtablissement(),
+    getTableauBordEtablissement(periode),
   ]);
 
   return (
@@ -278,7 +295,7 @@ export default async function EtablissementPage() {
           <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-accent">
             Espace établissement
           </p>
-          <h1 className="text-[28px] font-black text-encre">Mon établissement</h1>
+          <h1 className="text-[28px] font-bold text-titre">Mon établissement</h1>
           <p className="max-w-2xl text-[15px] text-encre-secondaire">
             Suivez l&apos;activité de votre établissement et gérez les comptes
             de votre personnel de santé.
@@ -292,6 +309,19 @@ export default async function EtablissementPage() {
           Indicateurs de l&apos;établissement
         </h2>
         <SectionIndicateurs statistiques={statistiques} />
+      </section>
+
+      <section aria-labelledby="titre-pilotage" className="flex flex-col gap-4">
+        <h2 id="titre-pilotage" className="text-[20px] font-bold text-encre">
+          Pilotage
+        </h2>
+        {tableauBordPilotage === null ? (
+          <Alert level="warning" title="Indicateurs de pilotage indisponibles">
+            Votre compte administrateur n&apos;est actuellement rattaché à aucun établissement de santé.
+          </Alert>
+        ) : (
+          <SectionPilotage tableauBord={tableauBordPilotage} />
+        )}
       </section>
 
       <section aria-labelledby="titre-personnel" className="flex flex-col gap-4">

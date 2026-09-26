@@ -21,6 +21,7 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/modules/audit/journaliser";
+import { publierEvenementPilotage } from "@/modules/pilotage/file-taches";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
 import {
@@ -1246,7 +1247,7 @@ export async function enregistrerConsultationAction(
     const consultationIdNettoye = consultationId.trim();
 
     const idFinal = await prisma.$transaction(async (tx) => {
-      let cible: { id: string; rendezVousId: string | null };
+      let cible: { id: string; rendezVousId: string | null; date: Date; etablissementId: string };
 
       // Consultation deja identifiee par le formulaire (enregistrements
       // suivants d'un meme brouillon) : verifie l'appartenance (Zero Trust)
@@ -1324,6 +1325,14 @@ export async function enregistrerConsultationAction(
       await tx.consultation.update({
         where: { id: cible.id },
         data: { statut: "terminee", dateValidation, empreinteContenu },
+      });
+
+      // F-PIL-07 : publie l'evenement qui declenchera le recalcul des
+      // agregats (IND-01/02/03/04) du jour et de l'etablissement concernes.
+      await publierEvenementPilotage(tx, {
+        type: "consultation_validee",
+        date: cible.date,
+        etablissementId: cible.etablissementId,
       });
 
       if (cible.rendezVousId) {
@@ -1564,6 +1573,15 @@ export async function retirerConsultationAction(
       await tx.consultation.update({
         where: { id: consultation.id },
         data: { saisieParErreur: true, motifRetrait: motif, dateRetrait: new Date() },
+      });
+
+      // F-PIL-07 / RG-PIL-61 : republie l'evenement pour ce meme jour et
+      // etablissement, afin que le prochain recalcul fasse disparaitre cette
+      // consultation des agregats.
+      await publierEvenementPilotage(tx, {
+        type: "consultation_retiree",
+        date: consultation.date,
+        etablissementId: consultation.etablissementId,
       });
 
       await journaliser(

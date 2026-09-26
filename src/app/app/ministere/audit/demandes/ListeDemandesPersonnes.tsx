@@ -18,6 +18,22 @@ function formaterDateHeure(date: string): string {
   }
 }
 
+/** Libelle + ton du badge de delai (objectif F-AUD-04 : reponse sous 30 jours). */
+function badgeDelai(demande: DemandePersonne): { texte: string; tone: "good" | "warning" | "critical" } {
+  if (demande.traite) {
+    return demande.joursRestantsObjectif >= 0
+      ? { texte: "Traitée dans les délais", tone: "good" }
+      : { texte: `Traitée avec ${Math.abs(demande.joursRestantsObjectif)} j de retard`, tone: "warning" };
+  }
+  if (demande.joursRestantsObjectif < 0) {
+    return { texte: `Délai dépassé de ${Math.abs(demande.joursRestantsObjectif)} j`, tone: "critical" };
+  }
+  if (demande.joursRestantsObjectif <= 7) {
+    return { texte: `${demande.joursRestantsObjectif} j restants`, tone: "warning" };
+  }
+  return { texte: `${demande.joursRestantsObjectif} j restants`, tone: "good" };
+}
+
 /**
  * Liste des demandes des personnes (F-AUD-04), les plus recentes en
  * premier : demande de rectification ou signalement d'acces suspect,
@@ -35,15 +51,20 @@ export function ListeDemandesPersonnes({ demandes }: { demandes: DemandePersonne
 
   return (
     <div className="flex flex-col gap-3">
-      {demandes.map((demande) => (
+      {demandes.map((demande) => {
+        const delai = badgeDelai(demande);
+        return (
         <Card
           key={demande.journalAuditId}
           title={LIBELLES_TYPE[demande.type] ?? demande.type}
           description={`${demande.demandeurNomComplet} · ${formaterDateHeure(demande.date)}`}
           actions={
-            <Badge tone={demande.traite ? "good" : "warning"}>
-              {demande.traite ? "Traitée" : "À traiter"}
-            </Badge>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone={demande.traite ? "good" : "warning"}>
+                {demande.traite ? "Traitée" : "À traiter"}
+              </Badge>
+              <Badge tone={delai.tone}>{delai.texte}</Badge>
+            </div>
           }
         >
           <div className="flex flex-col gap-3">
@@ -65,7 +86,8 @@ export function ListeDemandesPersonnes({ demandes }: { demandes: DemandePersonne
             )}
           </div>
         </Card>
-      ))}
+        );
+      })}
     </div>
   );
 }

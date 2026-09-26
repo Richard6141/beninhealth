@@ -145,10 +145,14 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     'create:professionnel_sante',
     'update:professionnel_sante',
     'delete:professionnel_sante',
+    'read:journal_audit',
+    'create:revue_acces_urgence',
   ]),
 
   admin_national: new Set<Permission>([
     'read:analytics',
+    'read:journal_audit',
+    'create:revue_acces_urgence',
     // F-AUD-04 : traiter les demandes de rectification et les signalements
     // d'acces suspect (role AUDITOR absent de ce depot, routes vers
     // admin_national, voir src/modules/patient/droits-donnees.ts).

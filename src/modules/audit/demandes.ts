@@ -12,17 +12,32 @@
  * workflow de traitement (TraitementDemandePersonne), meme principe que
  * RevueAccesUrgence : jamais une modification de l'entree JournalAudit
  * d'origine.
+ *
+ * Reponse notifiee au demandeur (creerNotification) : le pack exige une
+ * reponse "visible par la personne" (F-AUD-04), corrige ici (l'ecart
+ * initial ne la rendait visible qu'a l'auditeur qui l'a redigee).
+ *
+ * Limite assumee, non implementee : "transferer au responsable
+ * d'etablissement concerne" (texte du pack). Ce depot n'a pas de mecanisme
+ * de reassignation d'une demande a un autre role (contrairement a
+ * RevueAccesUrgence, toujours traitee par le meme admin_etablissement que
+ * celui de l'etablissement concerne) ; un transfert exigerait un champ de
+ * destinataire et une notification dediee, non construits ce soir.
  */
 
 import { headers } from "next/headers";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/modules/audit/journaliser";
+import { creerNotification } from "@/modules/notification/actions";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
 
 const ACTIONS_DEMANDE_PERSONNE = ["demande_rectification", "signalement_acces_suspect"] as const;
 type ActionDemandePersonne = (typeof ACTIONS_DEMANDE_PERSONNE)[number];
+
+/** Objectif de delai de reponse du pack (fiche F-AUD-04 : "reponse sous 30 jours"). */
+const JOURS_OBJECTIF_REPONSE = 30;
 
 async function adresseTechniqueCourante(): Promise<string> {
   try {
@@ -58,6 +73,14 @@ export interface DemandePersonne {
   reponse: string | null;
   traiteParNomComplet: string | null;
   dateTraitement: string | null;
+  /**
+   * Jours restants avant l'objectif de reponse du pack (F-AUD-04 :
+   * "reponse sous 30 jours"), negatif si l'objectif est deja depasse.
+   * Toujours calcule (meme pour une demande deja traitee, ou il indique le
+   * delai reellement tenu) : jamais masque, l'auditeur doit pouvoir voir un
+   * depassement plutot que l'ecran le lui cache.
+   */
+  joursRestantsObjectif: number;
 }
 
 /**
@@ -89,17 +112,25 @@ export async function getDemandesPersonnes(): Promise<DemandePersonne[] | null> 
     orderBy: { date: "desc" },
   });
 
-  return entrees.map((entree) => ({
-    journalAuditId: entree.id,
-    type: entree.action as ActionDemandePersonne,
-    date: entree.date.toISOString(),
-    demandeurNomComplet: nomComplet(entree.utilisateur),
-    contenu: entree.justification,
-    traite: entree.traitementDemande !== null,
-    reponse: entree.traitementDemande?.reponse ?? null,
-    traiteParNomComplet: entree.traitementDemande ? nomComplet(entree.traitementDemande.traitePar) : null,
-    dateTraitement: entree.traitementDemande?.date.toISOString() ?? null,
-  }));
+  const maintenant = new Date();
+
+  return entrees.map((entree) => {
+    const dateReference = entree.traitementDemande?.date ?? maintenant;
+    const joursEcoules = (dateReference.getTime() - entree.date.getTime()) / (1000 * 60 * 60 * 24);
+
+    return {
+      journalAuditId: entree.id,
+      type: entree.action as ActionDemandePersonne,
+      date: entree.date.toISOString(),
+      demandeurNomComplet: nomComplet(entree.utilisateur),
+      contenu: entree.justification,
+      traite: entree.traitementDemande !== null,
+      reponse: entree.traitementDemande?.reponse ?? null,
+      traiteParNomComplet: entree.traitementDemande ? nomComplet(entree.traitementDemande.traitePar) : null,
+      dateTraitement: entree.traitementDemande?.date.toISOString() ?? null,
+      joursRestantsObjectif: Math.ceil(JOURS_OBJECTIF_REPONSE - joursEcoules),
+    };
+  });
 }
 
 export interface TraitementDemandeActionState {
@@ -188,6 +219,18 @@ export async function traiterDemandePersonneAction(
         tx
       );
     });
+
+    // creerNotification() ecrit via le client prisma global, jamais via un
+    // client de transaction : appelee seulement APRES que la transaction a
+    // reellement commit, meme principe que src/modules/administration/etablissements.ts.
+    // Sans cet appel, la reponse n'etait jamais visible par la personne qui a
+    // fait la demande (F-AUD-04 du pack : "cloturer avec une reponse ecrite
+    // visible par la personne"), un ecart reel corrige ici.
+    await creerNotification(
+      entree.utilisateurId,
+      "reponse_demande_personne",
+      `Réponse à votre demande du ${entree.date.toLocaleDateString("fr-FR")} : ${reponse}`
+    );
 
     return { error: null, success: true };
   } catch (erreur) {

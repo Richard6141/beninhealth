@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { formaterIdentifiant, CODES_IDENTIFIANT_PAR_ROLE, CODE_IDENTIFIANT_ETABLISSEMENT } from "../src/modules/identity/identifiants";
+import { seedTerritoire, zoneSanitairePlaceholder } from "../src/modules/pilotage/referentiel-territoire";
 
 // Jeu de donnees de demonstration, contexte beninois, pour le scenario du
 // cahier des charges (Partie 9) : citoyen cree son espace, prend rendez-vous,
@@ -13,6 +14,16 @@ const prisma = new PrismaClient();
 
 async function main() {
   const motDePasseHash = await bcrypt.hash(MOT_DE_PASSE_DEMO, 12);
+
+  // F-PIL-07 du pack : referentiel territoire (departements/communes reels),
+  // prealable a la dimension territoire des indicateurs de pilotage.
+  const territoire = await seedTerritoire(prisma);
+  const communeCotonouId = territoire.communeIdParNom.get("LIT/Cotonou")!;
+  const communeParakouId = territoire.communeIdParNom.get("BOR/Parakou")!;
+  const departementLittoralId = territoire.departementIdParCode.get("LIT")!;
+  const departementBorgouId = territoire.departementIdParCode.get("BOR")!;
+  const zoneLittoral = await zoneSanitairePlaceholder(prisma, "LIT", departementLittoralId);
+  const zoneBorgou = await zoneSanitairePlaceholder(prisma, "BOR", departementBorgouId);
 
   const centreCotonou = await prisma.etablissementSanitaire.create({
     data: {
@@ -28,6 +39,8 @@ async function main() {
         "sante_maternelle",
       ]),
       capacite: 40,
+      communeId: communeCotonouId,
+      zoneSanitaireId: zoneLittoral.id,
     },
   });
 
@@ -45,6 +58,8 @@ async function main() {
         "chirurgie",
       ]),
       capacite: 120,
+      communeId: communeParakouId,
+      zoneSanitaireId: zoneBorgou.id,
     },
   });
 
@@ -62,6 +77,8 @@ async function main() {
         "imagerie",
       ]),
       capacite: 25,
+      communeId: communeCotonouId,
+      zoneSanitaireId: zoneLittoral.id,
     },
   });
 
