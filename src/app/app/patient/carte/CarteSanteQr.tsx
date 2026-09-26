@@ -17,10 +17,9 @@ import { Button } from "@/components/ui/Button";
 export function CarteSanteQr() {
   const [dataUrlQr, setDataUrlQr] = useState<string | null>(null);
   const [secondesRestantes, setSecondesRestantes] = useState(0);
-  const [chargement, setChargement] = useState(false);
+  const [chargement, setChargement] = useState(true);
 
   const regenerer = useCallback(async () => {
-    setChargement(true);
     const jeton = await genererJetonCarteSanteAction();
     setChargement(false);
 
@@ -30,9 +29,24 @@ export function CarteSanteQr() {
     setSecondesRestantes(Math.round((jeton.expirationMs - Date.now()) / 1000));
   }, []);
 
+  // Premier chargement : callback de promesse, jamais de setState synchrone dans l'effet.
   useEffect(() => {
-    regenerer();
-  }, [regenerer]);
+    let actif = true;
+
+    genererJetonCarteSanteAction().then((jeton) => {
+      if (!actif) return;
+      setChargement(false);
+
+      if (!jeton) return;
+
+      setDataUrlQr(jeton.dataUrlQr);
+      setSecondesRestantes(Math.round((jeton.expirationMs - Date.now()) / 1000));
+    });
+
+    return () => {
+      actif = false;
+    };
+  }, []);
 
   useEffect(() => {
     const intervalle = setInterval(() => {
@@ -63,7 +77,7 @@ export function CarteSanteQr() {
       <p className="chiffres text-[13px] text-encre-secondaire">
         Valide encore {minutes}:{secondes.toString().padStart(2, "0")}
       </p>
-      <Button type="button" variant="secondary" size="sm" onClick={regenerer} disabled={chargement}>
+      <Button type="button" variant="secondary" size="sm" onClick={() => { setChargement(true); void regenerer(); }} disabled={chargement}>
         <RefreshCw size={14} aria-hidden="true" className="mr-1.5" />
         Actualiser
       </Button>

@@ -2,8 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect } from "react";
-import { useActionState } from "react";
+import { Suspense, useActionState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   reinitialiserMotDePasseAction,
@@ -23,7 +22,7 @@ const etatInitial: ReinitialisationMotDePasseState = { error: null, success: fal
  * parcours doit rester indiscernable, cote reponse, entre "compte
  * inexistant" et "code incorrect" (voir reinitialisation-mot-de-passe.ts).
  */
-export default function NouveauMotDePassePage() {
+function FormulaireNouveauMotDePasse() {
   const [state, formAction, pending] = useActionState(reinitialiserMotDePasseAction, etatInitial);
   const parametres = useSearchParams();
   const router = useRouter();
@@ -111,5 +110,17 @@ export default function NouveauMotDePassePage() {
         </Card>
       </div>
     </div>
+  );
+}
+
+/**
+ * useSearchParams() exige une frontiere Suspense pour que la page puisse etre
+ * prerendue : sans elle, `next build` echoue (et donc tout deploiement).
+ */
+export default function NouveauMotDePassePage() {
+  return (
+    <Suspense fallback={null}>
+      <FormulaireNouveauMotDePasse />
+    </Suspense>
   );
 }

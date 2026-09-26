@@ -101,13 +101,20 @@ function FormulaireAjoutVaccin() {
   const router = useRouter();
   const [state, formAction, pending] = useActionState(creerVaccinReferentielAction, etatInitial);
   const [cle, setCle] = useState(0);
+  const [etatTraite, setEtatTraite] = useState(state);
+
+  // Nouveau succes : on repart d'un formulaire vierge. Comparaison d'etat au
+  // rendu plutot que setState dans un effet (react-hooks/set-state-in-effect).
+  if (state.success && state !== etatTraite) {
+    setEtatTraite(state);
+    setCle((valeur) => valeur + 1);
+  }
 
   useEffect(() => {
     if (state.success) {
-      setCle((valeur) => valeur + 1);
       router.refresh();
     }
-  }, [state.success, router]);
+  }, [state, router]);
 
   return (
     <form action={formAction} className="flex flex-wrap items-end gap-3">

@@ -38,11 +38,9 @@ export function GenerateurCodePartage() {
       return;
     }
 
-    setSecondes(secondesRestantes(state.expireLe));
-
-    intervalleCompteARebours.current = setInterval(() => {
-      setSecondes(secondesRestantes(state.expireLe!));
-    }, 1000);
+    const actualiserCompteARebours = () => setSecondes(secondesRestantes(state.expireLe!));
+    const premierCalcul = setTimeout(actualiserCompteARebours, 0);
+    intervalleCompteARebours.current = setInterval(actualiserCompteARebours, 1000);
 
     intervalleSondage.current = setInterval(async () => {
       const statut = await getStatutCodePartage(state.codeId!);
@@ -54,6 +52,7 @@ export function GenerateurCodePartage() {
     }, INTERVALLE_SONDAGE_MS);
 
     return () => {
+      clearTimeout(premierCalcul);
       if (intervalleSondage.current) clearInterval(intervalleSondage.current);
       if (intervalleCompteARebours.current) clearInterval(intervalleCompteARebours.current);
     };
