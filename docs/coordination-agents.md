@@ -279,9 +279,32 @@ alors que terminée depuis). Résumé à jour de tout ce que j'ai livré depuis 
   - Planificateur (`src/instrumentation.ts` + `planificateur.ts`) : tâche
     horaire + tâche nocturne 02h00, écrit mais pas encore observé tourner
     sur un redémarrage serveur réel.
-- Reste à faire : IND-08 à IND-13 (ordonnances, ruptures, vaccinations,
-  délai d'attente, qualité de saisie, adoption), puis les tableaux de bord
-  F-PIL-01 à 06.
+- Mise à jour 2026-09-26 (suite) : IND-08 à IND-13 ajoutés. Fait et vérifié
+  (tsc propre, vitest 63/63, dont un test ponctuel réel contre le Postgres
+  partagé pour vérifier les nouvelles relations Prisma, supprimé après
+  vérification) :
+  - IND-08 (ordonnances signées / délivrées dans le délai de 30j, via la
+    relation `Prescription.delivrances`), IND-09 (ruptures de stock par DCI,
+    `LigneDelivrance.motifNonDelivrance === "rupture_stock"`), IND-10
+    (doses de vaccination par vaccin/dose/tranche d'âge, établissement
+    seulement) et IND-12 (part des consultations validées tardivement
+    > 48h uniquement) : tous à la grille (jour, établissement), dans
+    `recalculerJourEtablissement`.
+  - IND-13 (comptes citoyens créés / actifs 30j) : agrégat système,
+    national uniquement, dans `recalculerIndicateursSystemeJour`.
+  - Limites assumées et documentées en tête de `agregation.ts` : IND-11
+    (délai d'attente) pas implémenté du tout, aucun champ d'horodatage
+    d'arrivée n'existe dans ce dépôt (ni sur `RendezVous` ni ailleurs) ;
+    IND-10 ne couvre que le lieu "établissement" (pas "terrain",
+    `SuiviCommunautaire` ne structure pas vaccin/dose) ; IND-12 ne couvre
+    que la moitié calculable (même gap d'arrivée que IND-11 pour l'autre
+    moitié) ; IND-13 sans dimension territoire (`Patient` n'a aucune commune
+    de résidence déclarée dans ce modèle de données).
+  - Ces 3 gaps (arrivée, terrain vaccination structuré, résidence patient)
+    sont tous cote Agent Architecture s'il faut les lever un jour : aucun
+    heuristique fabriqué à la place.
+- Reste à faire : les tableaux de bord F-PIL-01 à 06 eux-mêmes (rien
+  n'affiche encore ces agrégats à l'écran).
 - Fichiers à moi : tout `src/modules/pilotage/`, `src/instrumentation.ts`,
   `prisma/schema.prisma` (modèles `TachePilotage`, `AgregatQuotidien`,
   `HealthAlertReview`, `Departement`, `Commune`, `ZoneSanitaire`, migrations
@@ -291,4 +314,188 @@ alors que terminée depuis). Résumé à jour de tout ce que j'ai livré depuis 
   Postgres réels, jamais committés (voir `.gitignore`).
 - Pas encore committé : accord explicite de l'utilisateur toujours en
   attente pour ce chantier aussi, comme pour les autres sessions ci-dessus.
+- 2026-09-26.
+
+### Point projet-gouv-ee (Claude), suite 2026-09-26 (2)
+
+- Troisième tâche confiée par projet-gouv-d6 : F-PRE-03 (`docs/audit-cote-medecin.md`,
+  "Limites assumées" #2), posologie structurée, version réduite sans
+  migration schéma (`LignePrescription.posologie` reste un `String`, schéma
+  toujours en activité concurrente ce soir : F-PIL-07 ci-dessus).
+- Constat avant d'implémenter : contrairement à l'hypothèse de départ, il
+  n'existe aucun flux d'édition d'une posologie déjà enregistrée dans ce
+  dépôt (seule la création en dépend, `posologie` n'est ensuite jamais que
+  lue/affichée en l'état, ex. écran de délivrance pharmacie). Le "parsing
+  best-effort du texte existant" évoqué n'a donc pas de cas d'usage réel ;
+  pas implémenté, uniquement le formulaire de création.
+- Fait et vérifié (tsc + vitest 59/59, 6 fichiers de test) :
+  - Nouveau `src/modules/prescription/posologie.ts` : options courtes
+    (`UNITES_POSOLOGIE` mg/comprime/ml/UI, `VOIES_POSOLOGIE` orale/IM/IV/
+    topique/autre, `FREQUENCES_POSOLOGIE` 1x/j/2x/j/3x/j/autre),
+    `composerPosologie(champs)` (pure, ex. "500 mg, voie orale, 2 fois par
+    jour") et `precisionAutreManquante(champs)` (voie/frequence "autre" sans
+    precision associee). Fichier volontairement sans directive, importable
+    aussi bien cote client (apercu live dans le formulaire) que cote serveur.
+  - `src/modules/prescription/actions.ts` : `schemaLigneSoumise` remplace le
+    champ texte libre `posologie` par les champs structures (`dose`, `unite`,
+    `voie`, `voieAutre`, `frequence`, `frequenceAutre`), valides par zod
+    (enums fermes + dose positive). `creerPrescriptionAction` revalide
+    `precisionAutreManquante` cote serveur (Zero Trust : jamais la chaine
+    composee cote client, seulement les champs), puis stocke
+    `composerPosologie(ligne)` a la fois dans l'empreinte SHA-256 (F-PRE-04,
+    inchangee sinon) et dans `LignePrescription.posologie`.
+  - `src/app/app/medecin/prescriptions/nouvelle/FormulairePrescription.tsx` :
+    le champ texte "Posologie" remplace par dose (nombre) + unite (select) +
+    voie (select, champ "Precisez" conditionnel si "Autre") + frequence
+    (select, meme mecanisme), avec un apercu de la chaine composee sous les
+    champs. Bouton d'enregistrement desactive si un "autre" est choisi sans
+    precision ou si la dose est vide/invalide (meme patron que les blocages
+    allergie/avertissement deja presents). Uniquement des composants du
+    design system existants (`TextField`, `SelectField`), aucun style ajoute.
+- Fichiers touchés : les 3 ci-dessus. Pas touche : `prisma/schema.prisma`,
+  aucun autre ecran.
+- Pas encore committé : accord explicite de l'utilisateur en attente, comme
+  les deux chantiers précédents ce soir.
+- 2026-09-26.
+
+### Point projet-gouv-ee (Claude), suite 2026-09-26 (3)
+
+- Quatrième tâche confiée par projet-gouv-d6 : F-PHA-02 (`docs/audit-cote-pharmacien.md`
+  + `docs/pack claude/specs/11-fiches-prescription-pharmacie.md`), retrouver
+  une ordonnance présentée au comptoir par numéro + année de naissance
+  (RG-PHA-01, 5 essais/heure).
+- Avant d'implémenter, vérifié par moi-même (l'audit datait) : `Prescription.numero`
+  existe bel et bien (`@unique`, format `RX-<année>-<séquence>`), donc la
+  fiche n'est plus bloquée par cette dépendance contrairement à ce que dit
+  encore `docs/audit-cote-pharmacien.md`. Vérifié aussi la fiche pack en
+  entier (pas seulement le résumé donné) : RG-PHA-02 exige que le pharmacien
+  ne voie jamais le diagnostic ni les autres ordonnances du patient via ce
+  flux ; `getDetailPrescriptionPourDelivrance` (déjà existant) respecte déjà
+  cette règle nativement puisqu'il ne charge jamais la consultation, et n'est
+  déjà pas restreint par établissement ("un pharmacien sert n'importe quel
+  patient qui se présente au comptoir", commentaire déjà présent dans le code
+  au-dessus de `getPrescriptionsADelivrer`). Conséquence utile : cette tâche
+  n'avait besoin d'aucune nouvelle permission (`read:delivrance` suffit,
+  déjà accordé au rôle pharmacien) ni d'un nouvel écran de détail, seulement
+  résoudre numéro+année vers un id puis rediriger vers l'écran `[id]`
+  existant. Volontairement laissé de côté (plus gros que ce qui était
+  demandé, nécessiterait un nouveau modèle Prisma) : le parcours QR/jeton
+  séparé du pack (RG-PRE-40 à 42) et l'ASSIGNMENT persistant "pharmacie ↔
+  ordonnance" de 30 jours (item 3 de la fiche).
+- Avant de toucher aux fichiers, coordination avec projet-gouv-94 et
+  projet-gouv-82 : `src/app/app/medecin/pharmacie/page.tsx`,
+  `pharmacie/[id]/` et `src/security/permissions.ts` étaient modifiés/non
+  suivis sans qu'on sache lequel des deux les avait laissés ainsi. Vérifié
+  moi-même par `git diff` : changements réels triviaux et sans rapport
+  (permissions.ts = 4 lignes F-AUD-01/02 de projet-gouv-82, confirmées
+  stables ; page.tsx = 1 classe CSS). Résolu sans avoir besoin de toucher ni
+  `permissions.ts` ni `pharmacie/[id]/` de toute façon (voir plus haut).
+- Fait et vérifié (tsc + vitest 59/59, 6 fichiers de test) :
+  - `src/modules/prescription/actions.ts` : nouvelle
+    `rechercherOrdonnancePresenteeAction`. Throttling RG-PHA-01 par comptage
+    des `JournalAudit` récents (action `recherche_ordonnance_echec`) sur la
+    dernière heure glissante, plutôt qu'un compteur en mémoire : pas de
+    nouvelle table, cohérent avec le reste du dépôt (tout est déjà
+    journalisé), résiste à un redémarrage serveur. Limite assumée documentée
+    dans le code : fenêtre glissante, pas un blocage à durée fixe déclenché
+    pile au 5e échec (approximation suffisante pour ce MVP mono-process).
+    CA-1 du pack respecté : même message générique "Ordonnance introuvable"
+    que le numéro soit inexistant ou l'année de naissance fausse.
+  - Nouveau `src/app/app/medecin/pharmacie/RechercheOrdonnance.tsx` (formulaire
+    numéro + année de naissance) et 2 lignes d'intégration dans
+    `pharmacie/page.tsx`. Uniquement des composants du design system
+    existants.
+- Fichiers touchés : les 3 ci-dessus. Pas touché : `prisma/schema.prisma`,
+  `src/security/permissions.ts`, `pharmacie/[id]/`.
+- Pas encore committé : accord explicite de l'utilisateur en attente, comme
+  les trois chantiers précédents ce soir (4 au total maintenant).
+- 2026-09-26.
+
+### Point projet-gouv-ee (Claude), commits 2026-09-26
+
+- Accord reçu de l'utilisateur : committer les 4 chantiers ci-dessus, un
+  commit par chantier. Fait :
+  - `e014588` refactor(audit): centralise les ecritures JournalAudit
+  - `a9d5303` feat(communautaire): avertissement de doublon (F-COM-02)
+  - `b92b13b` feat(prescription): posologie structuree (F-PRE-03)
+  - `8940617` feat(pharmacie): recherche d'ordonnance (F-PHA-02)
+- Difficulté rencontrée et résolue : plusieurs fichiers partagés avec d'autres
+  chantiers actifs cette nuit contenaient MES lignes mélangées à celles
+  d'autres sessions dans les mêmes hunks git (`src/modules/clinical/actions.ts`
+  avec les 2 `publierEvenementPilotage` de projet-gouv-82,
+  `src/modules/vaccination/actions.ts` avec `getMesVaccinations` de
+  projet-gouv-94, `src/modules/prescription/actions.ts` avec une fonction
+  `getLignesEnAttente` et un correctif de bug sans rapport, ni l'un ni
+  l'autre de moi). Plutôt que de tout committer en bloc (ce qui aurait
+  embarqué du travail non revu d'autres sessions sous mes messages de commit)
+  ou de deviner, j'ai vérifié chaque diff ligne par ligne et construit des
+  patches ciblés (`git apply --cached` sur des hunks isolés) pour ne
+  committer que mes propres lignes, en laissant intact dans l'arbre de
+  travail tout ce qui ne m'appartenait pas.
+- **Résultat : 2 fichiers restent volontairement en dehors de mes 4 commits**,
+  chacun pour une raison différente et bloquante :
+  - `src/modules/identity/actions.ts` : mon remplacement `journaliser()`
+    d'origine y est désormais imbriqué dans la refonte du flux de connexion
+    de projet-gouv-d6 (nouvelle etape de code e-mail, helper
+    `finaliserConnexion` qui réutilise `journaliser()`) : il n'existe plus de
+    version isolable de mon changement, il a été absorbé par un changement
+    plus récent et plus large. Se resoudra naturellement quand ce chantier
+    identity sera committé (mon usage de `journaliser()` y sera alors inclus).
+  - `src/modules/audit/actions.ts` : jamais suivi par git du tout (tout le
+    dossier `src/modules/audit/` était `??` avant ce soir, feature F-AUD-01/02
+    jamais committée par son auteur). Un fichier jamais suivi ne peut pas être
+    "committé partiellement" : `git add` l'aurait ajouté en entier, y compris
+    tout son contenu non lié à moi. Restera non centralisé (toujours
+    `prisma.journalAudit.create()` direct, 2 occurrences) jusqu'à ce que ce
+    fichier soit committé par ailleurs — à signaler si RG-AUD-02 démarre avant.
+- tsc + vitest (59/59) repassés propres sur l'arbre complet après les 4
+  commits, rien de cassé pour les autres sessions.
+- Committé avec des variables d'environnement `GIT_AUTHOR_*`/`GIT_COMMITTER_*`
+  ponctuelles (identité `Richard6141`, déjà celle de l'historique
+  existant), sans toucher `git config` (même contrainte que projet-gouv-94 ce
+  soir).
+- 2026-09-26.
+
+### Point projet-gouv-ae (Claude, ex-projet-gouv-94), 2026-09-26
+
+Note sur l'identité : toutes les sessions actives cette nuit ont été renommées
+en même temps (probablement un redémarrage de l'outil), pas seulement moi.
+Je suis la continuation de ce qui s'appelait projet-gouv-94 (mémoire complète
+de la conversation de cette nuit conservée dans mon propre historique), pas
+une nouvelle session sans contexte.
+
+- F-CIT-13 (`docs/pack claude/specs/08-fiches-citoyen.md`) terminé, vérifié
+  et committé (`b114ad5`), périmètre complet demandé par l'utilisateur (relayé
+  par projet-gouv-d6) : dépendance `pdf-lib` autorisée, rectification routée
+  vers `admin_national` faute de rôle "auditeur" dans ce dépôt.
+  - Copie de mes données : re-authentification puis deux téléchargements
+    régénérés à la demande (`/api/patient/export/json`, `/api/patient/export/pdf`).
+    Simplification assumée documentée dans le code : pas de lien figé valide
+    7 jours ni de fichier stocké.
+  - Rectification : texte libre tracé dans `JournalAudit`
+    (`demande_rectification`), visible depuis l'écran d'audit existant sans
+    aucun changement d'écran nécessaire (filtre par action déjà peuplé
+    dynamiquement).
+  - Fermeture de compte : `statut` passe à `"ferme"` (RG-CIT-110, dossier
+    médical jamais supprimé ni détaché), session détruite, redirection vers
+    `/connexion`.
+  - Nouveau : `src/modules/patient/droits-donnees.ts`,
+    `src/app/api/patient/export/{json,pdf}/route.ts`,
+    `src/app/app/patient/droits/**`. Ajout mineur : `getMesVaccinations()`
+    dans `vaccination/actions.ts` (manquait pour l'export), lien de nav dans
+    `layout.tsx`.
+  - Vérifié en direct (Playwright) : export PDF (200, octets réels générés)
+    et JSON (200, structure complète) après re-authentification ; demande de
+    rectification tracée en base ; **fermeture testée sur un compte jetable
+    créé pour l'occasion, jamais sur un compte de démonstration partagé**
+    (email `test-fermeture-<timestamp>@...`, jetable, laissé fermé en base
+    après le test — sans conséquence, compte inutilisé par personne).
+  - Vérification laborieuse ce soir : le serveur partagé a été très
+    intermittent pendant tout ce chantier (charge de plusieurs sessions
+    concurrentes + un redémarrage complet en plein milieu), plusieurs
+    faux-échecs Playwright dus au seul chargement réseau, pas au code — un
+    vrai faux-positif rencontré et élucidé : mon propre script de test avait
+    un sélecteur de mot de passe ambigu (2 champs `motDePasse` sur la même
+    page, export + fermeture), corrigé côté script, pas côté produit.
+  - tsc et vitest (63/63) propres sur l'arbre complet au moment du commit.
 - 2026-09-26.
