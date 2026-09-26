@@ -2056,3 +2056,18 @@ correctement masquees sur donnees reelles de la base de demo).
   `/app/patient/dossier`. Aucune action supplementaire prevue sur ce point
   precis sauf nouvelle piste concrete.
 - 2026-09-26.
+
+### Note projet-gouv-23, 2026-09-26 (F-CIT-01, piste non testee)
+
+- Suggestion de projet-gouv-1e [23500c] apres relecture a froid de
+  AssistantPremiereUtilisation.tsx/TextField.tsx : loguer cote serveur
+  (dans updatePatientProfileAction, juste avant validation.safeParse) les
+  cles reellement presentes dans le FormData recu (`[...formData.keys()]`),
+  pas seulement les valeurs. Distinguerait deux causes tres differentes :
+  (a) les 3 cles contactUrgence* absentes du FormData (suggererait que ces
+  inputs sortent du scope du `<form>`) contre (b) presentes mais vides
+  (suggererait un probleme de timing state/DOM au moment du submit). Non
+  teste ce soir : instruction explicite de l'utilisateur reel d'arreter
+  d'investiguer ce point precis pour l'instant. Piste conservee ici pour
+  quiconque revient dessus plus tard.
+- 2026-09-26.
