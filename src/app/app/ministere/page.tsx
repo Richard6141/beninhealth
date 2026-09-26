@@ -2,10 +2,12 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { getStatistiquesNationales } from "@/modules/analytics/actions";
 import { listEtablissementsDetail } from "@/modules/identity/gestion-comptes";
+import { getFilesAttenteAdmin } from "@/modules/administration/tableau-bord-admin";
 import { Tabs } from "@/components/ui/Tabs";
 import { ChangerMotDePasseModal } from "./ChangerMotDePasseModal";
 import { EtablissementsSection } from "./EtablissementsSection";
 import { IndicateursNationaux } from "./IndicateursNationaux";
+import { SectionFilesAttente } from "./SectionFilesAttente";
 
 /**
  * Ecran ministere (Phase 6, role admin_national) : indicateurs nationaux
@@ -29,9 +31,10 @@ export default async function MinisterePage() {
     redirect("/app");
   }
 
-  const [statistiques, etablissements] = await Promise.all([
+  const [statistiques, etablissements, filesAttente] = await Promise.all([
     getStatistiquesNationales(),
     listEtablissementsDetail(),
+    getFilesAttenteAdmin(),
   ]);
 
   return (
@@ -41,7 +44,7 @@ export default async function MinisterePage() {
           <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-accent">
             Espace ministere
           </p>
-          <h1 className="text-[28px] font-black text-encre">Pilotage national</h1>
+          <h1 className="text-[28px] font-bold text-titre">Pilotage national</h1>
           <p className="max-w-2xl text-[15px] text-encre-secondaire">
             Indicateurs sanitaires agreges et gestion des etablissements du
             reseau national de sante.
@@ -53,6 +56,11 @@ export default async function MinisterePage() {
       <Tabs
         label="Sections du tableau de bord ministere"
         items={[
+          {
+            id: "files-attente",
+            label: "Files d'attente",
+            content: <SectionFilesAttente files={filesAttente} />,
+          },
           {
             id: "indicateurs",
             label: "Indicateurs nationaux",
