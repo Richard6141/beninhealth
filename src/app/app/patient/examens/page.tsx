@@ -8,7 +8,13 @@ import { Card } from "@/components/ui/Card";
 function libelleStatut(statut: string): { texte: string; tone: BadgeTone } {
   const cle = statut.trim().toLowerCase();
   if (cle === "demande") return { texte: "Demande", tone: "info" };
-  if (cle === "en_cours") return { texte: "En cours", tone: "warning" };
+  // "resultat_saisi" et "correction_demandee" sont des etats internes au
+  // laboratoire (F-LAB-04, principe des quatre yeux) : hors du laboratoire,
+  // seul un examen "termine" a un resultat visible (RG-LAB-30), les deux
+  // etats intermediaires restent donc affiches comme "En cours".
+  if (cle === "en_cours" || cle === "resultat_saisi" || cle === "correction_demandee") {
+    return { texte: "En cours", tone: "warning" };
+  }
   if (cle === "termine") return { texte: "Termine", tone: "good" };
   if (cle === "annule") return { texte: "Annule", tone: "critical" };
   return { texte: statut, tone: "neutral" };
@@ -116,7 +122,7 @@ export default async function ExamensPatientPage() {
           <ArrowLeft size={14} aria-hidden="true" />
           Retour au tableau de bord
         </Link>
-        <h1 className="text-[28px] font-black text-encre">Mes examens</h1>
+        <h1 className="text-[28px] font-bold text-titre">Mes examens</h1>
         <p className="max-w-2xl text-[15px] text-encre-secondaire">
           Historique complet de vos examens medicaux, du plus recent au plus
           ancien.

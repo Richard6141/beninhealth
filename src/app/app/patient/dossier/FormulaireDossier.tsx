@@ -134,6 +134,17 @@ export function FormulaireDossier({ dossier }: FormulaireDossierProps): ReactNod
         defaultValue={dossier?.maladiesChroniques.join("\n") ?? ""}
       />
 
+      {dossier?.sexe === "F" ? (
+        <label className="flex items-center gap-2 text-[16px] font-semibold text-encre">
+          <input
+            type="checkbox"
+            name="grossesseEnCours"
+            defaultChecked={dossier.grossesseEnCours}
+          />
+          Grossesse en cours
+        </label>
+      ) : null}
+
       <fieldset className="flex flex-col gap-4">
         <legend className="text-[18px] font-semibold text-encre">
           Contact d&apos;urgence

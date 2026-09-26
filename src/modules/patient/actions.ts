@@ -38,6 +38,10 @@ export interface DossierPatientResume {
   allergies: string[];
   antecedents: string[];
   maladiesChroniques: string[];
+  // Declaratif, visible et modifiable uniquement pour sexe "F" cote ecran :
+  // utilise par le controle de securite "grossesse" de la prescription
+  // (F-PRE-02, voir src/modules/prescription/controles-securite.ts).
+  grossesseEnCours: boolean;
   contactsUrgence: { nom: string; telephone: string; lienParente: string }[];
 }
 
@@ -104,6 +108,7 @@ const schemaMiseAJourDossier = z
     allergies: z.string().optional().default(""),
     antecedents: z.string().optional().default(""),
     maladiesChroniques: z.string().optional().default(""),
+    grossesseEnCours: z.coerce.boolean().optional().default(false),
     contactUrgenceNom: z.string().optional().default(""),
     contactUrgenceTelephone: z.string().optional().default(""),
     contactUrgenceLien: z.string().optional().default(""),
@@ -226,6 +231,7 @@ export async function getMonDossierPatient(): Promise<DossierPatientResume | nul
     allergies: parseListeJSON(patient.allergies),
     antecedents: parseListeJSON(patient.antecedents),
     maladiesChroniques: parseListeJSON(patient.maladiesChroniques),
+    grossesseEnCours: patient.grossesseEnCours,
     contactsUrgence: parseContactsUrgence(patient.contactsUrgence),
   };
 }
@@ -449,6 +455,7 @@ export async function updatePatientProfileAction(
     allergies: formData.get("allergies"),
     antecedents: formData.get("antecedents"),
     maladiesChroniques: formData.get("maladiesChroniques"),
+    grossesseEnCours: formData.get("grossesseEnCours"),
     contactUrgenceNom: formData.get("contactUrgenceNom"),
     contactUrgenceTelephone: formData.get("contactUrgenceTelephone"),
     contactUrgenceLien: formData.get("contactUrgenceLien"),
@@ -488,6 +495,10 @@ export async function updatePatientProfileAction(
           allergies: JSON.stringify(parseListeLignes(donnees.allergies)),
           antecedents: JSON.stringify(parseListeLignes(donnees.antecedents)),
           maladiesChroniques: JSON.stringify(parseListeLignes(donnees.maladiesChroniques)),
+          // Zero Trust : le champ n'est propose a l'ecran que pour sexe "F",
+          // mais la valeur soumise n'est retenue que dans ce cas ici aussi,
+          // jamais seulement en confiance du client.
+          grossesseEnCours: patient.sexe === "F" ? donnees.grossesseEnCours : false,
           contactsUrgence: JSON.stringify(contactsUrgence),
         },
       }),

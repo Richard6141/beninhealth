@@ -31,8 +31,9 @@ export function estPrescriptionEnCours(prescription: PrescriptionResume): boolea
 /**
  * Libelle et ton de badge pour le statut affiche d'une prescription :
  * "En cours" (bon) si validee et dans sa fenetre de traitement, "Terminee"
- * (neutre) si validee mais hors fenetre, sinon le statut brut (par exemple
- * une prescription annulee).
+ * (neutre) si validee mais hors fenetre, "Délivrée en partie"/"Délivrée"
+ * pour le cycle de vie de la delivrance en pharmacie (F-PHA-03 / CA-2),
+ * sinon le statut brut (par exemple une prescription annulee).
  */
 export function statutPrescriptionAffichage(
   prescription: PrescriptionResume
@@ -41,6 +42,12 @@ export function statutPrescriptionAffichage(
     return estPrescriptionEnCours(prescription)
       ? { texte: "En cours", tone: "good" }
       : { texte: "Terminée", tone: "neutral" };
+  }
+  if (prescription.statut === "delivree_partiellement") {
+    return { texte: "Délivrée en partie", tone: "warning" };
+  }
+  if (prescription.statut === "delivree") {
+    return { texte: "Délivrée", tone: "good" };
   }
   if (prescription.statut === "annulee") {
     return { texte: "Annulée", tone: "critical" };

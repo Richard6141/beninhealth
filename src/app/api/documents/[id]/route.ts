@@ -12,10 +12,12 @@
  * qui la refait ici (getSession()) independamment de tout rendu React ayant
  * pu produire le lien de telechargement, jamais suppose valide.
  *
- * Autorise le telechargement pour l'auteur du document, ou pour un
- * professionnel titulaire d'un Consentement actif (dossier_complet ou
- * documents) pour le patient concerne (meme regle que
- * src/modules/document/actions.ts, reappliquee independamment ici). Renvoie
+ * Autorise le telechargement pour l'auteur du document, pour un professionnel
+ * titulaire d'un Consentement actif (dossier_complet ou documents) pour le
+ * patient concerne (meme regle que src/modules/document/actions.ts,
+ * reappliquee independamment ici), ou pour le patient proprietaire du
+ * document lui-meme (son propre dossier, aucun Consentement requis pour son
+ * propre acces). Renvoie
  * la meme reponse 404 dans tous les cas de refus (document inexistant ou non
  * autorise) pour ne jamais confirmer a un appelant non autorise qu'un
  * document existe.
@@ -83,6 +85,13 @@ export async function GET(request: Request, { params }: RouteContext) {
       consentement.statut === "actif" &&
       (consentement.dateFin === null || consentement.dateFin > new Date()) &&
       (TYPES_ACCES_DOCUMENT as readonly string[]).includes(consentement.typeAcces);
+  }
+
+  if (!autorise) {
+    // Le patient proprietaire du document accede toujours a son propre
+    // dossier, sans Consentement (qui ne regit que l'acces d'un tiers).
+    const patient = await prisma.patient.findUnique({ where: { userId: session.userId } });
+    autorise = patient !== null && patient.id === document.patientId;
   }
 
   if (!autorise) {

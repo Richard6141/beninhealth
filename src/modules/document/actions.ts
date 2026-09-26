@@ -480,3 +480,54 @@ export async function getDocumentsDuPatient(patientId: string): Promise<Document
     estAuteur: document.auteurId === session.userId,
   }));
 }
+
+/**
+ * Documents medicaux du patient connecte lui-meme (F-CLI-13 du pack, volet
+ * "telechargement direct par le patient de ses propres documents", signale
+ * comme un trou dans docs/audit-cote-medecin.md). Contrairement a
+ * getDocumentsDuPatient (consultation par un professionnel tiers, qui exige
+ * un Consentement actif et journalise l'acces), un patient consultant SES
+ * PROPRES documents n'a besoin d'aucune verification de consentement : c'est
+ * son propre dossier (meme principe que getMesExamens/getMesVaccinations/
+ * getMesPrescriptions dans les autres modules, aucune entree JournalAudit
+ * pour la simple liste ; seul le telechargement effectif d'un fichier reste
+ * journalise, par /api/documents/[id]).
+ */
+export async function getMesDocuments(): Promise<DocumentResume[]> {
+  const session = await getSession();
+
+  if (!session) {
+    return [];
+  }
+
+  const patient = await prisma.patient.findUnique({ where: { userId: session.userId } });
+
+  if (!patient) {
+    return [];
+  }
+
+  const documents = await prisma.documentMedical.findMany({
+    where: { patientId: patient.id },
+    include: { auteur: true },
+    orderBy: { dateCreation: "desc" },
+  });
+
+  return documents.map((document) => ({
+    id: document.id,
+    type: document.type,
+    titre: document.titre,
+    dateDocument: document.dateDocument.toISOString(),
+    niveauConfidentialite: document.niveauConfidentialite,
+    consultationId: document.consultationId,
+    nomFichierOriginal: document.nomFichierOriginal,
+    typeMime: document.typeMime,
+    tailleOctets: document.tailleOctets,
+    auteurNomComplet: nomCompletProfessionnel(document.auteur),
+    dateCreation: document.dateCreation.toISOString(),
+    retirePourErreur: document.retirePourErreur,
+    motifRetrait: document.motifRetrait,
+    // Un patient n'est jamais l'auteur d'un DocumentMedical (cree exclusivement
+    // par un medecin, voir ajouterDocumentAction) : jamais habilite au retrait.
+    estAuteur: false,
+  }));
+}

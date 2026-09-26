@@ -209,7 +209,7 @@ function TuileKpi({
         <span className="text-[12px] font-semibold uppercase tracking-[0.06em] text-encre-attenuee">
           {label}
         </span>
-        <span className="truncate text-[19px] font-black text-encre">{value}</span>
+        <span className="truncate text-[19px] font-bold text-encre">{value}</span>
         <span className="truncate text-[12px] text-encre-attenuee">{sousTexte}</span>
       </div>
       <ChevronRight size={18} className="shrink-0 text-encre-attenuee" aria-hidden="true" />
@@ -302,12 +302,12 @@ export default async function PatientPage() {
         <div className="flex flex-col gap-2">
           {dossier ? (
             <div className="flex flex-wrap items-center gap-2">
-              <span className="chiffres rounded-full border border-bordure-forte bg-surface-appui px-2.5 py-0.5 text-[12px] font-semibold text-encre-secondaire">
+              <span className="chiffres rounded-badge border border-bordure-forte bg-surface-appui px-2.5 py-0.5 text-[12px] font-semibold text-encre-secondaire">
                 {dossier.identifiantSante}
               </span>
             </div>
           ) : null}
-          <h1 className="text-[28px] font-black text-encre">
+          <h1 className="text-[28px] font-bold text-titre">
             {salutation()}
             {profil ? `, ${profil.prenom}` : ""}
           </h1>
@@ -323,7 +323,7 @@ export default async function PatientPage() {
               <span className="text-[13px] font-semibold text-encre-secondaire">
                 Dossier complet à
               </span>
-              <span className="chiffres text-[18px] font-black text-accent">
+              <span className="chiffres text-[18px] font-bold text-accent">
                 {completude}%
               </span>
             </div>

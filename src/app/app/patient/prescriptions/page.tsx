@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { ArrowLeft, Pill } from "lucide-react";
 import {
+  getLignesEnAttente,
   getMesPrescriptions,
   type LignePrescriptionDetail,
 } from "@/modules/prescription/actions";
+import { Alert } from "@/components/ui/Alert";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { BoutonTelechargerOrdonnance } from "./BoutonTelechargerOrdonnance";
@@ -54,6 +56,22 @@ function LigneMedicament({ ligne }: { ligne: LignePrescriptionDetail }) {
 export default async function PrescriptionsPage() {
   const prescriptions = await getMesPrescriptions();
 
+  // F-PHA-03 / CA-2 : sur une prescription delivree en partie, la ou les
+  // lignes encore en attente sont identifiees explicitement, pas seulement
+  // le statut global.
+  const lignesEnAttenteParPrescription = new Map<
+    string,
+    { medicamentNom: string; quantiteRestante: number }[]
+  >();
+
+  await Promise.all(
+    prescriptions
+      .filter((prescription) => prescription.statut === "delivree_partiellement")
+      .map(async (prescription) => {
+        lignesEnAttenteParPrescription.set(prescription.id, await getLignesEnAttente(prescription.id));
+      })
+  );
+
   return (
     <div className="conteneur-page mx-auto flex flex-col gap-8 px-4 py-8 sm:px-6">
       <header className="flex flex-col gap-2">
@@ -64,7 +82,7 @@ export default async function PrescriptionsPage() {
           <ArrowLeft size={14} aria-hidden="true" />
           Retour au tableau de bord
         </Link>
-        <h1 className="text-[28px] font-black text-encre">Mes prescriptions</h1>
+        <h1 className="text-[28px] font-bold text-titre">Mes prescriptions</h1>
         <p className="max-w-2xl text-[15px] text-encre-secondaire">
           Historique complet de vos prescriptions, de la plus récente à la
           plus ancienne.
@@ -90,6 +108,7 @@ export default async function PrescriptionsPage() {
         <div className="flex flex-col gap-4">
           {prescriptions.map((prescription) => {
             const statut = statutPrescriptionAffichage(prescription);
+            const lignesEnAttente = lignesEnAttenteParPrescription.get(prescription.id) ?? [];
             return (
               <Card
                 key={prescription.id}
@@ -107,6 +126,17 @@ export default async function PrescriptionsPage() {
                 }
               >
                 <div className="flex flex-col gap-4">
+                  {prescription.statut === "delivree_partiellement" && lignesEnAttente.length > 0 ? (
+                    <Alert level="warning" title="Encore en attente à la pharmacie">
+                      {lignesEnAttente
+                        .map(
+                          (ligne) =>
+                            `${ligne.medicamentNom} (${ligne.quantiteRestante} restant${ligne.quantiteRestante > 1 ? "s" : ""})`
+                        )
+                        .join(", ")}
+                    </Alert>
+                  ) : null}
+
                   <div className="flex flex-col gap-1 border-b border-bordure pb-4">
                     <p className="text-[13px] font-semibold text-encre-secondaire">
                       Motif de la consultation
