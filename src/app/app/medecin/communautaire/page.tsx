@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import {
   getMesSuivisCommunautaires,
+  getPersonnesEnregistrees,
   type SuiviCommunautaireResume,
 } from "@/modules/communautaire/actions";
 import { Badge, type BadgeTone } from "@/components/ui/Badge";
@@ -86,7 +87,10 @@ export default async function CommunautairePage() {
     redirect("/app/medecin");
   }
 
-  const visites = await getMesSuivisCommunautaires();
+  const [visites, personnes] = await Promise.all([
+    getMesSuivisCommunautaires(),
+    getPersonnesEnregistrees(),
+  ]);
 
   return (
     <div className="conteneur-page mx-auto flex flex-col gap-8 px-4 py-8 sm:px-6">
@@ -101,7 +105,7 @@ export default async function CommunautairePage() {
         </p>
       </header>
 
-      <FormulaireSuiviCommunautaire />
+      <FormulaireSuiviCommunautaire personnes={personnes} />
 
       <section aria-labelledby="titre-historique" className="flex flex-col gap-4">
         <h2 id="titre-historique" className="text-[20px] font-bold text-encre">

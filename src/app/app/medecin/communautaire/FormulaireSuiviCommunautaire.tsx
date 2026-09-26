@@ -4,6 +4,7 @@ import { useActionState, useEffect, useId, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   creerSuiviCommunautaireAction,
+  type PersonneCommunautaireResume,
   type SuiviCommunautaireActionState,
 } from "@/modules/communautaire/actions";
 import { Alert } from "@/components/ui/Alert";
@@ -11,6 +12,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { SelectField } from "@/components/ui/SelectField";
 import { TextField } from "@/components/ui/TextField";
+import { ModalNouvellePersonne } from "./ModalNouvellePersonne";
 
 const etatInitial: SuiviCommunautaireActionState = { error: null, success: false };
 
@@ -50,17 +52,27 @@ function ChampNotes() {
   );
 }
 
+const VALEUR_NOUVEAU_BENEFICIAIRE = "";
+
 /**
  * Contenu du formulaire, isole a part (remonte via la prop "key" du parent
  * apres chaque visite enregistree) pour repartir d'un useActionState neuf,
  * meme pattern que src/app/app/medecin/laboratoire/FormulaireResultat.tsx.
  */
-function ContenuFormulaire({ onNouvelleVisite }: { onNouvelleVisite: () => void }) {
+function ContenuFormulaire({
+  personnesInitiales,
+  onNouvelleVisite,
+}: {
+  personnesInitiales: PersonneCommunautaireResume[];
+  onNouvelleVisite: () => void;
+}) {
   const [state, formAction, pending] = useActionState(
     creerSuiviCommunautaireAction,
     etatInitial
   );
   const router = useRouter();
+  const [personnes, setPersonnes] = useState(personnesInitiales);
+  const [personneId, setPersonneId] = useState(VALEUR_NOUVEAU_BENEFICIAIRE);
 
   useEffect(() => {
     if (state.success) {
@@ -86,6 +98,11 @@ function ContenuFormulaire({ onNouvelleVisite }: { onNouvelleVisite: () => void 
     );
   }
 
+  const optionsPersonnes = [
+    { value: VALEUR_NOUVEAU_BENEFICIAIRE, label: "Saisir un nom (sans enregistrement)" },
+    ...personnes.map((personne) => ({ value: personne.id, label: personne.nomComplet })),
+  ];
+
   return (
     <form action={formAction} aria-busy={pending} className="flex flex-col gap-4">
       {state.error ? (
@@ -94,12 +111,34 @@ function ContenuFormulaire({ onNouvelleVisite }: { onNouvelleVisite: () => void 
         </Alert>
       ) : null}
 
-      <TextField
-        label="Nom du bénéficiaire"
-        name="beneficiaireNom"
-        required
-        placeholder="Nom et prénom"
-      />
+      <input type="hidden" name="personneId" value={personneId} />
+
+      <div className="flex flex-col gap-1.5">
+        <SelectField
+          label="Bénéficiaire"
+          name="personneSelection"
+          required
+          options={optionsPersonnes}
+          value={personneId}
+          onChange={(e) => setPersonneId(e.target.value)}
+        />
+        <ModalNouvellePersonne
+          onPersonneCreee={(personne) => {
+            setPersonnes((liste) => [personne, ...liste]);
+            setPersonneId(personne.id);
+          }}
+        />
+      </div>
+
+      {personneId === VALEUR_NOUVEAU_BENEFICIAIRE ? (
+        <TextField
+          label="Nom du bénéficiaire"
+          name="beneficiaireNom"
+          required
+          placeholder="Nom et prénom"
+        />
+      ) : null}
+
       <SelectField
         label="Type de visite"
         name="typeVisite"
@@ -118,7 +157,11 @@ function ContenuFormulaire({ onNouvelleVisite }: { onNouvelleVisite: () => void 
 }
 
 /** Formulaire d'enregistrement d'une visite de suivi communautaire (creerSuiviCommunautaireAction, module communautaire). */
-export function FormulaireSuiviCommunautaire() {
+export function FormulaireSuiviCommunautaire({
+  personnes,
+}: {
+  personnes: PersonneCommunautaireResume[];
+}) {
   const [cle, setCle] = useState(0);
 
   return (
@@ -126,7 +169,11 @@ export function FormulaireSuiviCommunautaire() {
       title="Enregistrer une visite"
       description="Chaque visite de terrain est tracée dans votre historique de suivi."
     >
-      <ContenuFormulaire key={cle} onNouvelleVisite={() => setCle((valeur) => valeur + 1)} />
+      <ContenuFormulaire
+        key={cle}
+        personnesInitiales={personnes}
+        onNouvelleVisite={() => setCle((valeur) => valeur + 1)}
+      />
     </Card>
   );
 }
