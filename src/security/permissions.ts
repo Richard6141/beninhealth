@@ -156,6 +156,9 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     // src/modules/facility/file-du-jour.ts).
     'read:rendez_vous',
     'update:rendez_vous',
+    // F-RDV-06 : rendez-vous pris au guichet, confirme directement (meme
+    // routage de role, voir src/modules/facility/rendez-vous-guichet.ts).
+    'create:rendez_vous',
   ]),
 
   admin_national: new Set<Permission>([
