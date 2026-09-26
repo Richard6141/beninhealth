@@ -55,7 +55,7 @@ l'interdit explicitement pour toute notification, sensible ou non.
 | F-LAB-03 Saisir un résultat | Partiel | **Corrigé aujourd'hui pour la confidentialité** (voir ci-dessus). Résultat toujours en texte libre, pas de paramètres structurés par examen (unité, valeur de référence, indicateur N/L/H/LL/HH), pas de contrôle de plage physiologique, pas d'alerte sur valeur critique. |
 | F-LAB-04 Valider un résultat (principe des quatre yeux) | Non fait | Aucune étape de validation séparée par un responsable : celui qui saisit le résultat le rend visible directement. Pas de rôle `LAB_SUPERVISOR` distinct dans la matrice RBAC actuelle. |
 | F-LAB-05 Mise à disposition et annonce | Fait pour la partie "annonce" | Corrigé aujourd'hui, mais seulement le mécanisme d'annonce lui-même ; le principe des quatre yeux (F-LAB-04) qui devrait précéder la mise à disposition n'existe pas. |
-| F-LAB-06 Annuler une demande | Non fait | Aucune action d'annulation pour le médecin prescripteur, aucune libération pour le laboratoire. |
+| F-LAB-06 Annuler une demande | **Fait** (périmètre réduit, médecin uniquement) | `annulerExamenAction` (`src/modules/laboratoire/actions.ts`) : le médecin demandeur peut annuler sa propre demande (Zero Trust, vérifié en base), tant qu'aucun résultat n'existe encore (statuts `demande`/`en_cours`), refusée dès `correction_demandee` puisque l'ancien résultat y est encore conservé. Bouton « Annuler cette demande » avec confirmation à deux temps sur `/app/medecin/examens`. Vérifié en direct (création, annulation, statut `annule` persistant après rechargement). Non fait : aucune action symétrique côté laboratoire pour libérer/rejeter une demande déjà prise en charge. |
 
 ## Limites assumées
 
