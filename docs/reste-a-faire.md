@@ -6,6 +6,8 @@ Légende : **FAIT** (flux principal, règles strictes et critères d'acceptation
 
 ## À lire en premier
 
+**Avancement estimé (2026-09-26, à réviser à chaque vague).** Environ 50 % des fonctionnalités du cahier des charges (les 100 fiches, en donnant une valeur moyenne d'environ 55 % aux fiches partielles) et environ 40 % du cahier complet une fois ajoutés les chapitres non fonctionnels (sécurité de base, exploitation, tests, données de démonstration, conformité), à environ 30 %. C'est une estimation de jugement, pas une mesure ; l'estimation de 70 % donnée plus tôt reposait sur la feuille de route, pas sur cette vérification fiche par fiche.
+
 **En une phrase.** Sur les 100 fiches du cahier des charges : 9 faites, 75 partielles, 16 absentes. Les parcours principaux existent presque tous ; ce qui manque, c'est le socle sur lequel le cahier des charges les fait reposer (une autorisation d'accès unique, l'espace actif, l'exploitation) et la sécurité de base d'une mise en production.
 
 **Ce qui empêche d'utiliser de vraies données de santé** (à traiter avant toute donnée réelle, dans cet ordre) :
