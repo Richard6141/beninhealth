@@ -1,19 +1,14 @@
 /**
- * Stockage prive des documents medicaux et verification du type reel d'un
- * fichier par signature binaire (RG-CLI-110 du pack) : jamais l'extension du
- * nom de fichier, jamais le type MIME declare par le navigateur. Fichier
- * separe de src/modules/document/actions.ts ("use server", qui ne peut donc
- * pas exporter ces constantes/fonctions synchrones vers un consommateur
- * externe) et de la route src/app/api/documents/[id]/route.ts, partage entre
- * les deux : ecriture a l'ajout du document, lecture au telechargement.
+ * Verification du type reel d'un fichier par signature binaire (RG-CLI-110
+ * du pack) : jamais l'extension du nom de fichier, jamais le type MIME
+ * declare par le navigateur. Fichier separe de src/modules/document/actions.ts
+ * ("use server", qui ne peut donc pas exporter ces constantes/fonctions
+ * synchrones vers un consommateur externe).
  *
- * RG-CLI-112 : repertoire hors de public/, jamais servi par une URL statique.
+ * Le stockage du fichier lui-meme se fait sur Cloudinary en prive (voir
+ * src/lib/cloudinary.ts, RG-CLI-112 : jamais servi par une URL statique),
+ * pas ici : ce fichier ne s'occupe plus que de la detection de type.
  */
-
-import path from "node:path";
-
-/** Repertoire prive des documents medicaux, hors de public/ (RG-CLI-112). */
-export const DOSSIER_DOCUMENTS = path.join(process.cwd(), "private-uploads", "documents");
 
 /** Taille maximale d'un document medical, en octets (RG-CLI-110 : 10 Mo). */
 export const TAILLE_MAX_DOCUMENT_OCTETS = 10 * 1024 * 1024;
@@ -55,11 +50,13 @@ export async function detecterTypeReelFichier(fichier: File | Blob): Promise<Sig
 }
 
 /**
- * Chemin absolu d'un document sur disque a partir de son seul nom de fichier
- * stocke en base (cheminFichier, deja un identifiant aleatoire genere
- * serveur - jamais construit a partir d'une entree utilisateur non
- * verifiee).
+ * Retrouve l'extension Cloudinary a partir du type MIME stocke en base
+ * (DocumentMedical.typeMime, toujours issu de detecterTypeReelFichier a la
+ * creation). Necessaire pour genererUrlSigneeCloudinary : Cloudinary exige le
+ * format explicite pour signer une URL de telechargement d'une ressource
+ * "authenticated" (src/lib/cloudinary.ts).
  */
-export function cheminAbsoluDocument(nomFichier: string): string {
-  return path.join(DOSSIER_DOCUMENTS, nomFichier);
+export function extensionDepuisTypeMime(typeMime: string): string | null {
+  const signature = SIGNATURES_CONNUES.find((candidat) => candidat.typeMime === typeMime);
+  return signature ? signature.extension : null;
 }

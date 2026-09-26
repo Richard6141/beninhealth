@@ -2,7 +2,10 @@
  * Route de telechargement d'un document medical (F-CLI-13 du pack) : seul
  * point de lecture du contenu binaire d'un DocumentMedical. RG-CLI-112 : le
  * fichier n'est jamais servi par une URL statique/publique, uniquement via
- * cette route authentifiee, apres reverification Zero Trust.
+ * cette route authentifiee, apres reverification Zero Trust. Stocke sur
+ * Cloudinary en prive (type "authenticated") : une URL signee a duree de vie
+ * courte est generee a la demande (genererUrlSigneeCloudinary), recuperee
+ * serveur a serveur, jamais exposee telle quelle au navigateur.
  *
  * Le middleware (middleware.ts) ne protege que /app/*, pas /api/* : la
  * verification de session est donc entierement a la charge de ce handler,
@@ -18,12 +21,12 @@
  * document existe.
  */
 
-import { readFile } from "node:fs/promises";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
-import { cheminAbsoluDocument } from "@/modules/document/stockage-fichiers";
+import { genererUrlSigneeCloudinary } from "@/lib/cloudinary";
+import { extensionDepuisTypeMime } from "@/modules/document/stockage-fichiers";
 
 const TYPES_ACCES_DOCUMENT = ["dossier_complet", "documents"] as const;
 
@@ -86,10 +89,26 @@ export async function GET(request: Request, { params }: RouteContext) {
     return reponseIntrouvable();
   }
 
+  const extension = extensionDepuisTypeMime(document.typeMime);
+
+  if (!extension) {
+    return reponseIntrouvable();
+  }
+
   let octets: Buffer;
 
   try {
-    octets = await readFile(cheminAbsoluDocument(document.cheminFichier));
+    // L'URL signee Cloudinary n'est jamais renvoyee au navigateur : recuperee
+    // serveur a serveur ici, puis les octets sont renvoyes par cette route
+    // elle-meme (RG-CLI-112, meme garantie qu'avec l'ancien stockage local).
+    const urlSignee = genererUrlSigneeCloudinary(document.cheminFichier, extension);
+    const reponseCloudinary = await fetch(urlSignee);
+
+    if (!reponseCloudinary.ok) {
+      throw new Error(`Cloudinary a repondu ${reponseCloudinary.status}`);
+    }
+
+    octets = Buffer.from(await reponseCloudinary.arrayBuffer());
   } catch (erreur) {
     console.error("Erreur lors de la lecture du document medical :", erreur);
     return reponseIntrouvable();

@@ -18,6 +18,14 @@ export interface EnvVariables {
   NEXTAUTH_SECRET: string;
   /** Environnement d'exécution courant. */
   NODE_ENV: 'development' | 'production' | 'test';
+  /** Nom du cloud Cloudinary (stockage des images téléversées : avatars, documents médicaux). */
+  CLOUDINARY_CLOUD_NAME: string;
+  /** Clé API Cloudinary. */
+  CLOUDINARY_API_KEY: string;
+  /** Secret API Cloudinary. */
+  CLOUDINARY_API_SECRET: string;
+  /** Dossier Cloudinary racine dans lequel toutes les images de cette plateforme sont rangées. */
+  CLOUDINARY_FOLDER: string;
 }
 
 /** Variables sans lesquelles l'application ne doit jamais démarrer en production. */
@@ -57,5 +65,9 @@ export function getEnv(): EnvVariables {
     DATABASE_URL: lireVariable('DATABASE_URL') ?? '',
     NEXTAUTH_SECRET: lireVariable('NEXTAUTH_SECRET') ?? '',
     NODE_ENV: nodeEnv,
+    CLOUDINARY_CLOUD_NAME: lireVariable('CLOUDINARY_CLOUD_NAME') ?? '',
+    CLOUDINARY_API_KEY: lireVariable('CLOUDINARY_API_KEY') ?? '',
+    CLOUDINARY_API_SECRET: lireVariable('CLOUDINARY_API_SECRET') ?? '',
+    CLOUDINARY_FOLDER: lireVariable('CLOUDINARY_FOLDER') ?? '',
   };
 }

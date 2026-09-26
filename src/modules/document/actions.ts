@@ -32,18 +32,13 @@
 
 import { headers } from "next/headers";
 import { randomUUID } from "node:crypto";
-import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
-import {
-  cheminAbsoluDocument,
-  detecterTypeReelFichier,
-  DOSSIER_DOCUMENTS,
-  TAILLE_MAX_DOCUMENT_OCTETS,
-} from "./stockage-fichiers";
+import { supprimerFichierPriveCloudinary, televerserFichierPriveCloudinary } from "@/lib/cloudinary";
+import { detecterTypeReelFichier, TAILLE_MAX_DOCUMENT_OCTETS } from "./stockage-fichiers";
 import { NIVEAUX_CONFIDENTIALITE_CONNUS, TYPES_DOCUMENT_CONNUS } from "./types-documents";
 
 /** Etat renvoye par chaque Server Action de ce module, consomme via useActionState. */
@@ -148,10 +143,13 @@ async function professionnelDeLaSessionCourante() {
  *
  * RG-CLI-110 : le fichier transmis est d'abord verifie par signature binaire
  * (PDF/JPEG/PNG uniquement) et par sa taille reelle (10 Mo maximum), jamais
- * par son extension ni le type MIME declare par le navigateur. Le fichier
- * est ecrit sur disque sous un nom aleatoire avant toute ecriture en base :
- * si la creation en base echoue ensuite, le fichier deja ecrit est supprime
- * pour ne jamais laisser de fichier orphelin.
+ * par son extension ni le type MIME declare par le navigateur. Le fichier est
+ * televerse vers Cloudinary en prive (type "authenticated", RG-CLI-112 :
+ * jamais accessible par une URL publique statique, voir src/lib/cloudinary.ts)
+ * sous un identifiant aleatoire avant toute ecriture en base : si la creation
+ * en base echoue ensuite, le fichier deja televerse est supprime cote
+ * Cloudinary pour ne jamais laisser de fichier orphelin. `cheminFichier`
+ * stocke desormais l'identifiant public Cloudinary, pas un chemin local.
  */
 export async function ajouterDocumentAction(
   prevState: DocumentActionState,
@@ -271,12 +269,11 @@ export async function ajouterDocumentAction(
       consultationIdValide = consultation.id;
     }
 
-    await mkdir(DOSSIER_DOCUMENTS, { recursive: true });
-
-    const nomFichierStocke = `${randomUUID()}.${signature.extension}`;
-    const cheminAbsolu = cheminAbsoluDocument(nomFichierStocke);
     const octets = Buffer.from(await fichier.arrayBuffer());
-    await writeFile(cheminAbsolu, octets);
+    const { publicId: identifiantCloudinary } = await televerserFichierPriveCloudinary(octets, {
+      dossierComplement: "documents",
+      identifiantPublic: randomUUID(),
+    });
 
     const adresseTechnique = await adresseTechniqueCourante();
 
@@ -291,7 +288,7 @@ export async function ajouterDocumentAction(
             titre,
             dateDocument: dateDocumentValide,
             niveauConfidentialite,
-            cheminFichier: nomFichierStocke,
+            cheminFichier: identifiantCloudinary,
             nomFichierOriginal: fichier.name || "document",
             typeMime: signature.typeMime,
             tailleOctets: fichier.size,
@@ -315,9 +312,9 @@ export async function ajouterDocumentAction(
       void documentCree;
       return { error: null, success: true };
     } catch (erreurEcritureBase) {
-      // Le fichier est deja ecrit sur disque a ce stade : evite de
+      // Le fichier est deja televerse sur Cloudinary a ce stade : evite de
       // l'orphaniner si l'ecriture en base echoue.
-      await unlink(cheminAbsolu).catch(() => {});
+      await supprimerFichierPriveCloudinary(identifiantCloudinary).catch(() => {});
       throw erreurEcritureBase;
     }
   } catch (erreur) {

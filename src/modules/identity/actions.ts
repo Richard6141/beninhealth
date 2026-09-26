@@ -12,9 +12,7 @@
  * d'authentification.
  */
 
-import { mkdir, readdir, unlink, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import path from "node:path";
 import bcrypt from "bcryptjs";
 import { Prisma } from "@prisma/client";
 import { redirect } from "next/navigation";
@@ -23,8 +21,10 @@ import { headers } from "next/headers";
 import { SignJWT, jwtVerify } from "jose";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { journaliser } from "@/modules/audit/journaliser";
 import { createSession, getSession, destroySession } from "@/lib/session";
 import { getEnv } from "@/lib/env";
+import { televerserImageCloudinary } from "@/lib/cloudinary";
 import { verifierCodeMfaPourConnexion } from "@/modules/identity/mfa";
 import {
   CODES_IDENTIFIANT_PAR_ROLE,
@@ -768,20 +768,16 @@ export async function mettreAJourProfilAction(
   return { error: null, success: true };
 }
 
-const DOSSIER_AVATARS = path.join(process.cwd(), "public", "uploads", "avatars");
 const TAILLE_MAX_AVATAR_OCTETS = 3 * 1024 * 1024;
-const EXTENSIONS_AVATAR_AUTORISEES: Record<string, string> = {
-  "image/png": "png",
-  "image/jpeg": "jpg",
-  "image/webp": "webp",
-};
+const TYPES_MIME_AVATAR_AUTORISES = new Set(["image/png", "image/jpeg", "image/webp"]);
 
 /**
- * Televersement de la photo de profil : fichier stocke localement sous
- * public/uploads/avatars (jamais envoye vers un service tiers), nomme
- * d'apres l'id utilisateur pour remplacer automatiquement l'avatar
- * precedent. Extension deduite du type MIME reel du fichier, jamais du nom
- * fourni par le navigateur.
+ * Televersement de la photo de profil : image envoyee vers Cloudinary
+ * (jamais stockee localement, voir src/lib/cloudinary.ts pour le point
+ * d'entree unique de televersement de ce depot), rangee sous
+ * avatars/<identifiant utilisateur>. Le meme identifiant public a chaque
+ * televersement (overwrite: true cote Cloudinary) remplace automatiquement
+ * la photo precedente sans avoir a la retrouver ni la supprimer nous-memes.
  */
 export async function televerserAvatarAction(
   prevState: ProfilActionState,
@@ -799,9 +795,7 @@ export async function televerserAvatarAction(
     return { error: "Veuillez choisir une image.", success: false };
   }
 
-  const extension = EXTENSIONS_AVATAR_AUTORISEES[fichier.type];
-
-  if (!extension) {
+  if (!TYPES_MIME_AVATAR_AUTORISES.has(fichier.type)) {
     return {
       error: "Format d'image non pris en charge (PNG, JPEG ou WebP attendu).",
       success: false,
@@ -813,20 +807,12 @@ export async function televerserAvatarAction(
   }
 
   try {
-    await mkdir(DOSSIER_AVATARS, { recursive: true });
-
-    const fichiersExistants = await readdir(DOSSIER_AVATARS);
-    await Promise.all(
-      fichiersExistants
-        .filter((nom) => nom.startsWith(`${session.userId}.`))
-        .map((nom) => unlink(path.join(DOSSIER_AVATARS, nom)))
-    );
-
-    const nomFichier = `${session.userId}.${extension}`;
     const octets = Buffer.from(await fichier.arrayBuffer());
-    await writeFile(path.join(DOSSIER_AVATARS, nomFichier), octets);
+    const { url: avatarUrl } = await televerserImageCloudinary(octets, {
+      dossierComplement: "avatars",
+      identifiantPublic: session.userId,
+    });
 
-    const avatarUrl = `/uploads/avatars/${nomFichier}`;
     const adresseTechnique = await adresseTechniqueCourante();
 
     await prisma.$transaction([
@@ -834,14 +820,12 @@ export async function televerserAvatarAction(
         where: { id: session.userId },
         data: { avatarUrl },
       }),
-      prisma.journalAudit.create({
-        data: {
-          utilisateurId: session.userId,
-          action: "televersement_avatar",
-          donneeConcernee: `utilisateur:${session.userId}`,
-          adresseTechnique,
-          justification: "Televersement d'une nouvelle photo de profil",
-        },
+      journaliser({
+        utilisateurId: session.userId,
+        action: "televersement_avatar",
+        donneeConcernee: `utilisateur:${session.userId}`,
+        adresseTechnique,
+        justification: "Televersement d'une nouvelle photo de profil",
       }),
     ]);
   } catch (erreur) {
