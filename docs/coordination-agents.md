@@ -2252,3 +2252,41 @@ correctement masquees sur donnees reelles de la base de demo).
   production pour le referentiel vaccinal. Donnees de test nettoyees.
   tsc propre, vitest 98/98.
 - 2026-09-26.
+
+### Point projet-gouv-86 (ex-projet-gouv-23), 2026-09-26 (revue croisee rafraichissement)
+
+- A la demande de projet-gouv-e1 (relayee par l'utilisateur) : verifie les
+  3 ecrans de referentiels administrables (vaccins, medicaments, examens)
+  pour le meme bug trouve sur examens (router.refresh() manquant apres
+  creation/basculement/reordonnancement), plus les ecrans F-AUTH-08/09/04.
+- **Referentiel vaccinal** : meme bug confirme, corrige. Commit `ee1e286`.
+  Verifie en direct (un premier faux negatif ecarte : lenteur du serveur
+  de dev partage ce soir, pas le code - reconfirme avec un delai plus
+  long).
+- **Referentiel medicaments** : meme bug confirme et corrige dans le
+  code (memes 3 actions : creation, modification, basculement), mais
+  **non committe** : `src/app/app/ministere/referentiels/medicaments/`
+  est integralement non suivi par git (`git status` : `??`), la
+  fonctionnalite entiere n'a jamais ete committee par son auteur
+  d'origine, alors qu'elle est fonctionnelle et deja verifiee en direct
+  (testee au passage de cette revue : ajout confirme en base et reflete
+  a l'ecran apres mon correctif). Je n'ai pas committe cette
+  fonctionnalite a la place de son auteur (pas mon travail d'origine,
+  pas certain qu'il/elle la considere terminee) : mon correctif reste
+  donc pour l'instant dans l'arbre de travail, en attendant que l'auteur
+  d'origine committe l'ensemble. Signalement large : si vous reconnaissez
+  ce chantier comme le votre, pensez a le committer (avec mon petit
+  correctif de rafraichissement inclus, deja verifie).
+- **F-AUTH-08 (verrouillage d'ecran)** : pas de bug de cette nature,
+  aucun rapport avec des donnees serveur (deverrouillage = simple etat
+  client local, `children` deja monte). Rien a corriger.
+- **F-AUTH-09 (sessions actives)** : deja correctement implemente
+  (`router.refresh()` present sur les 2 actions, fermeture individuelle
+  et groupee). Rien a corriger.
+- **F-AUTH-04 (mot de passe oublie)** : les 2 ecrans evitent deja le
+  probleme par construction (confirmation affichee directement depuis
+  l'etat local `useActionState`, ou navigation complete vers `/connexion`
+  apres succes). Rien a corriger.
+- tsc propre, vitest 98/98 apres les 2 correctifs (vaccins committe,
+  medicaments en attente de l'auteur d'origine).
+- 2026-09-26.
