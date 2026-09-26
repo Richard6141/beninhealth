@@ -7,8 +7,16 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import { getTexteSmsDuCatalogue } from "./catalogue";
 import { envoyerSms } from "./sms/envoyer";
 import { categorieDuType } from "./types-notification";
+
+export interface OptionsNotification {
+  /** Code N-* du catalogue (F-NOT-04) : le SMS prend alors son texte dans ModeleNotification. */
+  codeCatalogue?: string;
+  /** Valeurs des {variables} du modele de texte. */
+  variables?: Record<string, string>;
+}
 
 /**
  * Cree une notification interne pour un utilisateur. A appeler depuis un
@@ -20,19 +28,24 @@ import { categorieDuType } from "./types-notification";
  * (PreferenceNotification), un SMS est aussi depose dans la boite d'envoi
  * (fournisseur simule, F-NOT-02 : rien ne part reellement). Le canal email
  * n'existe pas pour les notifications, sa preference reste sans effet.
+ *
+ * F-NOT-04 : avec un codeCatalogue, le texte du SMS vient du catalogue (et
+ * pas de "message") ; une entree inactive, sans texte ou a variable non
+ * resolue n'envoie aucun SMS. La notification interne est ecrite dans tous les cas.
  */
 export async function creerNotification(
   utilisateurId: string,
   type: string,
   message: string,
-  lien?: string
+  lien?: string,
+  options?: OptionsNotification
 ): Promise<void> {
   await prisma.notification.create({
     data: { utilisateurId, type, message, lien: lien ?? null },
   });
 
   try {
-    await envoyerParCanalSms(utilisateurId, type, message);
+    await envoyerParCanalSms(utilisateurId, type, message, options);
   } catch (erreur) {
     // La notification interne est deja ecrite : un canal externe en echec ne
     // doit jamais faire echouer l'evenement metier qui l'a declenchee.
@@ -40,7 +53,12 @@ export async function creerNotification(
   }
 }
 
-async function envoyerParCanalSms(utilisateurId: string, type: string, message: string): Promise<void> {
+async function envoyerParCanalSms(
+  utilisateurId: string,
+  type: string,
+  message: string,
+  options?: OptionsNotification
+): Promise<void> {
   const categorie = categorieDuType(type);
   if (!categorie) return;
 
@@ -49,8 +67,20 @@ async function envoyerParCanalSms(utilisateurId: string, type: string, message: 
   });
   if (!preference?.sms) return;
 
+  let texteSms = message;
+  if (options?.codeCatalogue) {
+    const texteCatalogue = await getTexteSmsDuCatalogue(options.codeCatalogue, options.variables);
+    if (texteCatalogue === null) return;
+    texteSms = texteCatalogue;
+  }
+
   const utilisateur = await prisma.user.findUnique({ where: { id: utilisateurId }, select: { telephone: true } });
   if (!utilisateur?.telephone) return;
 
-  await envoyerSms({ destinataire: utilisateur.telephone, texte: message, categorie });
+  await envoyerSms({
+    destinataire: utilisateur.telephone,
+    texte: texteSms,
+    categorie,
+    modele: options?.codeCatalogue,
+  });
 }

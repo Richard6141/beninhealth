@@ -1416,13 +1416,15 @@ export async function validerResultatExamenAction(
             examenValide.patient.userId,
             "resultat_examen_disponible",
             "Un resultat d'analyse est disponible dans votre dossier.",
-            "/app/patient/examens"
+            "/app/patient/examens",
+            { codeCatalogue: "N-LAB-RESULT-PATIENT" }
           ),
       creerNotification(
         examenValide.demandeur.userId,
         "resultat_examen_disponible",
         "Le resultat d'un examen que vous avez demande est disponible.",
-        "/app/medecin/examens"
+        "/app/medecin/examens",
+        { codeCatalogue: "N-LAB-RESULT-PRO" }
       ),
     ]);
 
@@ -1655,7 +1657,8 @@ export async function annoncerResultatExamenAction(
       examen.patient.userId,
       "resultat_examen_disponible",
       "Un resultat d'analyse est desormais disponible dans votre dossier.",
-      "/app/patient/examens"
+      "/app/patient/examens",
+      { codeCatalogue: "N-LAB-RESULT-PATIENT" }
     );
 
     return { error: null, success: true };

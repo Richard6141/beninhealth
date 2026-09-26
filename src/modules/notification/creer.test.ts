@@ -6,6 +6,7 @@ vi.mock("@/lib/prisma", () => ({
     notification: { create: vi.fn() },
     preferenceNotification: { findUnique: vi.fn() },
     user: { findUnique: vi.fn() },
+    modeleNotification: { findUnique: vi.fn() },
   },
 }));
 vi.mock("@/modules/notification/sms/envoyer", () => ({ envoyerSms: vi.fn() }));
@@ -19,6 +20,7 @@ const p = prisma as unknown as {
   notification: { create: Mock };
   preferenceNotification: { findUnique: Mock };
   user: { findUnique: Mock };
+  modeleNotification: { findUnique: Mock };
 };
 const envoyerSmsMock = envoyerSms as unknown as Mock;
 
@@ -96,6 +98,36 @@ describe("creerNotification : lecture des preferences a l'emission (F-NOT-03)", 
 
     expect(p.notification.create).toHaveBeenCalled();
     erreurConsole.mockRestore();
+  });
+
+  it("avec un code du catalogue, le SMS prend son texte dans le catalogue et non dans le message interne (F-NOT-04)", async () => {
+    p.preferenceNotification.findUnique.mockResolvedValue({ sms: true, email: false });
+    p.modeleNotification.findUnique.mockResolvedValue({ actif: true, texteModele: "BHIP : un resultat est disponible dans votre dossier." });
+
+    await creerNotification("user-1", "resultat_examen_disponible", "Message interne long", "/app/patient/examens", {
+      codeCatalogue: "N-LAB-RESULT-PATIENT",
+    });
+
+    expect(envoyerSmsMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        texte: "BHIP : un resultat est disponible dans votre dossier.",
+        modele: "N-LAB-RESULT-PATIENT",
+      })
+    );
+    expect(p.notification.create.mock.calls[0][0].data.message).toBe("Message interne long");
+  });
+
+  it("avec un code dont le texte est vide ou l'entree inactive, aucun SMS mais la notification interne existe (F-NOT-04)", async () => {
+    p.preferenceNotification.findUnique.mockResolvedValue({ sms: true, email: false });
+
+    p.modeleNotification.findUnique.mockResolvedValueOnce({ actif: true, texteModele: "" });
+    await creerNotification("user-1", "resultat_examen_disponible", "Message interne", undefined, { codeCatalogue: "N-LAB-RESULT-PRO" });
+
+    p.modeleNotification.findUnique.mockResolvedValueOnce({ actif: false, texteModele: "BHIP : x" });
+    await creerNotification("user-1", "resultat_examen_disponible", "Message interne", undefined, { codeCatalogue: "N-LAB-RESULT-PATIENT" });
+
+    expect(p.notification.create).toHaveBeenCalledTimes(2);
+    expect(envoyerSmsMock).not.toHaveBeenCalled();
   });
 
   it("ne cree pas de SMS pour un utilisateur sans numero de telephone", async () => {
