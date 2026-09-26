@@ -237,6 +237,14 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     'read:referentiel_notification',
     'create:referentiel_notification',
     'update:referentiel_notification',
+    // F-ADM-03 : verifier le numero d'inscription d'un professionnel aupres de
+    // l'Ordre, approuver, refuser ou demander un complement (voir
+    // src/modules/administration/validation-professionnels.ts). Ressource
+    // DISTINCTE de professionnel_sante (gestion locale par admin_etablissement)
+    // pour que le validateur ne gagne aucun droit sur les dossiers cliniques
+    // (RG-ROL-06) et que l'admin d'etablissement ne puisse pas se valider lui-meme.
+    'read:validation_professionnel',
+    'update:validation_professionnel',
   ]),
 };
 

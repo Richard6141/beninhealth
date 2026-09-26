@@ -271,6 +271,20 @@ function SectionPersonnel({ personnel }: { personnel: MembrePersonnel[] }) {
                       </td>
                       <td className="border-b border-bordure px-3 py-2">
                         <Badge tone={statut.tone}>{statut.texte}</Badge>
+                        <p className="mt-1 text-[12px] text-encre-secondaire">
+                          {membre.numeroOrdre ? `Ordre : ${membre.numeroOrdre}` : "Ordre : non renseigné"}
+                          {membre.ordreVerifieLe ? " (vérifié)" : ""}
+                        </p>
+                        {membre.validationDecision === "complement" && membre.validationMessage ? (
+                          <p className="mt-1 max-w-[240px] text-[12px] font-semibold text-encre">
+                            Le ministère demande : {membre.validationMessage}
+                          </p>
+                        ) : null}
+                        {membre.statutValidation === "rejete" && membre.validationMessage ? (
+                          <p className="mt-1 max-w-[240px] text-[12px] font-semibold text-critique">
+                            Refusé par le ministère : {membre.validationMessage}
+                          </p>
+                        ) : null}
                       </td>
                       <td className="border-b border-bordure px-3 py-2 text-encre-secondaire">
                         {membre.email}
@@ -289,7 +303,12 @@ function SectionPersonnel({ personnel }: { personnel: MembrePersonnel[] }) {
                         </Badge>
                       </td>
                       <td className="border-b border-bordure px-3 py-2">
-                        <ActionsPersonnel userId={membre.userId} statutCompte={membre.statutCompte} />
+                        <ActionsPersonnel
+                          userId={membre.userId}
+                          statutCompte={membre.statutCompte}
+                          statutValidation={membre.statutValidation}
+                          numeroOrdre={membre.numeroOrdre}
+                        />
                       </td>
                     </tr>
                   );

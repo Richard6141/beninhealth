@@ -14,9 +14,11 @@
  *
  * Perimetre reduit et honnete, coherent avec les decisions produit deja
  * prises ce soir (voir docs/audit-cote-administration.md, point 4) :
- * - "Professionnels a valider" : sans objet, ce depot n'a pas de flux de
- *   validation centrale (F-ADM-03 explicitement non construite, hierarchie
- *   de provisionnement Phase 6 retenue a la place).
+ * - "Professionnels a valider" : compte les professionnels cliniques jamais
+ *   verifies aupres de l'Ordre ou a revalider (F-ADM-03, decision produit du
+ *   soir du 2026-09-26 : le validateur du ministere, voir
+ *   validation-professionnels.ts). Les comptes crees par un etablissement
+ *   restent actifs des leur creation, la file ne bloque personne.
  * - "Reinitialisations 2FA demandees" : sans objet, aucun flux de demande de
  *   reinitialisation MFA cote administrateur n'existe dans ce depot
  *   (src/modules/identity/mfa.ts ne gere que l'auto-desactivation par
@@ -27,8 +29,8 @@
  * - "Erreurs des dernieres 24h" : sans objet, aucune table de journalisation
  *   d'erreurs applicatives dans ce depot (uniquement console.error, jamais
  *   persiste).
- * Les 4 compteurs ci-dessus restent donc absents de ce tableau de bord,
- * plutot que fabriques a partir de rien : seuls les 3 compteurs et l'etat
+ * Les 3 compteurs ci-dessus restent donc absents de ce tableau de bord,
+ * plutot que fabriques a partir de rien : seuls les 4 compteurs et l'etat
  * technique ci-dessous ont une vraie source de donnees dans ce depot.
  */
 
@@ -38,12 +40,25 @@ import { can } from "@/security/permissions";
 import { detecterDoublonsPatients } from "@/modules/patient/fusion-doublons";
 import { getEtablissementsAdmin } from "./etablissements";
 import { getDemandesPersonnes } from "@/modules/audit/demandes";
+import { PROFESSIONS_CLINIQUES } from "@/modules/identity/identite-professionnelle";
+import { attendUneAction, etatVerification } from "./validation-professionnels-regles";
+
+async function compterProfessionnelsAVerifier(): Promise<number> {
+  const professionnels = await prisma.professionnelSante.findMany({
+    where: { user: { roles: { some: { nom: { in: [...PROFESSIONS_CLINIQUES] } } } } },
+    select: { statutValidation: true, validationDecision: true, ordreVerifieLe: true },
+  });
+  const maintenant = new Date();
+  return professionnels.filter((professionnel) => attendUneAction(etatVerification(professionnel, maintenant))).length;
+}
 
 export interface FilesAttenteAdmin {
   acces: boolean;
   doublonsPatientsEnAttente: number;
   etablissementsEnBrouillon: number;
   demandesPersonnesEnAttente: number;
+  /** F-ADM-03 : professionnels cliniques jamais verifies aupres de l'Ordre ou a revalider. */
+  professionnelsAVerifier: number;
   /** ISO, ou null si aucune tache planifiee n'a encore ete executee. */
   derniereExecutionPlanificateur: string | null;
   tachesPilotageEnAttente: number;
@@ -54,6 +69,7 @@ const ACCES_REFUSE: FilesAttenteAdmin = {
   doublonsPatientsEnAttente: 0,
   etablissementsEnBrouillon: 0,
   demandesPersonnesEnAttente: 0,
+  professionnelsAVerifier: 0,
   derniereExecutionPlanificateur: null,
   tachesPilotageEnAttente: 0,
 };
@@ -77,7 +93,7 @@ export async function getFilesAttenteAdmin(): Promise<FilesAttenteAdmin> {
     return ACCES_REFUSE;
   }
 
-  const [doublons, etablissements, demandes, derniereTacheTraitee, tachesEnAttente] = await Promise.all([
+  const [doublons, etablissements, demandes, derniereTacheTraitee, tachesEnAttente, professionnelsAVerifier] = await Promise.all([
     detecterDoublonsPatients(),
     getEtablissementsAdmin(),
     getDemandesPersonnes(),
@@ -87,6 +103,7 @@ export async function getFilesAttenteAdmin(): Promise<FilesAttenteAdmin> {
       select: { dateTraitement: true },
     }),
     prisma.tachePilotage.count({ where: { traitee: false } }),
+    compterProfessionnelsAVerifier(),
   ]);
 
   return {
@@ -94,6 +111,7 @@ export async function getFilesAttenteAdmin(): Promise<FilesAttenteAdmin> {
     doublonsPatientsEnAttente: doublons.length,
     etablissementsEnBrouillon: etablissements.filter((e) => e.statut === "brouillon").length,
     demandesPersonnesEnAttente: (demandes ?? []).filter((d) => !d.traite).length,
+    professionnelsAVerifier,
     derniereExecutionPlanificateur: derniereTacheTraitee?.dateTraitement?.toISOString() ?? null,
     tachesPilotageEnAttente: tachesEnAttente,
   };

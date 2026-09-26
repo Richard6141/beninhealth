@@ -114,6 +114,26 @@ describe("can (permissions RBAC)", () => {
     });
   });
 
+  describe("validation des professionnels (F-ADM-03), reservee a admin_national", () => {
+    it("autorise admin_national a lire la file et a decider", () => {
+      expect(can("admin_national", "read", "validation_professionnel")).toBe(true);
+      expect(can("admin_national", "update", "validation_professionnel")).toBe(true);
+    });
+
+    it("refuse a tout autre role, y compris admin_etablissement (il ne peut pas se valider lui-meme, RG-ADM-11)", () => {
+      const autres: Role[] = ["patient", "medecin", "infirmier", "agent_communautaire", "pharmacien", "laboratoire", "admin_etablissement"];
+      for (const role of autres) {
+        expect(can(role, "read", "validation_professionnel")).toBe(false);
+        expect(can(role, "update", "validation_professionnel")).toBe(false);
+      }
+    });
+
+    it("n'accorde aucun droit clinique a admin_national par ce biais (RG-ROL-06)", () => {
+      expect(can("admin_national", "read", "patient")).toBe(false);
+      expect(can("admin_national", "read", "consultation")).toBe(false);
+    });
+  });
+
   describe("acces d'urgence (F-CLI-10), reserve a medecin et infirmier", () => {
     it("autorise le medecin a declencher un acces d'urgence", () => {
       expect(can("medecin", "create", "acces_urgence")).toBe(true);

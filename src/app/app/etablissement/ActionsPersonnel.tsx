@@ -6,6 +6,7 @@ import { useEffect } from "react";
 import {
   suspendrePersonnelAction,
   reactiverPersonnelAction,
+  renseignerNumeroOrdreAction,
   terminerAffiliationAction,
   type GestionPersonnelActionState,
 } from "@/modules/facility/gestion-personnel";
@@ -79,8 +80,74 @@ function ActionAvecMotif({
   );
 }
 
-/** Actions sur un membre du personnel (F-ETA-04) : suspendre, réactiver, terminer l'affiliation, selon le statut actuel du compte. */
-export function ActionsPersonnel({ userId, statutCompte }: { userId: string; statutCompte: string }) {
+/** Renseigner ou corriger le numero d'inscription a l'Ordre (reponse a une demande de complement du ministere, F-ADM-03). */
+function ActionNumeroOrdre({ userId, numeroOrdre }: { userId: string; numeroOrdre: string | null }) {
+  const [state, formAction, pending] = useActionState(renseignerNumeroOrdreAction, etatInitial);
+  const [ouvert, setOuvert] = useState(false);
+  const router = useRouter();
+
+  useEffect(() => {
+    if (state.success) {
+      router.refresh();
+    }
+  }, [state.success, router]);
+
+  if (state.success) {
+    return <span className="text-[12px] font-semibold text-bon">Enregistré, à vérifier par le ministère.</span>;
+  }
+
+  if (!ouvert) {
+    return (
+      <Button type="button" variant="secondary" size="sm" onClick={() => setOuvert(true)}>
+        {numeroOrdre ? "Corriger le n° d'Ordre" : "Renseigner le n° d'Ordre"}
+      </Button>
+    );
+  }
+
+  return (
+    <form action={formAction} className="flex min-w-[220px] flex-col gap-2 rounded-champ border border-bordure bg-plan p-2">
+      <input type="hidden" name="userId" value={userId} />
+      {state.error ? (
+        <Alert level="critical" title="Action impossible">
+          {state.error}
+        </Alert>
+      ) : null}
+      <label className="text-[12px] font-semibold text-encre" htmlFor={`numero-ordre-${userId}`}>
+        Numéro d&apos;inscription à l&apos;Ordre
+      </label>
+      <input
+        id={`numero-ordre-${userId}`}
+        name="numeroOrdre"
+        required
+        maxLength={40}
+        defaultValue={numeroOrdre ?? ""}
+        className="w-full rounded-champ border border-bordure-forte bg-surface px-2 py-1.5 text-[12px] text-encre"
+      />
+      <div className="flex gap-2">
+        <Button type="submit" variant="primary" size="sm" disabled={pending}>
+          {pending ? "..." : "Enregistrer"}
+        </Button>
+        <Button type="button" variant="secondary" size="sm" onClick={() => setOuvert(false)}>
+          Annuler
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+/** Actions sur un membre du personnel (F-ETA-04) : suspendre, réactiver, terminer l'affiliation, renseigner le n° d'Ordre, selon le statut actuel du compte. */
+export function ActionsPersonnel({
+  userId,
+  statutCompte,
+  statutValidation,
+  numeroOrdre,
+}: {
+  userId: string;
+  statutCompte: string;
+  statutValidation: string;
+  numeroOrdre: string | null;
+}) {
+  const refuseParLeMinistere = statutValidation === "rejete";
   const [stateReactivation, formActionReactivation, pendingReactivation] = useActionState(
     reactiverPersonnelAction,
     etatInitial
@@ -100,11 +167,18 @@ export function ActionsPersonnel({ userId, statutCompte }: { userId: string; sta
   if (statutCompte === "suspendu") {
     return (
       <div className="flex flex-wrap gap-2">
-        {stateReactivation.success ? (
+        {refuseParLeMinistere ? (
+          <span className="text-[12px] text-encre-attenuee">Rétablissement par le ministère uniquement</span>
+        ) : stateReactivation.success ? (
           <span className="text-[12px] font-semibold text-bon">Réactivé.</span>
         ) : (
-          <form action={formActionReactivation}>
+          <form action={formActionReactivation} className="flex flex-col gap-1">
             <input type="hidden" name="userId" value={userId} />
+            {stateReactivation.error ? (
+              <p role="alert" className="max-w-[220px] text-[12px] text-critique">
+                {stateReactivation.error}
+              </p>
+            ) : null}
             <Button type="submit" variant="secondary" size="sm" disabled={pendingReactivation}>
               {pendingReactivation ? "..." : "Réactiver"}
             </Button>
@@ -123,6 +197,7 @@ export function ActionsPersonnel({ userId, statutCompte }: { userId: string; sta
 
   return (
     <div className="flex flex-wrap gap-2">
+      {refuseParLeMinistere ? null : <ActionNumeroOrdre userId={userId} numeroOrdre={numeroOrdre} />}
       <ActionAvecMotif
         userId={userId}
         action={suspendrePersonnelAction}

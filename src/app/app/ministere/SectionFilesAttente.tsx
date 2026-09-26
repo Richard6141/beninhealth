@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
-import { CalendarClock, ClipboardList, ListChecks, Merge, Timer } from "lucide-react";
+import { BadgeCheck, CalendarClock, ClipboardList, ListChecks, Merge, Timer } from "lucide-react";
 import Link from "next/link";
 import type { FilesAttenteAdmin } from "@/modules/administration/tableau-bord-admin";
 import { Alert } from "@/components/ui/Alert";
@@ -69,6 +69,12 @@ export function SectionFilesAttente({ files }: { files: FilesAttenteAdmin }) {
           label="Doublons patients à revoir"
           value={files.doublonsPatientsEnAttente}
           href="/app/ministere/doublons"
+        />
+        <TuileFile
+          icon={BadgeCheck}
+          label="Professionnels à vérifier"
+          value={files.professionnelsAVerifier}
+          href="/app/ministere/validation-professionnels"
         />
         <TuileFile
           icon={ClipboardList}

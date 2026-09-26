@@ -78,6 +78,13 @@ export interface MembrePersonnel {
   // distinct de statutValidation ci-dessus qui porte sur le profil
   // professionnel). Voir src/modules/facility/gestion-personnel.ts.
   statutCompte: string;
+  // F-ADM-03 : numero d'inscription a l'Ordre (null tant qu'il n'est pas
+  // renseigne), date de la derniere verification par le ministere, et derniere
+  // demande du validateur (complement) avec son message.
+  numeroOrdre: string | null;
+  ordreVerifieLe: string | null;
+  validationDecision: string | null;
+  validationMessage: string | null;
 }
 
 const ROUNDS_BCRYPT = 12;
@@ -496,6 +503,10 @@ export async function listPersonnelEtablissement(): Promise<MembrePersonnel[]> {
     statutValidation: professionnel.statutValidation,
     email: professionnel.user.email,
     statutCompte: professionnel.user.statut,
+    numeroOrdre: professionnel.numeroOrdre,
+    ordreVerifieLe: professionnel.ordreVerifieLe?.toISOString() ?? null,
+    validationDecision: professionnel.validationDecision,
+    validationMessage: professionnel.validationMessage,
   }));
 }
 

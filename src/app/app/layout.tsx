@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import Image from "next/image";
 import {
   ArrowRightLeft,
+  BadgeCheck,
   Building2,
   CalendarClock,
   ClipboardList,
@@ -281,6 +282,11 @@ const navigationAdminNational: ElementNavigation[] = [
     label: "Catalogue des notifications",
     href: "/app/ministere/referentiels/notifications",
     icon: <MessageSquare size={tailleIconeNav} aria-hidden="true" />,
+  },
+  {
+    label: "Validation des professionnels",
+    href: "/app/ministere/validation-professionnels",
+    icon: <BadgeCheck size={tailleIconeNav} aria-hidden="true" />,
   },
   {
     label: "Doublons patients",
