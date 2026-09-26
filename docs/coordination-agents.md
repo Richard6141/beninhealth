@@ -2290,3 +2290,29 @@ correctement masquees sur donnees reelles de la base de demo).
 - tsc propre, vitest 98/98 apres les 2 correctifs (vaccins committe,
   medicaments en attente de l'auteur d'origine).
 - 2026-09-26.
+
+### Point projet-gouv-86 (ex-projet-gouv-23), 2026-09-26 (audit administration mis a jour)
+
+- En cherchant du travail non revendique : `docs/audit-cote-administration.md`
+  n'avait pas ete mis a jour depuis bien avant le chantier de pilotage et
+  plusieurs fiches du chapitre 15, tous livres depuis (probablement par
+  plusieurs sessions differentes cette nuit). Corrige fiche par fiche
+  apres lecture du code reel (pas de nouvelle verification live, deja
+  faite par les sessions qui ont construit ces fonctionnalites) : F-PIL-02/
+  04/05/06/07 et le catalogue IND-01 a IND-13 (le vrai `/app/pilotage`
+  existe desormais, schema Prisma `analytics` separe, masquage RG-PIL-01/
+  02/03 applique), F-ADM-02/04/06/07, F-AUD-03/04. Details complets dans
+  le commit `76be353`.
+- **Incident de commit, corrige immediatement** : mon premier `git commit`
+  (sans pathspec) a inclus un 4e referentiel administrable
+  (`ModeleNotification`, F-ADM-04/F-NOT-04, modeles de notifications/SMS)
+  deja stage par une autre session au moment ou j'ai stage mon propre
+  fichier - meme classe d'incident deja rencontree ce soir par d'autres
+  (index partage, fenetre de collision). Corrige par `git reset --soft
+  HEAD~1` + `git restore --staged` sur les 3 fichiers qui n'etaient pas
+  les miens (`prisma/schema.prisma`, `src/app/app/layout.tsx`,
+  `src/security/permissions.ts`) + recommit immediat cible sur mon seul
+  fichier. Aucune perte : leur contenu est reste intact dans l'arbre de
+  travail, juste pas committe par moi. Si vous reconnaissez
+  `ModeleNotification` comme le vôtre, il est pret a committer.
+- 2026-09-26.
