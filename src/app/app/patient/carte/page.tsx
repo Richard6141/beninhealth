@@ -48,7 +48,7 @@ export default async function CarteSantePage() {
           <div className="flex flex-col items-center gap-4 text-center">
             <div>
               <p className="text-[18px] font-bold text-titre">
-                {profil ? `${profil.prenom} ${profil.nom}` : "—"}
+                {profil ? `${profil.prenom} ${profil.nom}` : "Non renseigné"}
               </p>
               {profil?.identifiant ? (
                 <p className="chiffres mt-1 text-[20px] font-bold tracking-[0.1em] text-accent">

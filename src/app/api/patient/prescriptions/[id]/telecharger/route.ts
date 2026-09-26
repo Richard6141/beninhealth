@@ -121,7 +121,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   ecrireLigneVide();
 
   prescription.lignes.forEach((ligne) => {
-    ecrireLigne(`${ligne.medicament.nom} — ${ligne.medicament.dosage}, ${ligne.medicament.forme}`, { gras: true });
+    ecrireLigne(`${ligne.medicament.nom} : ${ligne.medicament.dosage}, ${ligne.medicament.forme}`, { gras: true });
     ecrireLigne(`   ${ligne.posologie}`);
     ecrireLigne(
       `   Quantité : ${ligne.quantite} · Durée du traitement : ${ligne.dureeTraitementJours} ${ligne.dureeTraitementJours > 1 ? "jours" : "jour"}`
@@ -140,7 +140,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const imageQr = await document.embedPng(octetsQr);
     page.drawImage(imageQr, { x: MARGE, y: y - tailleQr + 10, width: tailleQr, height: tailleQr });
     page.drawText(
-      "Document généré par BHIP — vérifiable en scannant le QR code.",
+      "Document généré par BHIP, vérifiable en scannant le QR code.",
       { x: MARGE + tailleQr + 12, y: y - 20, size: 9, font: policeNormale, color: rgb(0.1, 0.1, 0.1) }
     );
     page.drawText(urlVerification, {
