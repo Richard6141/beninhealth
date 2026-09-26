@@ -23,7 +23,6 @@
  */
 
 import { headers } from "next/headers";
-import { createHash } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -63,6 +62,7 @@ import {
   composerPosologie,
 } from "./posologie";
 import { ageAnnees } from "@/modules/clinical/controles-constantes";
+import { calculerEmpreinteOrdonnance } from "./empreinte";
 
 /** Etat renvoye par chaque Server Action de ce module, consomme via useActionState. */
 export interface PrescriptionActionState {
@@ -240,15 +240,6 @@ async function genererNumeroOrdonnance(tx: Prisma.TransactionClient, date: Date)
     where: { numero: { startsWith: `RX-${annee}-` } },
   });
   return `RX-${annee}-${String(compte + 1).padStart(4, "0")}`;
-}
-
-/** Empreinte SHA-256 du contenu canonique d'une prescription (F-PRE-04 du pack). */
-function calculerEmpreintePrescription(champs: {
-  instructions: string;
-  lignes: { medicamentId: string; posologie: string; quantite: number; dureeTraitementJours: number }[];
-}): string {
-  const contenuCanonique = JSON.stringify(champs, Object.keys(champs).sort());
-  return createHash("sha256").update(contenuCanonique).digest("hex");
 }
 
 /** Recupere le profil Patient du titulaire de la session courante, ou null si absent. */
@@ -841,13 +832,18 @@ export async function creerPrescriptionAction(
     // remarque sur le perimetre de cette phase dans la docstring de module :
     // pas de signature separee, la prescription est deja "validee" a la
     // creation).
-    const empreinteContenu = calculerEmpreintePrescription({
+    const empreinteContenu = calculerEmpreinteOrdonnance({
+      patientId: consultation.patientId,
+      prescripteurId: professionnel.id,
+      etablissementId: consultation.etablissementId,
+      date: dateCreation,
       instructions,
       lignes: lignes.map((ligne) => ({
         medicamentId: ligne.medicamentId,
         posologie: composerPosologie(ligne),
         quantite: ligne.quantite,
         dureeTraitementJours: ligne.dureeTraitementJours,
+        nonSubstituable: false,
       })),
     });
 
@@ -1387,13 +1383,18 @@ export async function renouvelerPrescriptionAction(
 
     const adresseTechnique = await adresseTechniqueCourante();
     const dateCreation = new Date();
-    const empreinteContenu = calculerEmpreintePrescription({
+    const empreinteContenu = calculerEmpreinteOrdonnance({
+      patientId: ancienne.patientId,
+      prescripteurId: professionnel.id,
+      etablissementId: consultation.etablissementId,
+      date: dateCreation,
       instructions: ancienne.instructions,
       lignes: ancienne.lignes.map((ligne) => ({
         medicamentId: ligne.medicamentId,
         posologie: ligne.posologie,
         quantite: ligne.quantite,
         dureeTraitementJours: ligne.dureeTraitementJours,
+        nonSubstituable: ligne.nonSubstituable,
       })),
     });
 
