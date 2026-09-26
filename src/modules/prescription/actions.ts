@@ -48,6 +48,13 @@ import {
   delaiAnnulationDelivranceDepasse,
   type MotifNonDelivrance,
 } from "./referentiel-delivrance";
+import {
+  UNITES_POSOLOGIE,
+  VOIES_POSOLOGIE,
+  FREQUENCES_POSOLOGIE,
+  precisionAutreManquante,
+  composerPosologie,
+} from "./posologie";
 
 /** Etat renvoye par chaque Server Action de ce module, consomme via useActionState. */
 export interface PrescriptionActionState {
@@ -98,7 +105,17 @@ export interface PrescriptionResume {
 /** Ligne soumise depuis le formulaire de creation, avant validation zod. */
 const schemaLigneSoumise = z.object({
   medicamentId: z.string().trim().min(1, "Le medicament est obligatoire."),
-  posologie: z.string().trim().min(1, "La posologie est obligatoire."),
+  // F-PRE-03, version reduite (voir src/modules/prescription/posologie.ts) :
+  // champs structures valides ici, composes en la chaine stockee plus bas
+  // (jamais une chaine de posologie composee cote client, Zero Trust).
+  dose: z.coerce
+    .number({ message: "La dose doit etre un nombre." })
+    .positive("La dose doit etre strictement positive."),
+  unite: z.enum(UNITES_POSOLOGIE, { message: "L'unite de dose est invalide." }),
+  voie: z.enum(VOIES_POSOLOGIE, { message: "La voie d'administration est invalide." }),
+  voieAutre: z.string().trim().optional().default(""),
+  frequence: z.enum(FREQUENCES_POSOLOGIE, { message: "La frequence est invalide." }),
+  frequenceAutre: z.string().trim().optional().default(""),
   quantite: z.coerce
     .number({ message: "La quantite doit etre un nombre." })
     .int("La quantite doit etre un nombre entier.")
@@ -378,8 +395,10 @@ export async function getConsultationPourPrescription(consultationId: string): P
  * a une consultation identifiee par consultationId (Zero Trust : verifie
  * systematiquement que cette consultation appartient bien au professionnel
  * connecte, jamais suppose valide). Valide chaque ligne (medicament existant
- * au catalogue, posologie non vide, quantite et duree de traitement entieres
- * strictement positives), puis applique la regle d'interaction simplifiee :
+ * au catalogue, posologie structuree valide et composee en texte via
+ * composerPosologie, voir posologie.ts pour F-PRE-03, quantite et duree de
+ * traitement entieres strictement positives), puis applique la regle
+ * d'interaction simplifiee :
  * refuse la prescription si deux lignes partagent le meme principe actif.
  * Cree la Prescription (statut "validee") et ses LignePrescription dans une
  * transaction, ecrit un EvenementPrescription (type "creation") et trace la
@@ -425,6 +444,16 @@ export async function creerPrescriptionAction(
   }
 
   const { consultationId, instructions, lignes } = validation.data;
+
+  // F-PRE-03 : "voie" ou "frequence" a "autre" exige la precision en texte
+  // libre correspondante (deja verifie cote formulaire, revalide ici, Zero
+  // Trust).
+  if (lignes.some((ligne) => precisionAutreManquante(ligne))) {
+    return {
+      error: "Precisez la voie ou la frequence quand vous choisissez \"Autre\".",
+      success: false,
+    };
+  }
 
   try {
     const professionnel = await prisma.professionnelSante.findUnique({
@@ -549,11 +578,11 @@ export async function creerPrescriptionAction(
     // creation).
     const empreinteContenu = calculerEmpreintePrescription({
       instructions,
-      lignes: lignes.map(({ medicamentId, posologie, quantite, dureeTraitementJours }) => ({
-        medicamentId,
-        posologie,
-        quantite,
-        dureeTraitementJours,
+      lignes: lignes.map((ligne) => ({
+        medicamentId: ligne.medicamentId,
+        posologie: composerPosologie(ligne),
+        quantite: ligne.quantite,
+        dureeTraitementJours: ligne.dureeTraitementJours,
       })),
     });
 
@@ -573,7 +602,7 @@ export async function creerPrescriptionAction(
           lignes: {
             create: lignes.map((ligne) => ({
               medicamentId: ligne.medicamentId,
-              posologie: ligne.posologie,
+              posologie: composerPosologie(ligne),
               quantite: ligne.quantite,
               dureeTraitementJours: ligne.dureeTraitementJours,
             })),

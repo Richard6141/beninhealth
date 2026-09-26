@@ -18,6 +18,18 @@ import {
   libelleAvertissement,
   type LigneComparable,
 } from "@/modules/prescription/controles-doublons";
+import {
+  UNITES_POSOLOGIE,
+  VOIES_POSOLOGIE,
+  FREQUENCES_POSOLOGIE,
+  LIBELLES_VOIE_POSOLOGIE,
+  LIBELLES_FREQUENCE_POSOLOGIE,
+  precisionAutreManquante,
+  composerPosologie,
+  type UnitePosologie,
+  type VoiePosologie,
+  type FrequencePosologie,
+} from "@/modules/prescription/posologie";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -27,12 +39,32 @@ import { TextField } from "@/components/ui/TextField";
 
 const etatInitial: PrescriptionActionState = { error: null, success: false };
 
-type ChampLigne = "medicamentId" | "posologie" | "quantite" | "dureeTraitementJours";
+type ChampLigne = "medicamentId" | "dose" | "voieAutre" | "frequenceAutre" | "quantite" | "dureeTraitementJours";
+
+// F-PRE-03, version reduite : options courtes plutot qu'un champ texte libre
+// pour la posologie (voir src/modules/prescription/posologie.ts).
+const optionsUnite = UNITES_POSOLOGIE.map((code) => ({
+  value: code,
+  label: code === "comprime" ? "comprimé" : code,
+}));
+const optionsVoie = VOIES_POSOLOGIE.map((code) => ({
+  value: code,
+  label: code === "autre" ? "Autre" : LIBELLES_VOIE_POSOLOGIE[code],
+}));
+const optionsFrequence = FREQUENCES_POSOLOGIE.map((code) => ({
+  value: code,
+  label: code === "autre" ? "Autre" : LIBELLES_FREQUENCE_POSOLOGIE[code],
+}));
 
 interface LigneFormulaire {
   cle: number;
   medicamentId: string;
-  posologie: string;
+  dose: string;
+  unite: UnitePosologie;
+  voie: VoiePosologie;
+  voieAutre: string;
+  frequence: FrequencePosologie;
+  frequenceAutre: string;
   quantite: string;
   dureeTraitementJours: string;
   forcerAlerteAllergie: boolean;
@@ -44,13 +76,38 @@ function ligneVide(cle: number): LigneFormulaire {
   return {
     cle,
     medicamentId: "",
-    posologie: "",
+    dose: "",
+    unite: UNITES_POSOLOGIE[0],
+    voie: VOIES_POSOLOGIE[0],
+    voieAutre: "",
+    frequence: FREQUENCES_POSOLOGIE[0],
+    frequenceAutre: "",
     quantite: "",
     dureeTraitementJours: "",
     forcerAlerteAllergie: false,
     justificationForcage: "",
     confirmerAvertissement: false,
   };
+}
+
+/** Champs de posologie d'une ligne, avec dose convertie en nombre (NaN si vide/invalide). */
+function champsPosologie(ligne: LigneFormulaire) {
+  return {
+    dose: Number(ligne.dose),
+    unite: ligne.unite,
+    voie: ligne.voie,
+    voieAutre: ligne.voieAutre,
+    frequence: ligne.frequence,
+    frequenceAutre: ligne.frequenceAutre,
+  };
+}
+
+/** Posologie composee si dose et precisions "autre" sont valides, sinon null (voir posologie.ts). */
+function apercuPosologie(ligne: LigneFormulaire): string | null {
+  const champs = champsPosologie(ligne);
+  if (!ligne.dose.trim() || Number.isNaN(champs.dose) || champs.dose <= 0) return null;
+  if (precisionAutreManquante(champs)) return null;
+  return composerPosologie(champs);
 }
 
 /** Bandeau d'allergies du patient (F-CLI-04 du pack) : visible en permanence, pas seulement au clic. */
@@ -115,6 +172,24 @@ export function FormulairePrescription({
     );
   }
 
+  function modifierUnite(cle: number, valeur: UnitePosologie) {
+    setLignes((actuelles) =>
+      actuelles.map((ligne) => (ligne.cle === cle ? { ...ligne, unite: valeur } : ligne))
+    );
+  }
+
+  function modifierVoie(cle: number, valeur: VoiePosologie) {
+    setLignes((actuelles) =>
+      actuelles.map((ligne) => (ligne.cle === cle ? { ...ligne, voie: valeur } : ligne))
+    );
+  }
+
+  function modifierFrequence(cle: number, valeur: FrequencePosologie) {
+    setLignes((actuelles) =>
+      actuelles.map((ligne) => (ligne.cle === cle ? { ...ligne, frequence: valeur } : ligne))
+    );
+  }
+
   function basculerForcage(cle: number, valeur: boolean) {
     setLignes((actuelles) =>
       actuelles.map((ligne) => (ligne.cle === cle ? { ...ligne, forcerAlerteAllergie: valeur } : ligne))
@@ -174,11 +249,20 @@ export function FormulairePrescription({
     return avertissement !== null && !ligne.confirmerAvertissement;
   });
 
+  // F-PRE-03 : dose renseignee et positive, et precision "autre" fournie
+  // quand voie/frequence vaut "autre" (revalide de toute facon cote serveur).
+  const blocagePosologieIncomplete = lignes.some((ligne) => apercuPosologie(ligne) === null);
+
   const lignesJSON = JSON.stringify(
     lignes.map(
       ({
         medicamentId,
-        posologie,
+        dose,
+        unite,
+        voie,
+        voieAutre,
+        frequence,
+        frequenceAutre,
         quantite,
         dureeTraitementJours,
         forcerAlerteAllergie,
@@ -186,7 +270,12 @@ export function FormulairePrescription({
         confirmerAvertissement,
       }) => ({
         medicamentId,
-        posologie,
+        dose,
+        unite,
+        voie,
+        voieAutre,
+        frequence,
+        frequenceAutre,
         quantite,
         dureeTraitementJours,
         forcerAlerteAllergie,
@@ -269,15 +358,93 @@ export function FormulairePrescription({
                 }
               />
 
-              <TextField
-                label="Posologie"
-                required
-                placeholder="Ex. 1 comprime matin et soir"
-                value={ligne.posologie}
-                onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                  modifierLigne(ligne.cle, "posologie", event.target.value)
-                }
-              />
+              {/*
+                F-PRE-03 du pack, version reduite : dose/unite/voie/frequence
+                separes plutot qu'un champ texte libre unique. Composes en une
+                chaine formatee a l'enregistrement (composerPosologie), qui
+                reste ce qui est stocke (LignePrescription.posologie, un
+                simple String) : pas de nouveau champ structure en base ce
+                soir, le schema est deja en pleine activite concurrente
+                ailleurs (migration analytics F-PIL-07).
+              */}
+              <div className="flex flex-col gap-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <TextField
+                    label="Dose"
+                    type="number"
+                    min={0}
+                    step="any"
+                    required
+                    placeholder="Ex. 500"
+                    value={ligne.dose}
+                    onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                      modifierLigne(ligne.cle, "dose", event.target.value)
+                    }
+                  />
+                  <SelectField
+                    label="Unité"
+                    required
+                    options={optionsUnite}
+                    value={ligne.unite}
+                    onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+                      modifierUnite(ligne.cle, event.target.value as UnitePosologie)
+                    }
+                  />
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <SelectField
+                    label="Voie d'administration"
+                    required
+                    options={optionsVoie}
+                    value={ligne.voie}
+                    onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+                      modifierVoie(ligne.cle, event.target.value as VoiePosologie)
+                    }
+                  />
+                  {ligne.voie === "autre" ? (
+                    <TextField
+                      label="Précisez la voie"
+                      required
+                      placeholder="Ex. sous-cutanée"
+                      value={ligne.voieAutre}
+                      onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                        modifierLigne(ligne.cle, "voieAutre", event.target.value)
+                      }
+                    />
+                  ) : null}
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <SelectField
+                    label="Fréquence"
+                    required
+                    options={optionsFrequence}
+                    value={ligne.frequence}
+                    onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+                      modifierFrequence(ligne.cle, event.target.value as FrequencePosologie)
+                    }
+                  />
+                  {ligne.frequence === "autre" ? (
+                    <TextField
+                      label="Précisez la fréquence"
+                      required
+                      placeholder="Ex. toutes les 8 heures"
+                      value={ligne.frequenceAutre}
+                      onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                        modifierLigne(ligne.cle, "frequenceAutre", event.target.value)
+                      }
+                    />
+                  ) : null}
+                </div>
+
+                {apercuPosologie(ligne) ? (
+                  <p className="text-[13px] text-encre-secondaire">
+                    Posologie enregistrée :{" "}
+                    <span className="font-semibold text-encre">{apercuPosologie(ligne)}</span>
+                  </p>
+                ) : null}
+              </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <TextField
@@ -376,7 +543,12 @@ export function FormulairePrescription({
           type="submit"
           variant="primary"
           className="w-fit"
-          disabled={pending || blocageAllergieNonResolu || blocageAvertissementNonResolu}
+          disabled={
+            pending ||
+            blocageAllergieNonResolu ||
+            blocageAvertissementNonResolu ||
+            blocagePosologieIncomplete
+          }
         >
           {pending ? "Enregistrement en cours..." : "Enregistrer la prescription"}
         </Button>
