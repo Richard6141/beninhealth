@@ -69,6 +69,10 @@ export interface MembrePersonnel {
   numeroProfessionnel: string;
   statutValidation: string;
   email: string;
+  // F-ETA-04 du pack : actif | suspendu | termine (statut du compte User,
+  // distinct de statutValidation ci-dessus qui porte sur le profil
+  // professionnel). Voir src/modules/facility/gestion-personnel.ts.
+  statutCompte: string;
 }
 
 const ROUNDS_BCRYPT = 12;
@@ -459,6 +463,7 @@ export async function listPersonnelEtablissement(): Promise<MembrePersonnel[]> {
     numeroProfessionnel: professionnel.numeroProfessionnel,
     statutValidation: professionnel.statutValidation,
     email: professionnel.user.email,
+    statutCompte: professionnel.user.statut,
   }));
 }
 

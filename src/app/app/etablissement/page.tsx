@@ -15,6 +15,7 @@ import { Badge, type BadgeTone } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { GraphiqueConsultationsMensuelles } from "./GraphiqueConsultationsMensuelles";
 import { SectionPilotage } from "./SectionPilotage";
+import { ActionsPersonnel } from "./ActionsPersonnel";
 import { FormulaireAjoutPersonnel } from "./FormulaireAjoutPersonnel";
 import { FormulaireChangementMotDePasse } from "./FormulaireChangementMotDePasse";
 
@@ -228,6 +229,18 @@ function SectionPersonnel({ personnel }: { personnel: MembrePersonnel[] }) {
                   >
                     Email
                   </th>
+                  <th
+                    scope="col"
+                    className="border-b border-bordure px-3 py-2 text-left font-semibold text-encre-secondaire"
+                  >
+                    Compte
+                  </th>
+                  <th
+                    scope="col"
+                    className="border-b border-bordure px-3 py-2 text-left font-semibold text-encre-secondaire"
+                  >
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -252,6 +265,14 @@ function SectionPersonnel({ personnel }: { personnel: MembrePersonnel[] }) {
                       </td>
                       <td className="border-b border-bordure px-3 py-2 text-encre-secondaire">
                         {membre.email}
+                      </td>
+                      <td className="border-b border-bordure px-3 py-2">
+                        <Badge tone={membre.statutCompte === "actif" ? "good" : membre.statutCompte === "suspendu" ? "warning" : "neutral"}>
+                          {membre.statutCompte === "actif" ? "Actif" : membre.statutCompte === "suspendu" ? "Suspendu" : "Terminé"}
+                        </Badge>
+                      </td>
+                      <td className="border-b border-bordure px-3 py-2">
+                        <ActionsPersonnel userId={membre.userId} statutCompte={membre.statutCompte} />
                       </td>
                     </tr>
                   );
