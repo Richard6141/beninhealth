@@ -237,6 +237,7 @@ model Patient {
   prisesEnChargeInfirmieres PriseEnChargeInfirmiere[]
   references ReferencePatient[]
   codesPartage CodePartageDossier[]
+  codesReclamation CodeReclamationDossier[]
   @@schema("public")
 }
 
@@ -630,6 +631,24 @@ model CodeVerificationEmail {
   dateCreation DateTime @default(now())
   expireLe    DateTime
   consommeLe  DateTime?
+  @@schema("public")
+}
+
+// Correspond a F-AUTH-03 du pack ("Reclamer un dossier existant") : code
+// permettant au titulaire d'un dossier Patient cree "sans compte" (F-CLI-03,
+// src/modules/identity/actions.ts) d'activer lui-meme ce compte. RG-AUTH-20 :
+// code jamais stocke en clair, usage unique, valide 30 jours, 5 tentatives
+// maximum puis blocage (l'etablissement peut en regenerer un nouveau,
+// simplement en creant une nouvelle ligne, l'ancienne restant bloquee).
+model CodeReclamationDossier {
+  id           String    @id @default(cuid())
+  patientId    String
+  patient      Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  codeHash     String
+  tentatives   Int       @default(0)
+  dateCreation DateTime  @default(now())
+  expireLe     DateTime
+  consommeLe   DateTime?
   @@schema("public")
 }
 

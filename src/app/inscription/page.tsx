@@ -113,6 +113,15 @@ export default function InscriptionPage() {
               Se connecter
             </Link>
           </p>
+          <p className="mt-2 text-center text-[13px] text-encre-secondaire">
+            Un dossier a déjà été créé pour vous ?{" "}
+            <Link
+              href="/inscription/reclamer"
+              className="font-semibold text-accent hover:underline"
+            >
+              Réclamer mon dossier
+            </Link>
+          </p>
         </Card>
       </div>
     </div>
