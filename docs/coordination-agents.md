@@ -3393,3 +3393,12 @@ Suspense (le build echoue sinon) ; `creerNotification` vit dans
 - Verifie : tsc, eslint, vitest laboratoire 24/24 et notification 8/8, trois controles sur la vraie base (donnees de test supprimees).
 - Pas encore fait : F-LAB-04 (correction en nouvelle version), valeurs de reference par age, F-NOT-02 (remise a 7 h), F-NOT-04 (codes N-* jamais emis).
 - 2026-09-26.
+
+### Point projet-gouv-86, ordonnance : empreinte (F-PRE-04) et composition (F-PRE-01), 2026-09-26
+
+- Livre dans `src/modules/prescription/` : `empreinte.ts` (contenu canonique recursif, prefixe `v2:`, verification CA-2), `regles-ordonnance.ts` (10 lignes au maximum, poids de moins de 30 jours obligatoire sous 12 ans, duree de 90 jours au plus), branches dans `actions.ts` (creation et renouvellement) et dans `FormulairePrescription.tsx` (bandeau du poids, bouton d'ajout limite, signature bloquee). Aucune migration ; les anciennes ordonnances gardent leur empreinte et sont classees `ancien_format`.
+- Verifie : tsc, eslint (0 erreur), vitest 44 fichiers et 432 tests (dont 34 nouveaux sur l'empreinte et la composition), scenario navigateur sur le serveur partage (poids manquant puis retenu, 10 lignes, 91 jours refuses, signature reelle, integrite recalculee sur la base), patient et consultation de test supprimes.
+- A savoir : 30 lignes `RX-TEST-*` d'une autre session traînent dans la base de developpement ; un `journalAudit` de creation d'ordonnance de test reference une ordonnance supprimee (non efface pour ne pas casser le chainage). La base distante a ete injoignable environ cinq minutes vers 22h10 : une signature a echoue pendant ce trou, sans lien avec le code.
+- Meme defaut d'empreinte (`JSON.stringify` avec liste de cles) dans `clinical/actions.ts` (consultation) et `laboratoire/actions.ts` (resultat) : a verifier par leurs proprietaires.
+- Suite pour moi : F-PRE-05 (statuts), pharmacie F-PHA-03/01/02, tests, referentiels.
+- 2026-09-26.

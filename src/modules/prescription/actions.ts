@@ -63,6 +63,17 @@ import {
 } from "./posologie";
 import { ageAnnees } from "@/modules/clinical/controles-constantes";
 import { calculerEmpreinteOrdonnance } from "./empreinte";
+import {
+  DUREE_TRAITEMENT_MAX_JOURS,
+  MESSAGE_DUREE_TROP_LONGUE,
+  MESSAGE_POIDS_MANQUANT,
+  MESSAGE_TROP_DE_LIGNES,
+  NOMBRE_LIGNES_MAX,
+  debutFenetrePoids,
+  poidsRecent,
+  poidsRequisPourPatient,
+  type PoidsRetenu,
+} from "./regles-ordonnance";
 
 /** Etat renvoye par chaque Server Action de ce module, consomme via useActionState. */
 export interface PrescriptionActionState {
@@ -145,7 +156,8 @@ const schemaLigneSoumise = z.object({
   dureeTraitementJours: z.coerce
     .number({ message: "La duree de traitement doit etre un nombre." })
     .int("La duree de traitement doit etre un nombre entier.")
-    .positive("La duree de traitement doit etre strictement positive."),
+    .positive("La duree de traitement doit etre strictement positive.")
+    .max(DUREE_TRAITEMENT_MAX_JOURS, MESSAGE_DUREE_TROP_LONGUE),
   // F-PRE-02 / RG-PRE-10 : forcage d'une alerte allergie bloquante, avec
   // justification obligatoire (20 caracteres minimum), trace en audit.
   forcerAlerteAllergie: z.coerce.boolean().optional().default(false),
@@ -180,7 +192,8 @@ const schemaCreationPrescription = z.object({
   motDePasseSignature: z.string().min(1, "Le mot de passe est obligatoire pour signer l'ordonnance."),
   lignes: z
     .array(schemaLigneSoumise)
-    .min(1, "Au moins un medicament est obligatoire dans la prescription."),
+    .min(1, "Au moins un medicament est obligatoire dans la prescription.")
+    .max(NOMBRE_LIGNES_MAX, MESSAGE_TROP_DE_LIGNES),
 });
 
 /** Adresse technique d'origine de la requete courante, pour le JournalAudit. */
@@ -430,6 +443,21 @@ export interface PrescriptionAncienneResume {
 }
 
 /**
+ * Poids le plus recent (moins de 30 jours) releve pour ce patient, dans une
+ * consultation ou une prise en charge infirmiere (RG-PRE-02).
+ */
+async function poidsRecentDuPatient(patientId: string, maintenant: Date): Promise<PoidsRetenu | null> {
+  const depuis = debutFenetrePoids(maintenant);
+  const filtre = { patientId, poidsKg: { not: null }, date: { gte: depuis } } as const;
+  const [consultations, prisesEnCharge] = await Promise.all([
+    prisma.consultation.findMany({ where: filtre, select: { date: true, poidsKg: true }, orderBy: { date: "desc" }, take: 5 }),
+    prisma.priseEnChargeInfirmiere.findMany({ where: filtre, select: { date: true, poidsKg: true }, orderBy: { date: "desc" }, take: 5 }),
+  ]);
+
+  return poidsRecent([...consultations, ...prisesEnCharge], maintenant);
+}
+
+/**
  * Verifie que la consultation identifiee appartient bien au professionnel
  * connecte (Zero Trust), et indique si une prescription existe deja pour
  * cette consultation (evite les doublons par erreur). Retourne null si la
@@ -446,6 +474,10 @@ export async function getConsultationPourPrescription(consultationId: string): P
   patientDateNaissanceISO: string;
   patientSexe: string;
   patientGrossesseEnCours: boolean;
+  // RG-PRE-02 : poids obligatoire sous 12 ans, et poids retenu s'il existe
+  // (moins de 30 jours), pour bloquer la signature des l'ecran.
+  patientPoidsRequis: boolean;
+  patientPoidsRecentKg: number | null;
   // F-PRE-02 : medicaments des ordonnances actives du patient, pour
   // l'avertissement "doublon"/"meme classe" affiche cote client avant meme
   // la soumission (le serveur reste la seule autorite reelle, voir
@@ -525,6 +557,9 @@ export async function getConsultationPourPrescription(consultationId: string): P
     })
   );
 
+  const maintenant = new Date();
+  const poidsRetenu = await poidsRecentDuPatient(consultation.patientId, maintenant);
+
   return {
     id: consultation.id,
     motif: consultation.motif,
@@ -533,6 +568,8 @@ export async function getConsultationPourPrescription(consultationId: string): P
     patientDateNaissanceISO: consultation.patient.dateNaissance.toISOString(),
     patientSexe: consultation.patient.sexe,
     patientGrossesseEnCours: consultation.patient.grossesseEnCours,
+    patientPoidsRequis: poidsRequisPourPatient(consultation.patient.dateNaissance, maintenant),
+    patientPoidsRecentKg: poidsRetenu ? poidsRetenu.poidsKg : null,
     patientTraitementsActifs,
     dejaPrescription: consultation.prescriptions.length > 0,
     anciennesPrescriptions,
@@ -641,6 +678,16 @@ export async function creerPrescriptionAction(
       return { error: "Cette consultation est introuvable.", success: false };
     }
 
+    const patient = await prisma.patient.findUnique({ where: { id: consultation.patientId } });
+
+    // RG-PRE-02 : sous 12 ans, un poids de moins de 30 jours est obligatoire avant la signature.
+    const maintenantSignature = new Date();
+    if (patient && poidsRequisPourPatient(patient.dateNaissance, maintenantSignature)) {
+      if (!(await poidsRecentDuPatient(patient.id, maintenantSignature))) {
+        return { error: MESSAGE_POIDS_MANQUANT, success: false };
+      }
+    }
+
     const idsMedicaments = [...new Set(lignes.map((ligne) => ligne.medicamentId))];
     const medicamentsTrouves = await prisma.medicament.findMany({
       where: { id: { in: idsMedicaments } },
@@ -723,7 +770,6 @@ export async function creerPrescriptionAction(
     // sur la DCI et sur la classe therapeutique (referentiel-allergies.ts).
     // Bloquant : soit la ligne est retiree par le medecin, soit il force
     // avec une justification d'au moins 20 caracteres, tracee en audit.
-    const patient = await prisma.patient.findUnique({ where: { id: consultation.patientId } });
     const allergiesPatient = patient ? parseListeJSON(patient.allergies) : [];
     const lignesForcees: { medicamentNom: string; allergie: string; justification: string }[] = [];
 
@@ -1309,10 +1355,32 @@ export async function renouvelerPrescriptionAction(
       return { error: "Cette ordonnance n'a plus aucune ligne a renouveler.", success: false };
     }
 
+    if (ancienne.lignes.length > NOMBRE_LIGNES_MAX) {
+      return {
+        error: `Renouvellement impossible : cette ordonnance comporte plus de ${NOMBRE_LIGNES_MAX} lignes. Creez de nouvelles prescriptions manuellement.`,
+        success: false,
+      };
+    }
+
+    if (ancienne.lignes.some((ligne) => ligne.dureeTraitementJours > DUREE_TRAITEMENT_MAX_JOURS)) {
+      return {
+        error: `Renouvellement impossible : une ligne depasse ${DUREE_TRAITEMENT_MAX_JOURS} jours de traitement. Creez une nouvelle prescription manuellement pour ajuster la duree.`,
+        success: false,
+      };
+    }
+
     // F-PRE-02, non interactif (voir docstring) : les memes controles que
     // creerPrescriptionAction, appliques a chaque ligne copiee. Le premier
     // declenche renvoie vers la creation manuelle.
     const patient = ancienne.patient;
+
+    const maintenantSignature = new Date();
+    if (poidsRequisPourPatient(patient.dateNaissance, maintenantSignature)) {
+      if (!(await poidsRecentDuPatient(patient.id, maintenantSignature))) {
+        return { error: `Renouvellement impossible. ${MESSAGE_POIDS_MANQUANT}`, success: false };
+      }
+    }
+
     const allergiesPatient = parseListeJSON(patient.allergies);
 
     // L'ancienne prescription elle-meme est exclue de "deja active" : sinon

@@ -36,6 +36,13 @@ import {
   type VoiePosologie,
   type FrequencePosologie,
 } from "@/modules/prescription/posologie";
+import {
+  AGE_POIDS_REQUIS_ANS,
+  DUREE_TRAITEMENT_MAX_JOURS,
+  FENETRE_POIDS_JOURS,
+  MESSAGE_POIDS_MANQUANT,
+  NOMBRE_LIGNES_MAX,
+} from "@/modules/prescription/regles-ordonnance";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -142,6 +149,8 @@ export interface FormulairePrescriptionProps {
   patientDateNaissanceISO: string;
   patientSexe: string;
   patientGrossesseEnCours: boolean;
+  patientPoidsRequis: boolean;
+  patientPoidsRecentKg: number | null;
   patientTraitementsActifs: LigneComparable[];
 }
 
@@ -160,6 +169,8 @@ export function FormulairePrescription({
   patientDateNaissanceISO,
   patientSexe,
   patientGrossesseEnCours,
+  patientPoidsRequis,
+  patientPoidsRecentKg,
   patientTraitementsActifs,
 }: FormulairePrescriptionProps) {
   const [state, formAction, pending] = useActionState(
@@ -329,6 +340,14 @@ export function FormulairePrescription({
     (ligne) => dureeExcessiveDeLaLigne(ligne) && !ligne.confirmerAvertissementDuree
   );
 
+  // RG-PRE-02 (sous 12 ans, poids obligatoire) et borne de duree : revalides
+  // cote serveur, l'ecran evite seulement une soumission vouee a l'echec.
+  const blocagePoidsManquant = patientPoidsRequis && patientPoidsRecentKg === null;
+  const blocageDureeAuDessusDuMaximum = lignes.some(
+    (ligne) => Number(ligne.dureeTraitementJours) > DUREE_TRAITEMENT_MAX_JOURS
+  );
+  const limiteDeLignesAtteinte = lignes.length >= NOMBRE_LIGNES_MAX;
+
   // F-PRE-03 : dose renseignee et positive, et precision "autre" fournie
   // quand voie/frequence vaut "autre" (revalide de toute facon cote serveur).
   const blocagePosologieIncomplete = lignes.some((ligne) => apercuPosologie(ligne) === null);
@@ -407,6 +426,18 @@ export function FormulairePrescription({
         <input type="hidden" name="lignesJSON" value={lignesJSON} />
 
         <BandeauAllergies allergies={patientAllergies} />
+
+        {patientPoidsRequis ? (
+          patientPoidsRecentKg === null ? (
+            <Alert level="critical" title="Poids manquant">
+              {MESSAGE_POIDS_MANQUANT}
+            </Alert>
+          ) : (
+            <Alert level="info" title={`Poids retenu : ${patientPoidsRecentKg} kg`}>
+              Patient de moins de {AGE_POIDS_REQUIS_ANS} ans : poids releve depuis moins de {FENETRE_POIDS_JOURS} jours.
+            </Alert>
+          )
+        ) : null}
 
         {state.error ? (
           <Alert level="critical" title="Prescription non enregistree">
@@ -547,6 +578,7 @@ export function FormulairePrescription({
                   label="Duree du traitement"
                   type="number"
                   min={1}
+                  max={DUREE_TRAITEMENT_MAX_JOURS}
                   unit="jours"
                   required
                   value={ligne.dureeTraitementJours}
@@ -697,9 +729,20 @@ export function FormulairePrescription({
           ))}
         </div>
 
-        <Button type="button" variant="secondary" className="w-fit" onClick={ajouterLigne}>
-          Ajouter un medicament
-        </Button>
+        <div className="flex flex-col gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            className="w-fit"
+            onClick={ajouterLigne}
+            disabled={limiteDeLignesAtteinte}
+          >
+            Ajouter un medicament
+          </Button>
+          <p className="text-[13px] text-encre-attenuee">
+            {lignes.length} ligne{lignes.length > 1 ? "s" : ""} sur {NOMBRE_LIGNES_MAX} au maximum.
+          </p>
+        </div>
 
         <TextField
           label="Instructions"
@@ -735,6 +778,8 @@ export function FormulairePrescription({
             blocageAgeNonResolu ||
             blocageGrossesseNonResolu ||
             blocageDureeNonResolu ||
+            blocagePoidsManquant ||
+            blocageDureeAuDessusDuMaximum ||
             motDePasseSignature.length === 0
           }
         >

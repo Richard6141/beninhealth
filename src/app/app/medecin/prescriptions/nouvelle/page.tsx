@@ -124,6 +124,8 @@ export default async function NouvellePrescriptionPage({
         patientDateNaissanceISO={consultation.patientDateNaissanceISO}
         patientSexe={consultation.patientSexe}
         patientGrossesseEnCours={consultation.patientGrossesseEnCours}
+        patientPoidsRequis={consultation.patientPoidsRequis}
+        patientPoidsRecentKg={consultation.patientPoidsRecentKg}
         patientTraitementsActifs={consultation.patientTraitementsActifs}
       />
     </div>
