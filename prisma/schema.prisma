@@ -449,6 +449,11 @@ model ExamenMedical {
   consultationId  String?
   consultation    Consultation? @relation(fields: [consultationId], references: [id])
   typeExamen      String
+  // F-LAB-01 du pack : numero de demande lisible LB-XXXX-XXXX, tire au hasard
+  // (jamais un compteur, donc aucune course a la creation) avec contrainte
+  // d'unicite et nouvel essai en cas de collision. Facultatif : les examens
+  // crees avant cette colonne n'ont pas de numero.
+  numero          String?   @unique
   date            DateTime  @default(now())
   // demande | en_cours | resultat_saisi | correction_demandee | termine | annule
   // F-LAB-04 / RG-ROL-30 (principe des quatre yeux) : "resultat_saisi" est un

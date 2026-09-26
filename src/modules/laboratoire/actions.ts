@@ -51,6 +51,7 @@ import {
 } from "./referentiel-parametres-examens";
 import { journaliser } from "@/modules/audit/journaliser";
 import { creerNotification } from "@/modules/notification/creer";
+import { estCollisionUnicite, genererNumeroExamen } from "./numero-examen";
 
 /** Une valeur de parametre structure saisie et son indicateur calcule (F-LAB-03). Snapshot autonome, stocke tel quel dans ExamenMedical.resultatsParametres : jamais recalcule depuis le referentiel a l'affichage, pour rester stable si le referentiel change. */
 export interface ResultatParametre {
@@ -77,6 +78,9 @@ export interface LaboratoireOption {
 /** Resume d'un examen medical, pret a afficher cote ecran patient, medecin ou laboratoire. */
 export interface ExamenResume {
   id: string;
+  // F-LAB-01 : numero de demande LB-XXXX-XXXX, null pour un examen cree avant
+  // l'introduction de cette colonne.
+  numero: string | null;
   typeExamen: string;
   date: string; // ISO
   statut: string;
@@ -211,6 +215,26 @@ function texte(formData: FormData, cle: string): string {
   return typeof valeur === "string" ? valeur : "";
 }
 
+/**
+ * Notifie chaque professionnel du role laboratoire rattache a ce laboratoire.
+ * Non exportee : dans un fichier "use server", une fonction exportee est un
+ * point d'entree atteignable, or celle-ci n'a aucun controle de session (le
+ * laboratoire cible est determine par l'appelant a partir de donnees deja
+ * verifiees).
+ */
+async function notifierPersonnelLaboratoire(
+  laboratoireId: string,
+  type: string,
+  message: string,
+  lien: string
+): Promise<void> {
+  const personnel = await prisma.professionnelSante.findMany({
+    where: { etablissementId: laboratoireId, user: { roles: { some: { nom: "laboratoire" } } } },
+    select: { userId: true },
+  });
+  await Promise.all(personnel.map((membre) => creerNotification(membre.userId, type, message, lien)));
+}
+
 /** Nom complet d'un utilisateur, sans prefixe. */
 function nomComplet(utilisateur: { nom: string; prenom: string }): string {
   return `${utilisateur.prenom} ${utilisateur.nom}`;
@@ -282,6 +306,7 @@ function calculerEmpreinteResultat(champs: {
 function versExamenResume(
   examen: {
     id: string;
+    numero: string | null;
     typeExamen: string;
     date: Date;
     statut: string;
@@ -312,6 +337,7 @@ function versExamenResume(
 ): ExamenResume {
   return {
     id: examen.id,
+    numero: examen.numero,
     typeExamen: examen.typeExamen,
     date: examen.date.toISOString(),
     statut: examen.statut,
@@ -495,32 +521,57 @@ export async function demanderExamenAction(
 
     const adresseTechnique = await adresseTechniqueCourante();
 
-    await prisma.$transaction(async (tx) => {
-      const examenCree = await tx.examenMedical.create({
-        data: {
-          patientId,
-          demandeurId: professionnel.id,
-          laboratoireId: laboratoire.id,
-          consultationId: consultationIdValide,
-          typeExamen,
-          statut: "demande",
-          sensible: estExamenSensible(typeExamen),
-          niveauUrgence,
-          aJeunRequis,
-        },
-      });
+    // F-LAB-01 : numero LB-XXXX-XXXX aleatoire ; en cas (improbable) de
+    // collision sur la contrainte d'unicite, la transaction entiere est
+    // rejouee avec un nouveau numero (une violation d'unicite invalide la
+    // transaction Postgres en cours, on ne peut pas reessayer a l'interieur).
+    const NB_ESSAIS_NUMERO = 5;
+    for (let essai = 1; ; essai += 1) {
+      try {
+        await prisma.$transaction(async (tx) => {
+          const examenCree = await tx.examenMedical.create({
+            data: {
+              patientId,
+              demandeurId: professionnel.id,
+              laboratoireId: laboratoire.id,
+              consultationId: consultationIdValide,
+              typeExamen,
+              numero: genererNumeroExamen(),
+              statut: "demande",
+              sensible: estExamenSensible(typeExamen),
+              niveauUrgence,
+              aJeunRequis,
+            },
+          });
 
-      await journaliser(
-        {
-          utilisateurId: session.userId,
-          action: "creation",
-          donneeConcernee: `examen_medical:${examenCree.id}`,
-          adresseTechnique,
-          justification: `Examen medical demande pour le patient ${patientId}`,
-        },
-        tx
-      );
-    });
+          await journaliser(
+            {
+              utilisateurId: session.userId,
+              action: "creation",
+              donneeConcernee: `examen_medical:${examenCree.id}`,
+              adresseTechnique,
+              justification: `Examen medical ${examenCree.numero} demande pour le patient ${patientId}`,
+            },
+            tx
+          );
+        });
+        break;
+      } catch (erreur) {
+        if (estCollisionUnicite(erreur) && essai < NB_ESSAIS_NUMERO) continue;
+        throw erreur;
+      }
+    }
+
+    // F-LAB-01 : le laboratoire destinataire est prevenu de la nouvelle
+    // demande (message sans nom de patient ni d'examen : rien de sensible
+    // dans une notification). Hors transaction, une notification manquee ne
+    // doit pas defaire la demande.
+    await notifierPersonnelLaboratoire(
+      laboratoire.id,
+      "examen_demande",
+      "Une nouvelle demande d'examen est arrivee dans votre laboratoire.",
+      "/app/medecin/laboratoire"
+    );
 
     return { error: null, success: true };
   } catch (erreur) {
@@ -616,11 +667,6 @@ export async function annulerExamenAction(
     // Le message au patient ne nomme jamais l'examen ni le motif (un examen
     // sensible ne doit rien reveler avant annonce, RG-LAB-41) ; le laboratoire,
     // qui connait deja la demande, recoit le motif.
-    const { creerNotification } = await import("@/modules/notification/creer");
-    const personnelLaboratoire = await prisma.professionnelSante.findMany({
-      where: { etablissementId: examen.laboratoireId, user: { roles: { some: { nom: "laboratoire" } } } },
-      select: { userId: true },
-    });
     await Promise.all([
       creerNotification(
         examen.patient.userId,
@@ -628,13 +674,11 @@ export async function annulerExamenAction(
         "Une demande d'examen vous concernant a ete annulee par votre medecin.",
         "/app/patient/examens"
       ),
-      ...personnelLaboratoire.map((membre) =>
-        creerNotification(
-          membre.userId,
-          "examen_annule",
-          `Une demande d'examen a ete annulee par le medecin demandeur. Motif : ${motif}`,
-          "/app/medecin/laboratoire"
-        )
+      notifierPersonnelLaboratoire(
+        examen.laboratoireId,
+        "examen_annule",
+        `Une demande d'examen a ete annulee par le medecin demandeur. Motif : ${motif}`,
+        "/app/medecin/laboratoire"
       ),
     ]);
 

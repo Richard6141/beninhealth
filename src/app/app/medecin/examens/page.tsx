@@ -61,7 +61,7 @@ function CarteExamen({ examen }: { examen: ExamenResume }) {
   return (
     <Card
       title={examen.patientNomComplet ?? "Patient non precise"}
-      description={examen.typeExamen}
+      description={examen.numero ? `${examen.typeExamen} (${examen.numero})` : examen.typeExamen}
       actions={
         <div className="flex flex-wrap items-center justify-end gap-1.5">
           {examen.sensible ? <Badge tone="critical">Sensible</Badge> : null}

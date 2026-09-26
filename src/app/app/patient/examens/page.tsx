@@ -63,6 +63,7 @@ function CarteExamen({ examen }: { examen: ExamenResume }) {
             Type d&apos;examen
           </p>
           <p className="text-[14px] text-encre">{examen.typeExamen}</p>
+          {examen.numero ? <p className="chiffres text-[12px] text-encre-attenuee">{examen.numero}</p> : null}
         </div>
 
         <div className="flex flex-col gap-1 border-b border-bordure pb-4">

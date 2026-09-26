@@ -281,6 +281,7 @@ function LigneExamen({
       </td>
       <td className={styleCellule}>
         <span className="text-encre">{examen.typeExamen}</span>
+        {examen.numero ? <span className="chiffres block text-[12px] text-encre-attenuee">{examen.numero}</span> : null}
       </td>
       <td className={styleCellule}>
         <span className="text-encre-secondaire">{examen.demandeurNomComplet ?? "Non précisé"}</span>
