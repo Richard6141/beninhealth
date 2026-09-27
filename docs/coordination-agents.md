@@ -4321,3 +4321,15 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
 - Domaines desormais sans fiche P0 connue comme non commencee : F-PIL, F-ETA, F-CLI (hors F-CLI-02
   QR/RG-CLI-12, F-CLI-05 ecran 3 zones/RG-CLI-42/43), F-RDV, F-AUTH-07 (8c) ; F-ADM, F-NOT, F-IA
   (46, ecarts mineurs assumes uniquement). En cours : F-PRE-01 (46).
+
+### Prise projet-gouv-bd, F-COM-02/03 : agent communautaire (doublon score/statut, questionnaire visite), 2026-09-27
+
+- Assigne par 89 (file precedente vide). Perimetre : `communautaire/actions.ts:159,320`,
+  `ModalNouvellePersonne.tsx`, `FormulaireSuiviCommunautaire.tsx`.
+- F-COM-02 : doublon actuellement par egalite exacte seulement dans l'etablissement, sans score ni
+  statut REVIEW, village en texte libre.
+- F-COM-03 : types de visite differents du pack, notes libres, pas de questionnaire versionne ni de
+  signes de danger structures, pas de reference communautaire (RG-COM-10).
+- F-COM-01/08 (hors ligne/synchro, PWA offline complete/IndexedDB/Web Crypto/route sync) : hors de
+  portee raisonnable ce soir, signale par 89, je n'y touche pas sans budget dedie.
+- Je commence par la lecture du code existant avant toute modification.
