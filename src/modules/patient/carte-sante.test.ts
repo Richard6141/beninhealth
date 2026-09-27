@@ -27,11 +27,18 @@ vi.mock("next/headers", () => ({
 }));
 vi.mock("@/modules/audit/journaliser", () => ({ journaliser: vi.fn() }));
 vi.mock("qrcode", () => ({ default: { toDataURL: vi.fn(async (url: string) => `data:image/png;base64,${Buffer.from(url).toString("base64")}`) } }));
+vi.mock("@/modules/patient/carte-sante-impression", () => ({ creerJetonImpressionCarteSante: vi.fn() }));
 
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { journaliser } from "@/modules/audit/journaliser";
-import { genererJetonCarteSanteAction, verifierCarteSanteAction } from "@/modules/patient/carte-sante";
+import { creerJetonImpressionCarteSante } from "@/modules/patient/carte-sante-impression";
+import {
+  genererJetonCarteSanteAction,
+  genererLienImpressionCarteAction,
+  getCarteSanteProfilAction,
+  verifierCarteSanteAction,
+} from "@/modules/patient/carte-sante";
 
 const p = prisma as unknown as {
   patient: { findUnique: Mock };
@@ -39,6 +46,7 @@ const p = prisma as unknown as {
 };
 const getSessionMock = getSession as unknown as Mock;
 const journaliserMock = journaliser as unknown as Mock;
+const creerJetonImpressionMock = creerJetonImpressionCarteSante as unknown as Mock;
 
 const MAINTENANT = new Date("2026-09-27T12:00:00.000Z");
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -222,5 +230,75 @@ describe("verifierCarteSanteAction (RG-CIT-40/41, CA-1)", () => {
 
     expect([premiere.statut, seconde.statut].sort()).toEqual(["expire_ou_utilise", "valide"]);
     expect(journaliserMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("getCarteSanteProfilAction (RG-CIT-41, QR de secours hors ligne)", () => {
+  beforeEach(() => {
+    getSessionMock.mockResolvedValue({ userId: "user-pat", roles: ["patient"] });
+    p.patient.findUnique.mockResolvedValue({
+      identifiantSante: "BJ-SANTE-PAT-0001",
+      dateNaissance: new Date("1994-03-12"),
+      user: { prenom: "Beatrice", nom: "Agossou" },
+    });
+  });
+
+  it("refuse sans session ou pour tout autre role que patient", async () => {
+    getSessionMock.mockResolvedValue(null);
+    expect(await getCarteSanteProfilAction()).toBeNull();
+
+    getSessionMock.mockResolvedValue({ userId: "user-med", roles: ["medecin"] });
+    expect(await getCarteSanteProfilAction()).toBeNull();
+  });
+
+  it("renvoie null si le patient est introuvable", async () => {
+    p.patient.findUnique.mockResolvedValue(null);
+    expect(await getCarteSanteProfilAction()).toBeNull();
+  });
+
+  it("renvoie l'identite minimale et un QR encodant uniquement l'identifiant sante, jamais un jeton ni une URL", async () => {
+    const resultat = await getCarteSanteProfilAction();
+
+    expect(resultat).toMatchObject({
+      nomComplet: "Beatrice Agossou",
+      dateNaissance: new Date("1994-03-12").toISOString(),
+      identifiantSante: "BJ-SANTE-PAT-0001",
+    });
+    expect(decoderUrlDuQr(resultat?.dataUrlQrHorsLigne ?? "")).toBe("BJ-SANTE-PAT-0001");
+  });
+});
+
+describe("genererLienImpressionCarteAction (F-CIT-05, etape 4, P1)", () => {
+  beforeEach(() => {
+    getSessionMock.mockResolvedValue({ userId: "user-pat", roles: ["patient"] });
+    p.patient.findUnique.mockResolvedValue({ id: "pat-1", userId: "user-pat" });
+    creerJetonImpressionMock.mockReturnValue("jeton-impression-test");
+  });
+
+  it("refuse sans session ou pour tout autre role que patient", async () => {
+    getSessionMock.mockResolvedValue(null);
+    expect((await genererLienImpressionCarteAction()).url).toBeNull();
+
+    getSessionMock.mockResolvedValue({ userId: "user-med", roles: ["medecin"] });
+    expect((await genererLienImpressionCarteAction()).url).toBeNull();
+    expect(creerJetonImpressionMock).not.toHaveBeenCalled();
+  });
+
+  it("refuse si le patient est introuvable", async () => {
+    p.patient.findUnique.mockResolvedValue(null);
+    const resultat = await genererLienImpressionCarteAction();
+
+    expect(resultat.url).toBeNull();
+    expect(resultat.error).not.toBeNull();
+  });
+
+  it("cree un jeton pour le patient connecte et renvoie l'URL de telechargement", async () => {
+    const resultat = await genererLienImpressionCarteAction();
+
+    expect(creerJetonImpressionMock).toHaveBeenCalledWith("pat-1");
+    expect(resultat).toEqual({
+      error: null,
+      url: "/api/patient/carte-sante/telecharger?jeton=jeton-impression-test",
+    });
   });
 });
