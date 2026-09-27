@@ -36,7 +36,7 @@ export const MOTIFS_ACCES = {
 } as const;
 export type MotifAcces = keyof typeof MOTIFS_ACCES;
 
-export const MODES_RECHERCHE = ["npi", "telephone"] as const;
+export const MODES_RECHERCHE = ["npi", "telephone", "identifiant_sante"] as const;
 export type ModeRecherche = (typeof MODES_RECHERCHE)[number];
 
 /** Duree effectivement accordee : la duree demandee, plafonnee sans signal de presence. */

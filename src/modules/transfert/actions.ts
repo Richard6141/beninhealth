@@ -29,6 +29,7 @@ import { getEnv } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { memeTelephoneBenin, normaliserTelephoneBenin } from "@/lib/telephone";
+import { verifierIdentifiantSante } from "@/modules/identity/identifiant-sante";
 import { estFonctionnaliteActive } from "@/modules/administration/parametres";
 import {
   MESSAGE_ORDRE_NON_VERIFIE,
@@ -102,10 +103,11 @@ async function professionnelValide(userId: string) {
 }
 
 const schemaDemande = z.object({
-  mode: z.enum(MODES_RECHERCHE, "Choisissez NPI ou téléphone."),
+  mode: z.enum(MODES_RECHERCHE, "Choisissez NPI, téléphone ou identifiant santé."),
   npi: z.string().trim(),
   telephone: z.string().trim(),
   dateNaissance: z.string().trim(),
+  identifiantSante: z.string().trim(),
   presence: z.literal("on", "Confirmez que le patient est présent devant vous."),
   motif: z.string().refine(estMotifAcces, "Motif de l'accès invalide."),
   dureeHeures: z.coerce.number().refine(estDureeAcces, "Durée d'accès invalide."),
@@ -113,11 +115,22 @@ const schemaDemande = z.object({
 
 async function trouverPatient(
   mode: ModeRecherche,
-  critere: { npi: string; telephone: string; dateNaissance: Date }
+  critere: { npi: string; telephone: string; dateNaissance: Date; identifiantSante: string }
 ) {
   if (mode === "npi") {
     const patient = await prisma.patient.findUnique({
       where: { referenceIdentiteNationale: critere.npi },
+      include: { user: true },
+    });
+    return patient && STATUTS_PATIENT_JOIGNABLES.includes(patient.user.statut) ? patient : null;
+  }
+
+  if (mode === "identifiant_sante") {
+    // RG-GEN-02 : la forme canonique corrige deja les confusions courantes
+    // (I/L lus comme 1, O lu comme 0) ; une correspondance exacte sur cette
+    // forme, jamais une recherche partielle.
+    const patient = await prisma.patient.findUnique({
+      where: { identifiantSante: critere.identifiantSante },
       include: { user: true },
     });
     return patient && STATUTS_PATIENT_JOIGNABLES.includes(patient.user.statut) ? patient : null;
@@ -161,6 +174,7 @@ export async function demanderAccesDossierAction(
     npi: texte(formData, "npi"),
     telephone: texte(formData, "telephone"),
     dateNaissance: texte(formData, "dateNaissance"),
+    identifiantSante: texte(formData, "identifiantSante"),
     presence: texte(formData, "presence"),
     motif: texte(formData, "motif"),
     dureeHeures: texte(formData, "dureeHeures"),
@@ -174,6 +188,7 @@ export async function demanderAccesDossierAction(
   let npi = "";
   let telephone = "";
   let dateNaissance = new Date(0);
+  let identifiantSante = "";
   let valeurCritere: string;
 
   if (mode === "npi") {
@@ -189,6 +204,18 @@ export async function demanderAccesDossierAction(
 
     npi = npiNormalise;
     valeurCritere = npi;
+  } else if (mode === "identifiant_sante") {
+    // RG-GEN-02 : un caractere de controle faux est refuse ici, cote serveur
+    // (defense en profondeur : le formulaire le refuse deja localement, sans
+    // appel reseau, mais Zero Trust n'accorde jamais sa confiance au client).
+    const verification = verifierIdentifiantSante(validation.data.identifiantSante);
+
+    if (!verification.valide || !verification.canonique) {
+      return { error: "Identifiant incorrect, vérifiez la saisie.", success: false };
+    }
+
+    identifiantSante = verification.canonique;
+    valeurCritere = identifiantSante;
   } else {
     const telephoneNormalise = normaliserTelephoneBenin(validation.data.telephone);
 
@@ -249,7 +276,7 @@ export async function demanderAccesDossierAction(
       return { error: "Trop de demandes en peu de temps. Réessayez plus tard.", success: false };
     }
 
-    let patient = await trouverPatient(mode, { npi, telephone, dateNaissance });
+    let patient = await trouverPatient(mode, { npi, telephone, dateNaissance, identifiantSante });
 
     if (patient && patient.userId === session.userId) {
       patient = null;

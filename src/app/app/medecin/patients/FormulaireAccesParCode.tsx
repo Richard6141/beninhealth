@@ -12,6 +12,7 @@ import {
   type DemandeAccesState,
   type StatutDemandeAcces,
 } from "@/modules/transfert/actions";
+import { verifierIdentifiantSante } from "@/modules/identity/identifiant-sante";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -22,7 +23,7 @@ import { cn } from "@/lib/cn";
 const etatDemandeInitial: DemandeAccesState = { error: null, success: false };
 const etatConfirmationInitial: ConfirmationAccesState = { error: null, success: false };
 
-type Mode = "telephone" | "npi";
+type Mode = "telephone" | "npi" | "identifiant_sante";
 
 interface Props {
   npiActif: boolean;
@@ -41,6 +42,7 @@ function heureLocale(iso: string): string {
 function Assistant({ npiActif, optionsMotif, optionsDuree, onRecommencer }: Props & { onRecommencer: () => void }) {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("telephone");
+  const [identifiantSaisi, setIdentifiantSaisi] = useState("");
   const [demande, demanderAction, demandeEnCours] = useActionState(demanderAccesDossierAction, etatDemandeInitial);
   const [renvoi, renvoyerAction, renvoiEnCours] = useActionState(renvoyerCodeAccesAction, etatDemandeInitial);
   const [confirmation, confirmerAction, confirmationEnCours] = useActionState(
@@ -177,31 +179,30 @@ function Assistant({ npiActif, optionsMotif, optionsDuree, onRecommencer }: Prop
     <form action={demanderAction} className="flex flex-col gap-5">
       <input type="hidden" name="mode" value={mode} />
 
-      {npiActif ? (
-        <div role="group" aria-label="Critère de recherche" className="flex flex-wrap gap-2">
-          {(
-            [
-              ["telephone", "Téléphone et date de naissance"],
-              ["npi", "NPI"],
-            ] as const
-          ).map(([valeur, libelle]) => (
-            <button
-              key={valeur}
-              type="button"
-              aria-pressed={mode === valeur}
-              onClick={() => setMode(valeur)}
-              className={cn(
-                "h-10 rounded-champ border px-4 text-[14px] font-semibold",
-                mode === valeur
-                  ? "border-marine bg-marine-clair text-marine"
-                  : "border-bordure-forte bg-surface text-encre hover:bg-surface-appui"
-              )}
-            >
-              {libelle}
-            </button>
-          ))}
-        </div>
-      ) : null}
+      <div role="group" aria-label="Critère de recherche" className="flex flex-wrap gap-2">
+        {(
+          [
+            ["telephone", "Téléphone et date de naissance"],
+            ["identifiant_sante", "Identifiant santé"],
+            ...(npiActif ? ([["npi", "NPI"]] as const) : []),
+          ] as const
+        ).map(([valeur, libelle]) => (
+          <button
+            key={valeur}
+            type="button"
+            aria-pressed={mode === valeur}
+            onClick={() => setMode(valeur)}
+            className={cn(
+              "h-10 rounded-champ border px-4 text-[14px] font-semibold",
+              mode === valeur
+                ? "border-marine bg-marine-clair text-marine"
+                : "border-bordure-forte bg-surface text-encre hover:bg-surface-appui"
+            )}
+          >
+            {libelle}
+          </button>
+        ))}
+      </div>
 
       {mode === "npi" ? (
         <TextField
@@ -212,6 +213,23 @@ function Assistant({ npiActif, optionsMotif, optionsDuree, onRecommencer }: Prop
           autoComplete="off"
           placeholder="13 chiffres"
           hint="Numéro d'identification personnel, tel qu'il figure sur le certificat NPI."
+        />
+      ) : mode === "identifiant_sante" ? (
+        <TextField
+          label="Identifiant santé du patient"
+          name="identifiantSante"
+          required
+          autoComplete="off"
+          placeholder="BJ-XXXXX-XXXXX-C"
+          hint="Tel qu'il figure sur la carte santé du patient (QR ou saisie manuelle), avec ou sans tirets."
+          value={identifiantSaisi}
+          onChange={(evenement) => setIdentifiantSaisi(evenement.target.value)}
+          // RG-GEN-02 : une faute de frappe est refusee ici, localement, sans appel au serveur.
+          error={
+            identifiantSaisi.trim().length > 0 && !verifierIdentifiantSante(identifiantSaisi).valide
+              ? "Identifiant incorrect, vérifiez la saisie."
+              : undefined
+          }
         />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
@@ -257,7 +275,15 @@ function Assistant({ npiActif, optionsMotif, optionsDuree, onRecommencer }: Prop
       ) : null}
 
       <div>
-        <Button type="submit" iconBefore={Send} disabled={demandeEnCours}>
+        <Button
+          type="submit"
+          iconBefore={Send}
+          disabled={
+            demandeEnCours ||
+            (mode === "identifiant_sante" &&
+              (identifiantSaisi.trim().length === 0 || !verifierIdentifiantSante(identifiantSaisi).valide))
+          }
+        >
           {demandeEnCours ? "Envoi..." : "Envoyer le code au patient"}
         </Button>
       </div>

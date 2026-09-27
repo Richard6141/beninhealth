@@ -56,6 +56,7 @@ import {
   statutDemandeAccesAction,
 } from "@/modules/transfert/actions";
 import { envoyerCodeDemande } from "@/modules/transfert/envoi-code";
+import { genererIdentifiantSante } from "@/modules/identity/identifiant-sante";
 
 const p = prisma as unknown as {
   professionnelSante: { findUnique: Mock };
@@ -309,6 +310,66 @@ describe("demanderAccesDossierAction : mode telephone + date de naissance", () =
   it("refuse un numero non beninois ou une date invalide", async () => {
     expect((await demanderAccesDossierAction(etatInitial, formulaire({ ...demandeTel, telephone: "+33612345678" }))).success).toBe(false);
     expect((await demanderAccesDossierAction(etatInitial, formulaire({ ...demandeTel, dateNaissance: "04/05/1990" }))).success).toBe(false);
+  });
+});
+
+describe("demanderAccesDossierAction : mode identifiant sante (RG-GEN-02)", () => {
+  const identifiant = genererIdentifiantSante();
+  const demandeIdentifiant = {
+    mode: "identifiant_sante",
+    npi: "",
+    telephone: "",
+    dateNaissance: "",
+    identifiantSante: identifiant,
+    presence: "on",
+    motif: "consultation",
+    dureeHeures: "24",
+  };
+
+  it("trouve le patient par correspondance exacte sur l'identifiant sante, sans exiger le drapeau NPI", async () => {
+    flagMock.mockResolvedValue(false);
+    p.patient.findUnique.mockResolvedValue(patientTrouve());
+
+    const resultat = await demanderAccesDossierAction(etatInitial, formulaire(demandeIdentifiant));
+
+    expect(resultat.success).toBe(true);
+    expect(p.patient.findUnique).toHaveBeenCalledWith({ where: { identifiantSante: identifiant }, include: { user: true } });
+    expect(p.demandeAccesDossier.create.mock.calls[0][0].data.patientId).toBe("pat-1");
+  });
+
+  it("accepte minuscules, espaces et tirets absents, et retrouve la meme forme canonique", async () => {
+    p.patient.findUnique.mockResolvedValue(patientTrouve());
+    const saisie = identifiant.toLowerCase().replace(/-/g, " ");
+
+    await demanderAccesDossierAction(etatInitial, formulaire({ ...demandeIdentifiant, identifiantSante: saisie }));
+
+    expect(p.patient.findUnique).toHaveBeenCalledWith({ where: { identifiantSante: identifiant }, include: { user: true } });
+  });
+
+  it("RG-GEN-02 : une faute de frappe (caractere de controle faux) est refusee sans jamais interroger la base", async () => {
+    const fausse = identifiant.slice(0, -1) + (identifiant.endsWith("0") ? "1" : "0");
+
+    const resultat = await demanderAccesDossierAction(etatInitial, formulaire({ ...demandeIdentifiant, identifiantSante: fausse }));
+
+    expect(resultat.success).toBe(false);
+    expect(p.patient.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("aucun dossier pour cet identifiant : meme reponse generique que les autres modes (RG-CLI-10)", async () => {
+    p.patient.findUnique.mockResolvedValue(null);
+
+    const resultat = await demanderAccesDossierAction(etatInitial, formulaire(demandeIdentifiant));
+
+    expect(resultat.success).toBe(true);
+    expect(p.demandeAccesDossier.create.mock.calls[0][0].data.patientId).toBeNull();
+  });
+
+  it("reconnait aussi un identifiant historique BJ-SANTE-PAT-0001, sans caractere de controle", async () => {
+    p.patient.findUnique.mockResolvedValue(patientTrouve());
+
+    await demanderAccesDossierAction(etatInitial, formulaire({ ...demandeIdentifiant, identifiantSante: "bj-sante-pat-0001" }));
+
+    expect(p.patient.findUnique).toHaveBeenCalledWith({ where: { identifiantSante: "BJ-SANTE-PAT-0001" }, include: { user: true } });
   });
 });
 
