@@ -11,6 +11,12 @@ vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers()) }));
 vi.mock("@/lib/session", () => ({ getSession: vi.fn() }));
 vi.mock("@/modules/audit/journaliser", () => ({ journaliser: vi.fn() }));
 vi.mock("@/modules/notification/creer", () => ({ creerNotification: vi.fn() }));
+// Frontiere du module : la logique interne (routage vers le tuteur d'une
+// personne a charge) est testee dans son propre fichier
+// (facility/destinataire-notification-patient.test.ts), pas ici.
+vi.mock("@/modules/facility/destinataire-notification-patient", () => ({
+  destinataireNotificationPatient: vi.fn(async (patientId: string) => `user-de-${patientId}`),
+}));
 vi.mock("@/modules/pilotage/file-taches", () => ({ publierEvenementPilotage: vi.fn(async () => undefined) }));
 vi.mock("@/modules/administration/validation-professionnels-controle", () => ({
   professionnelValide: vi.fn(async () => true),
@@ -35,6 +41,7 @@ vi.mock("@/lib/prisma", () => {
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { journaliser } from "@/modules/audit/journaliser";
+import { creerNotification } from "@/modules/notification/creer";
 import { publierEvenementPilotage } from "@/modules/pilotage/file-taches";
 import { professionnelValide } from "@/modules/administration/validation-professionnels-controle";
 import { enregistrerConsultationAction } from "./actions";
@@ -50,6 +57,7 @@ const prismaMock = prisma as unknown as {
 };
 const getSessionMock = getSession as unknown as Mock;
 const journaliserMock = journaliser as unknown as Mock;
+const creerNotificationMock = creerNotification as unknown as Mock;
 const evenementPilotageMock = publierEvenementPilotage as unknown as Mock;
 const ordreVerifieMock = professionnelValide as unknown as Mock;
 
@@ -446,6 +454,23 @@ describe("validation (CA-1, RG-CLI-61)", () => {
     expect(miseAJour.data.empreinteContenu).toMatch(/^[0-9a-f]{64}$/);
     expect(evenementPilotageMock).toHaveBeenCalledWith(expect.anything(), { type: "consultation_validee", date: MAINTENANT, etablissementId: "etab-1" });
     expect(journaliserMock.mock.calls.map((c) => c[0].action)).toEqual(["creation_brouillon", "validation_consultation"]);
+  });
+
+  it("F-CLI-07 : notifie le patient a la validation, routee via destinataireNotificationPatient (personne a charge)", async () => {
+    await enregistrerConsultationAction(ETAT, formulaire(valider));
+
+    expect(creerNotificationMock).toHaveBeenCalledWith(
+      "user-de-pat-1",
+      "consultation",
+      "Une consultation a ete finalisee dans votre dossier.",
+      "/app/patient/dossier"
+    );
+  });
+
+  it("ne notifie jamais le patient pour un simple enregistrement de brouillon (aucune signature)", async () => {
+    await enregistrerConsultationAction(ETAT, formulaire());
+
+    expect(creerNotificationMock).not.toHaveBeenCalled();
   });
 
   it("l'empreinte change des que le contenu change, et reste identique pour un contenu identique", async () => {

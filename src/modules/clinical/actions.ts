@@ -22,6 +22,8 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/modules/audit/journaliser";
 import { publierEvenementPilotage } from "@/modules/pilotage/file-taches";
+import { creerNotification } from "@/modules/notification/creer";
+import { destinataireNotificationPatient } from "@/modules/facility/destinataire-notification-patient";
 import { STATUTS_ACTIFS, transitionnerRendezVous } from "@/modules/facility/rendez-vous-etats";
 import { bornesJourneeBenin } from "@/modules/transfert/code-acces";
 import { MESSAGE_ORDRE_NON_VERIFIE, professionnelValide } from "@/modules/administration/validation-professionnels-controle";
@@ -1665,6 +1667,22 @@ export async function enregistrerConsultationAction(
 
       return cible.id;
     });
+
+    // F-CLI-07 du pack : le patient doit etre notifie a la validation de sa
+    // consultation, manquait entierement avant ce correctif (seul le
+    // rendez-vous change d'etat, aucune notification). Hors transaction (une
+    // notification manquee ne doit jamais defaire une signature deja actee
+    // en base) ; destinataireNotificationPatient route vers le tuteur si le
+    // patient est une personne a charge (sans_compte), meme principe deja
+    // applique dans prescription/actions.ts et laboratoire/actions.ts.
+    if (valider) {
+      await creerNotification(
+        await destinataireNotificationPatient(patientId),
+        "consultation",
+        "Une consultation a ete finalisee dans votre dossier.",
+        "/app/patient/dossier"
+      );
+    }
 
     return { error: null, success: true, consultationId: idFinal, valide: valider };
   } catch (erreur) {
