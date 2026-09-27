@@ -8,6 +8,7 @@ import {
   verifierMotDePasseExportAction,
 } from "@/modules/patient/droits-donnees";
 import type { PatientActionState } from "@/modules/patient/actions";
+import type { ExportDonneesActionState } from "@/modules/patient/droits-donnees";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -20,29 +21,38 @@ const styleLienTelechargement =
 
 /**
  * Section "Obtenir une copie de mes données" (F-CIT-13, type 1). La
- * verification du mot de passe (verifierMotDePasseExportAction) revele les
- * deux liens de telechargement, qui s'appuient ensuite uniquement sur la
- * session courante (deja re-authentifiee a cette etape) pour regenerer le
- * contenu a la demande cote /api/patient/export/*.
+ * verification du mot de passe (verifierMotDePasseExportAction) delivre un
+ * jeton signe de 5 minutes, joint aux deux liens de telechargement : les
+ * routes /api/patient/export/* le exigent en plus de la session.
  */
 function SectionExportDonnees() {
-  const [state, formAction, pending] = useActionState(verifierMotDePasseExportAction, etatInitial);
+  const [state, formAction, pending] = useActionState<ExportDonneesActionState, FormData>(
+    verifierMotDePasseExportAction,
+    etatInitial
+  );
 
   return (
     <Card
       title="Obtenir une copie de mes données"
       description="Téléchargez l'ensemble de vos données personnelles au format PDF et JSON, après confirmation de votre mot de passe."
     >
-      {state.success ? (
+      {state.success && state.jeton ? (
         <div className="flex flex-col gap-3">
           <Alert level="success" title="Identité confirmée">
-            Vos fichiers sont prêts. Chaque lien régénère une copie à jour de vos données au moment du téléchargement.
+            Vos fichiers sont prêts. Chaque lien régénère une copie à jour de vos données au moment du
+            téléchargement et reste valable 5 minutes.
           </Alert>
           <div className="flex flex-wrap gap-3">
-            <a href="/api/patient/export/pdf" className={styleLienTelechargement}>
+            <a
+              href={`/api/patient/export/pdf?jeton=${encodeURIComponent(state.jeton)}`}
+              className={styleLienTelechargement}
+            >
               Télécharger (PDF)
             </a>
-            <a href="/api/patient/export/json" className={styleLienTelechargement}>
+            <a
+              href={`/api/patient/export/json?jeton=${encodeURIComponent(state.jeton)}`}
+              className={styleLienTelechargement}
+            >
               Télécharger (JSON)
             </a>
           </div>

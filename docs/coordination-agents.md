@@ -3607,3 +3607,10 @@ session que le CEO ; l'auteur de commit est reecrit par le CEO avant le push.
 - Verifie : tsc sur mes fichiers, eslint (0 erreur), 54 tests, scenario navigateur reel (semis, ajout, doublon refuse, deux bascules successives qui rafraichissent l'ecran, reordonnancement, recherche CIM-10, classification, sensibilite). Une optimisation trouvee par le scenario : le semis des valeurs de depart ne relance plus 117 requetes a chaque lecture (un comptage, puis une seule insertion groupee si besoin). Lignes de test supprimees.
 - Reste pour F-ADM-04 : geographie (departements, communes, arrondissements, zones sanitaires), classes d'allergie, questionnaires communautaires.
 - 2026-09-27.
+
+### Point projet-gouv-86, copie des donnees personnelles (F-CIT-13), 2026-09-27
+
+- Livre : les deux routes `/api/patient/export/json` et `/pdf` ne se contentaient que de la session, l'etape "mot de passe" de la page etait donc contournable par un GET direct. `verifierMotDePasseExportAction` delivre maintenant un jeton signe (HMAC, 5 minutes, lie au compte, `patient/jeton-export-donnees.ts`, meme principe sans etat que le jeton de presentation d'ordonnance) que les liens joignent (`?jeton=`) et que les deux routes exigent (403 sinon). L'action est reservee au role patient et bloque l'etape apres 5 mots de passe incorrects par heure et par compte (compteur en memoire, `lib/limite-debit.ts`).
+- Verifie : tsc 0, eslint 0 erreur, 25 tests (jeton, action, deux routes), scenario navigateur reel : GET direct 403 (JSON et PDF), jeton bidon 403, mauvais mot de passe sans lien, liens avec jeton (PDF %PDF 200, JSON 200), jeton altere 403, jeton presente par un medecin 401, sans session 401.
+- Reste pour F-CIT-13 : archive regeneree a la demande (pas de disponibilite 7 jours), rectification non routee vers le professionnel auteur, fermeture de compte qui ne coupe pas les autres sessions.
+- 2026-09-27.

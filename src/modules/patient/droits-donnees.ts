@@ -25,8 +25,10 @@
  *   valide 7 jours. Simplification assumee : ce depot regenere le contenu a
  *   la demande a partir des donnees courantes plutot que de figer et stocker
  *   un fichier avec expiration (pas de tache de nettoyage a construire ni de
- *   nouveau modele) ; la re-authentification par mot de passe reste la garde
- *   reelle avant d'acceder aux liens de telechargement.
+ *   nouveau modele). La re-authentification par mot de passe delivre un jeton
+ *   signe de courte duree (./jeton-export-donnees) que les deux routes de
+ *   telechargement exigent : sans lui, un GET direct avec le seul cookie de
+ *   session livrerait toute l'archive.
  */
 
 import bcrypt from "bcryptjs";
@@ -35,6 +37,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { destroySession, getSession } from "@/lib/session";
+import { enregistrerEvenement, limiteAtteinte } from "@/lib/limite-debit";
 import { journaliser } from "@/modules/audit/journaliser";
 import { getMonProfil } from "@/modules/identity/actions";
 import { getMesConsultations } from "@/modules/clinical/actions";
@@ -44,6 +47,19 @@ import { getMesExamens } from "@/modules/laboratoire/actions";
 import { getMesVaccinations } from "@/modules/vaccination/actions";
 import type { PatientActionState } from "./actions";
 import { getMesConsentements, getMonDossierPatient } from "./actions";
+import { creerJetonExportDonnees } from "./jeton-export-donnees";
+
+const FENETRE_ECHECS_EXPORT_MS = 60 * 60 * 1000;
+const ECHECS_MAX_EXPORT_PAR_COMPTE = 5;
+
+export interface ExportDonneesActionState extends PatientActionState {
+  /** Jeton signe a joindre aux liens de telechargement (present seulement apres une confirmation reussie). */
+  jeton?: string;
+}
+
+function cleEchecsExport(userId: string): string {
+  return `export-donnees:echecs:${userId}`;
+}
 
 const LONGUEUR_MIN_DESCRIPTION_RECTIFICATION = 20;
 
@@ -133,19 +149,29 @@ export async function demanderRectificationAction(
 
 /**
  * Type "copie de mes donnees" de F-CIT-13, etape de re-authentification :
- * verifie le mot de passe du compte connecte avant de reveler les liens de
- * telechargement (/api/patient/export/json, /api/patient/export/pdf), qui
- * s'appuient ensuite uniquement sur la session courante (deja re-
- * authentifiee par cette etape) pour regenerer le contenu a la demande.
+ * verifie le mot de passe du compte connecte et delivre un jeton signe de 5
+ * minutes, lie a ce compte, que les liens de telechargement
+ * (/api/patient/export/json, /api/patient/export/pdf) joignent a leur adresse
+ * et que les deux routes exigent. Reservee au role patient (les routes le
+ * sont) ; 5 mots de passe incorrects par heure et par compte bloquent l'etape
+ * (compteur en memoire du processus, voir src/lib/limite-debit.ts).
  */
 export async function verifierMotDePasseExportAction(
-  prevState: PatientActionState,
+  prevState: ExportDonneesActionState,
   formData: FormData
-): Promise<PatientActionState> {
+): Promise<ExportDonneesActionState> {
   const session = await getSession();
 
   if (!session) {
     return { error: "Session expiree. Veuillez vous reconnecter.", success: false };
+  }
+
+  if (!session.roles.includes("patient")) {
+    return { error: "Cette action est reservee aux patients.", success: false };
+  }
+
+  if (limiteAtteinte(cleEchecsExport(session.userId), ECHECS_MAX_EXPORT_PAR_COMPTE, FENETRE_ECHECS_EXPORT_MS)) {
+    return { error: "Trop de tentatives. Reessayez dans une heure.", success: false };
   }
 
   const validation = schemaMotDePasse.safeParse({
@@ -168,6 +194,7 @@ export async function verifierMotDePasseExportAction(
   const motDePasseValide = await bcrypt.compare(validation.data.motDePasse, utilisateur.motDePasseHash);
 
   if (!motDePasseValide) {
+    enregistrerEvenement(cleEchecsExport(session.userId), FENETRE_ECHECS_EXPORT_MS);
     return { error: "Mot de passe incorrect.", success: false };
   }
 
@@ -181,7 +208,7 @@ export async function verifierMotDePasseExportAction(
     justification: "Demande de copie des donnees personnelles (F-CIT-13), re-authentification reussie",
   });
 
-  return { error: null, success: true };
+  return { error: null, success: true, jeton: creerJetonExportDonnees(session.userId) };
 }
 
 /**

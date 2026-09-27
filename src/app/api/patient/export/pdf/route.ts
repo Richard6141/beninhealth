@@ -1,9 +1,8 @@
 /**
  * Route de telechargement de la copie de mes donnees au format PDF lisible
  * (F-CIT-13 du pack). Meme garde d'acces que la route JSON soeur
- * (src/app/api/patient/export/json/route.ts) : re-authentification deja
- * faite cote /app/patient/droits, cette route re-verifie uniquement la
- * session et le role.
+ * (src/app/api/patient/export/json/route.ts) : session, role patient et jeton
+ * de re-authentification signe (5 minutes), sinon 403.
  */
 
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
@@ -11,6 +10,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { journaliser } from "@/modules/audit/journaliser";
 import { collecterMesDonneesPersonnelles } from "@/modules/patient/droits-donnees";
+import { jetonExportDonneesValide } from "@/modules/patient/jeton-export-donnees";
 
 function adresseTechniqueDepuisRequete(request: Request): string {
   return request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? "inconnue";
@@ -39,6 +39,15 @@ export async function GET(request: Request) {
 
   if (!session || !session.roles.includes("patient")) {
     return NextResponse.json({ error: "Authentification requise." }, { status: 401 });
+  }
+
+  const jeton = new URL(request.url).searchParams.get("jeton");
+
+  if (!jetonExportDonneesValide(jeton, session.userId)) {
+    return NextResponse.json(
+      { error: "Confirmation du mot de passe requise ou expiree." },
+      { status: 403, headers: { "Cache-Control": "private, no-store" } }
+    );
   }
 
   const donnees = await collecterMesDonneesPersonnelles();

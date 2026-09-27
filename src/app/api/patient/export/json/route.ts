@@ -5,17 +5,17 @@
  * de ce handler, refaite ici independamment de tout rendu React ayant pu
  * produire le lien.
  *
- * Aucune re-authentification par mot de passe supplementaire ici : elle a
- * deja eu lieu cote /app/patient/droits via verifierMotDePasseExportAction
- * (src/modules/patient/droits-donnees.ts), qui a genere le lien de
- * telechargement affiche a l'ecran. Cette route ne fait que re-verifier la
- * session courante et le role, comme tout autre acces authentifie du depot.
+ * Re-authentification : la session seule ne suffit pas. Le lien porte un
+ * jeton signe de 5 minutes, lie au compte, delivre par
+ * verifierMotDePasseExportAction (src/modules/patient/droits-donnees.ts)
+ * apres verification du mot de passe ; sans lui, 403.
  */
 
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { journaliser } from "@/modules/audit/journaliser";
 import { collecterMesDonneesPersonnelles } from "@/modules/patient/droits-donnees";
+import { jetonExportDonneesValide } from "@/modules/patient/jeton-export-donnees";
 
 function adresseTechniqueDepuisRequete(request: Request): string {
   return request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? "inconnue";
@@ -26,6 +26,15 @@ export async function GET(request: Request) {
 
   if (!session || !session.roles.includes("patient")) {
     return NextResponse.json({ error: "Authentification requise." }, { status: 401 });
+  }
+
+  const jeton = new URL(request.url).searchParams.get("jeton");
+
+  if (!jetonExportDonneesValide(jeton, session.userId)) {
+    return NextResponse.json(
+      { error: "Confirmation du mot de passe requise ou expiree." },
+      { status: 403, headers: { "Cache-Control": "private, no-store" } }
+    );
   }
 
   const donnees = await collecterMesDonneesPersonnelles();
