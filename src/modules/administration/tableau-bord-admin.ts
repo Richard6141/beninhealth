@@ -44,7 +44,8 @@ import { LIBELLES_TACHES } from "./executions-taches";
 
 async function compterProfessionnelsAVerifier(): Promise<number> {
   const professionnels = await prisma.professionnelSante.findMany({
-    where: { user: { roles: { some: { nom: { in: [...PROFESSIONS_CLINIQUES] } } } } },
+    // Un compte "invite" (F-AUTH-05) n'est pas encore a valider : il n'a pas active son invitation.
+    where: { user: { statut: { not: "invite" }, roles: { some: { nom: { in: [...PROFESSIONS_CLINIQUES] } } } } },
     select: { statutValidation: true, validationDecision: true, ordreVerifieLe: true },
   });
   const maintenant = new Date();
@@ -89,6 +90,8 @@ export interface FilesAttenteAdmin {
   smsEnAttenteDeReprise: number;
   /** RG-NOT-03 : SMS en echec definitif sur les dernieres 24 h (reprises epuisees), a examiner. */
   smsEnEchec24h: number;
+  /** F-AUTH-05 : invitations d'activation envoyees, ni utilisees, ni annulees, ni expirees. */
+  invitationsEnAttente: number;
   /** Executions de taches planifiees en erreur sur les dernieres 24 h. */
   erreursTaches24h: number;
   executionsTaches: ExecutionTacheResume[];
@@ -109,6 +112,7 @@ const ACCES_REFUSE: FilesAttenteAdmin = {
   smsDeposes24h: 0,
   smsEnAttenteDeReprise: 0,
   smsEnEchec24h: 0,
+  invitationsEnAttente: 0,
   erreursTaches24h: 0,
   executionsTaches: [],
   comptesParRole: [],
@@ -176,6 +180,7 @@ export async function getFilesAttenteAdmin(): Promise<FilesAttenteAdmin> {
     smsDeposes24h,
     smsEnAttenteDeReprise,
     smsEnEchec24h,
+    invitationsEnAttente,
     erreursTaches24h,
     executionsTaches,
     comptesParRole,
@@ -196,6 +201,7 @@ export async function getFilesAttenteAdmin(): Promise<FilesAttenteAdmin> {
     prisma.envoiSms.count({ where: { statut: "simule", dateEnvoi: { gte: il24h } } }),
     prisma.envoiSms.count({ where: { statut: "en_attente", tentatives: { gt: 0 } } }),
     prisma.envoiSms.count({ where: { statut: "echec", dateEnvoi: { gte: il24h } } }),
+    prisma.invitationCompte.count({ where: { utiliseLe: null, annuleeLe: null, expireLe: { gt: new Date() } } }),
     prisma.executionTache.count({ where: { statut: "erreur", date: { gte: il24h } } }),
     lireExecutionsTaches(),
     lireComptesParRole(),
@@ -215,6 +221,7 @@ export async function getFilesAttenteAdmin(): Promise<FilesAttenteAdmin> {
     smsDeposes24h,
     smsEnAttenteDeReprise,
     smsEnEchec24h,
+    invitationsEnAttente,
     erreursTaches24h,
     executionsTaches,
     comptesParRole,

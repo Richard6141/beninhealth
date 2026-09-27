@@ -8,10 +8,12 @@ import {
   reactiverCompteAction,
   refuserActionEnAttenteAction,
   reinitialiserSecondFacteurAction,
+  renvoyerInvitationCompteAction,
   suspendreCompteAction,
   type ActionEnAttenteResume,
   type GestionComptesNationaleState,
 } from "@/modules/administration/gestion-comptes-nationale";
+import { InvitationEnvoyee } from "@/components/InvitationEnvoyee";
 import { Alert } from "@/components/ui/Alert";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -126,6 +128,29 @@ export function FormulaireActionCompte({ userId, type, estAdministrateur }: { us
   );
 }
 
+/** Renvoi de l'invitation d'un compte qui ne l'a pas encore activee (F-AUTH-05) : l'ancienne est annulee. */
+export function BoutonRenvoiInvitation({ userId }: { userId: string }) {
+  const [state, formAction, pending] = useActionState(renvoyerInvitationCompteAction, etatInitial);
+
+  if (state.success && state.invitationEnvoyeeA) {
+    return <InvitationEnvoyee email={state.invitationEnvoyeeA} lien={state.lienInvitation} />;
+  }
+
+  return (
+    <form action={formAction} aria-busy={pending} className="flex flex-col gap-2">
+      <input type="hidden" name="userId" value={userId} />
+      {state.error ? (
+        <Alert level="critical" title="Renvoi impossible">
+          {state.error}
+        </Alert>
+      ) : null}
+      <Button type="submit" variant="secondary" size="sm" className="w-fit" disabled={pending}>
+        {pending ? "Envoi..." : "Renvoyer l'invitation"}
+      </Button>
+    </form>
+  );
+}
+
 /** Demande d'invitation d'un administrateur national : toujours en attente d'un second administrateur. */
 export function FormulaireInvitationAdmin() {
   const router = useRouter();
@@ -178,16 +203,19 @@ function LigneDemande({ demande }: { demande: ActionEnAttenteResume }) {
 
   if (approbation.success) {
     return (
-      <Alert level="success" title="Demande approuvée">
-        L&apos;action a été exécutée.
-        {approbation.motDePasseTemporaire ? (
-          <span className="mt-2 block">
-            Mot de passe temporaire du nouvel administrateur, affiché une seule fois, à lui transmettre par un canal
-            sûr :{" "}
-            <span className="chiffres font-bold text-encre">{approbation.motDePasseTemporaire}</span>
-          </span>
+      <div className="flex flex-col gap-3">
+        <Alert level="success" title="Demande approuvée">
+          L&apos;action a été exécutée.
+        </Alert>
+        {approbation.invitationEnvoyeeA ? (
+          <InvitationEnvoyee email={approbation.invitationEnvoyeeA} lien={approbation.lienInvitation} />
         ) : null}
-      </Alert>
+        {approbation.invitationNonEnvoyee ? (
+          <Alert level="warning" title="Invitation non envoyée">
+            Le compte est créé mais l&apos;e-mail d&apos;invitation n&apos;a pas pu partir. Renvoyez l&apos;invitation depuis la fiche du compte.
+          </Alert>
+        ) : null}
+      </div>
     );
   }
   if (refus.success) {

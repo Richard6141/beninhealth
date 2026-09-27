@@ -68,6 +68,11 @@ export function verifierActionSurCompte(params: {
     return "Vous ne pouvez pas agir sur votre propre compte.";
   }
 
+  // F-AUTH-05 : un compte "invite" n'a jamais ete active (aucune connexion possible) : ni suspension ni reactivation, seul un renvoi d'invitation a un sens.
+  if (cible.statut === "invite" && (type === "suspension" || type === "reactivation")) {
+    return "Ce compte n'a pas encore activé son invitation : renvoyez l'invitation.";
+  }
+
   if (type === "suspension") {
     if (cible.statut !== "actif") {
       return "Seul un compte actif peut être suspendu.";
@@ -90,6 +95,22 @@ export function verifierActionSurCompte(params: {
     return "Ce compte n'a pas de second facteur actif.";
   }
 
+  return null;
+}
+
+/**
+ * Garde du renvoi d'une invitation (F-AUTH-05) : jamais sur son propre compte, et
+ * seulement pour un compte qui n'a pas encore activé son invitation. Renvoyer
+ * annule l'invitation precedente ; l'adresse e-mail ne change pas, donc aucune
+ * confirmation d'un second administrateur n'est exigee.
+ */
+export function verifierRenvoiInvitation(params: { acteurId: string; cible: Pick<ContexteCible, "id" | "statut"> }): string | null {
+  if (params.acteurId === params.cible.id) {
+    return "Vous ne pouvez pas agir sur votre propre compte.";
+  }
+  if (params.cible.statut !== "invite") {
+    return "Ce compte a déjà activé son invitation : aucune invitation à renvoyer.";
+  }
   return null;
 }
 

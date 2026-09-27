@@ -4,6 +4,7 @@ import {
   exigeDoubleValidation,
   verifierActionSurCompte,
   verifierDecisionSurDemande,
+  verifierRenvoiInvitation,
   type ContexteCible,
 } from "@/modules/administration/gestion-comptes-nationale-regles";
 
@@ -128,5 +129,22 @@ describe("verifierDecisionSurDemande (quatre yeux)", () => {
 
   it("a l'instant exact de l'expiration, la demande est encore valable", () => {
     expect(verifierDecisionSurDemande({ ...valide, expireLe: maintenant })).toBeNull();
+  });
+});
+
+describe("compte invite (F-AUTH-05)", () => {
+  it("un compte invite ne peut ni etre suspendu ni etre reactive", () => {
+    const invite = cible({ statut: "invite" });
+
+    expect(verifierActionSurCompte({ type: "suspension", acteurId: "admin-1", cible: invite, nombreAdminsActifsAutres: 3 })).toContain("renvoyez l'invitation");
+    expect(verifierActionSurCompte({ type: "reactivation", acteurId: "admin-1", cible: invite, nombreAdminsActifsAutres: 3 })).toContain("renvoyez l'invitation");
+  });
+
+  it("le renvoi d'invitation : jamais son propre compte, seulement un compte invite", () => {
+    expect(verifierRenvoiInvitation({ acteurId: "admin-1", cible: { id: "cible-1", statut: "invite" } })).toBeNull();
+    expect(verifierRenvoiInvitation({ acteurId: "admin-1", cible: { id: "admin-1", statut: "invite" } })).toContain("propre compte");
+    for (const statut of ["actif", "suspendu", "termine", "fusionne"]) {
+      expect(verifierRenvoiInvitation({ acteurId: "admin-1", cible: { id: "cible-1", statut } })).toContain("déjà activé");
+    }
   });
 });

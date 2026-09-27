@@ -9,6 +9,7 @@ import { Alert } from "@/components/ui/Alert";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import {
+  BoutonRenvoiInvitation,
   FormulaireActionCompte,
   FormulaireInvitationAdmin,
   ListeActionsEnAttente,
@@ -25,8 +26,9 @@ const LIBELLES_ROLE: Record<string, string> = {
   admin_national: "Administrateur national",
 };
 
-const LIBELLES_STATUT: Record<string, { texte: string; tone: "good" | "critical" | "neutral" }> = {
+const LIBELLES_STATUT: Record<string, { texte: string; tone: "good" | "critical" | "neutral" | "warning" }> = {
   actif: { texte: "Actif", tone: "good" },
+  invite: { texte: "Invitation en attente", tone: "warning" },
   suspendu: { texte: "Suspendu", tone: "critical" },
   termine: { texte: "Terminé", tone: "neutral" },
   sans_compte: { texte: "Sans compte", tone: "neutral" },
@@ -253,6 +255,7 @@ export default async function ComptesPage({
                   {fiche.statut === "suspendu" ? (
                     <FormulaireActionCompte userId={fiche.id} type="reactivation" estAdministrateur={fiche.estAdministrateur} />
                   ) : null}
+                  {fiche.statut === "invite" ? <BoutonRenvoiInvitation userId={fiche.id} /> : null}
                   {fiche.mfaActif ? (
                     <FormulaireActionCompte userId={fiche.id} type="reinitialisation_2fa" estAdministrateur={fiche.estAdministrateur} />
                   ) : null}

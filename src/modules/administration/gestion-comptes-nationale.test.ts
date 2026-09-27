@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
@@ -18,11 +20,16 @@ vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers()) }));
 vi.mock("@/modules/audit/journaliser", () => ({ journaliser: vi.fn() }));
 vi.mock("@/modules/notification/creer", () => ({ creerNotification: vi.fn() }));
 vi.mock("bcryptjs", () => ({ default: { hash: vi.fn(async (valeur: string) => `hash:${valeur}`) } }));
+vi.mock("@/modules/identity/invitations", () => ({
+  emettreInvitation: vi.fn(async () => ({ jeton: "jeton-invitation-en-clair", expireLe: new Date("2026-10-04T00:00:00Z") })),
+  envoyerInvitation: vi.fn(async () => ({ lienAffichable: null })),
+}));
 
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { journaliser } from "@/modules/audit/journaliser";
 import { creerNotification } from "@/modules/notification/creer";
+import { emettreInvitation, envoyerInvitation } from "@/modules/identity/invitations";
 import {
   approuverActionEnAttenteAction,
   getFicheCompteNational,
@@ -30,6 +37,7 @@ import {
   reactiverCompteAction,
   refuserActionEnAttenteAction,
   reinitialiserSecondFacteurAction,
+  renvoyerInvitationCompteAction,
   rechercherComptesNationaux,
   suspendreCompteAction,
 } from "@/modules/administration/gestion-comptes-nationale";
@@ -44,6 +52,8 @@ const p = prisma as unknown as {
 const getSessionMock = getSession as unknown as Mock;
 const journaliserMock = journaliser as unknown as Mock;
 const creerNotificationMock = creerNotification as unknown as Mock;
+const emettreInvitationMock = emettreInvitation as unknown as Mock;
+const envoyerInvitationMock = envoyerInvitation as unknown as Mock;
 
 const etatInitial = { error: null, success: false };
 const MOTIF = "Verification demandee par le ministere";
@@ -303,7 +313,7 @@ describe("approbation par un second administrateur", () => {
     expect(p.user.updateMany).not.toHaveBeenCalled();
   });
 
-  it("l'approbation d'une invitation cree le compte administrateur et montre le mot de passe temporaire une fois", async () => {
+  it("l'approbation d'une invitation cree un compte 'invite' au mot de passe inutilisable et envoie une invitation, jamais de mot de passe temporaire (F-AUTH-05)", async () => {
     p.actionAdministrateurEnAttente.findUnique.mockResolvedValue(
       demande({ type: "invitation_admin", cibleUserId: null, parametres: { motif: MOTIF, nom: "Dupont", prenom: "Anne", email: "anne@exemple.bj", telephone: "+2290100000000" } })
     );
@@ -313,11 +323,83 @@ describe("approbation par un second administrateur", () => {
     const resultat = await approuverActionEnAttenteAction(etatInitial, formulaire({ actionId: "demande-1" }));
 
     expect(resultat.success).toBe(true);
-    expect(resultat.motDePasseTemporaire).toMatch(/^.{16,}$/);
+    // Aucun mot de passe ne sort du serveur : la reponse ne porte que l'adresse d'envoi.
+    expect(Object.keys(resultat).some((cle) => /mot.?de.?passe/i.test(cle))).toBe(false);
+    expect(resultat.invitationEnvoyeeA).toBe("anne@exemple.bj");
     const donnees = p.user.create.mock.calls[0][0].data;
     expect(donnees.roles).toEqual({ create: { nom: "admin_national" } });
-    expect(donnees.motDePasseHash).toBe(`hash:${resultat.motDePasseTemporaire}`);
-    expect(JSON.stringify(journaliserMock.mock.calls)).not.toContain(resultat.motDePasseTemporaire as string);
+    expect(donnees.statut).toBe("invite");
+    // Le mot de passe stocke est un secret aleatoire que personne ne connait, pas une valeur transmise.
+    expect(donnees.motDePasseHash).toMatch(/^hash:[0-9a-f]{64}$/);
+    expect(emettreInvitationMock).toHaveBeenCalledWith(expect.anything(), { userId: "nouveau-1", creeParId: "admin-1" });
+    expect(envoyerInvitationMock).toHaveBeenCalledWith(expect.objectContaining({ email: "anne@exemple.bj", prenom: "Anne", jeton: "jeton-invitation-en-clair" }));
+    // Le jeton n'apparait ni dans la reponse ni dans le journal d'audit.
+    expect(JSON.stringify(resultat)).not.toContain("jeton-invitation-en-clair");
+    expect(JSON.stringify(journaliserMock.mock.calls)).not.toContain("jeton-invitation-en-clair");
+  });
+
+  it("si l'e-mail d'invitation ne part pas, le compte reste cree et la reponse le signale sans rien reveler", async () => {
+    p.actionAdministrateurEnAttente.findUnique.mockResolvedValue(
+      demande({ type: "invitation_admin", cibleUserId: null, parametres: { motif: MOTIF, nom: "Dupont", prenom: "Anne", email: "anne@exemple.bj", telephone: "+2290100000000" } })
+    );
+    p.user.findUnique.mockResolvedValue(null);
+    p.user.create.mockResolvedValue({ id: "nouveau-1" });
+    envoyerInvitationMock.mockRejectedValueOnce(new Error("smtp indisponible"));
+    const erreurConsole = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const resultat = await approuverActionEnAttenteAction(etatInitial, formulaire({ actionId: "demande-1" }));
+
+    expect(resultat).toMatchObject({ success: true, invitationNonEnvoyee: true });
+    expect(resultat.invitationEnvoyeeA).toBeUndefined();
+    erreurConsole.mockRestore();
+  });
+
+  it("aucun mot de passe temporaire n'existe plus dans le module ni dans son ecran (garde statique)", () => {
+    const sources = [
+      "src/modules/administration/gestion-comptes-nationale.ts",
+      "src/app/app/ministere/comptes/FormulairesComptes.tsx",
+    ].map((chemin) => readFileSync(path.join(process.cwd(), chemin), "utf8"));
+
+    for (const source of sources) {
+      expect(source).not.toMatch(/motDePasseTemporaire|genererMotDePasseTemporaire/);
+    }
+  });
+
+  it("renvoyer une invitation : compte 'invite' seulement, jamais son propre compte, ancienne invitation annulee par emettreInvitation", async () => {
+    p.user.findUnique.mockResolvedValue({ id: "invite-1", prenom: "Anne", email: "anne@exemple.bj", statut: "invite", roles: [{ nom: "admin_national" }], professionnel: null });
+
+    const resultat = await renvoyerInvitationCompteAction(etatInitial, formulaire({ userId: "invite-1" }));
+
+    expect(resultat).toMatchObject({ success: true, invitationEnvoyeeA: "anne@exemple.bj" });
+    expect(emettreInvitationMock).toHaveBeenCalledWith(expect.anything(), { userId: "invite-1", creeParId: "admin-1" });
+    expect(journaliserMock).toHaveBeenCalledWith(expect.objectContaining({ action: "renvoi_invitation_compte_plateforme", donneeConcernee: "utilisateur:invite-1" }), expect.anything());
+    expect(JSON.stringify(journaliserMock.mock.calls)).not.toContain("jeton-invitation-en-clair");
+
+    p.user.findUnique.mockResolvedValue({ id: "actif-1", prenom: "Anne", email: "a@exemple.bj", statut: "actif", roles: [], professionnel: null });
+    expect((await renvoyerInvitationCompteAction(etatInitial, formulaire({ userId: "actif-1" }))).error).toContain("déjà activé");
+
+    p.user.findUnique.mockResolvedValue({ id: "admin-1", prenom: "Moi", email: "moi@exemple.bj", statut: "invite", roles: [], professionnel: null });
+    expect((await renvoyerInvitationCompteAction(etatInitial, formulaire({ userId: "admin-1" }))).error).toContain("propre compte");
+  });
+
+  it("le renvoi est reserve a l'administration nationale", async () => {
+    getSessionMock.mockResolvedValue({ userId: "u-2", roles: ["admin_etablissement"] });
+
+    const resultat = await renvoyerInvitationCompteAction(etatInitial, formulaire({ userId: "invite-1" }));
+
+    expect(resultat.success).toBe(false);
+    expect(emettreInvitationMock).not.toHaveBeenCalled();
+  });
+
+  it("un compte 'invite' ne peut ni etre suspendu ni etre reactive : seul le renvoi d'invitation a un sens", async () => {
+    p.user.findUnique.mockResolvedValue(compte({ statut: "invite", roles: [{ nom: "medecin" }] }));
+
+    const suspension = await suspendreCompteAction(etatInitial, formulaire({ userId: "cible-1", motif: MOTIF }));
+    const reactivation = await reactiverCompteAction(etatInitial, formulaire({ userId: "cible-1", motif: MOTIF }));
+
+    expect(suspension.error).toContain("renvoyez l'invitation");
+    expect(reactivation.error).toContain("renvoyez l'invitation");
+    expect(p.user.updateMany).not.toHaveBeenCalled();
   });
 
   it("le refus exige un autre administrateur et un motif, et n'execute rien", async () => {

@@ -38,6 +38,7 @@ import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
 import { journaliser } from "@/modules/audit/journaliser";
 import { supprimerCodesSecours } from "@/modules/identity/codes-secours-mfa";
+import { emettreInvitation, envoyerInvitation } from "@/modules/identity/invitations";
 import { creerNotification } from "@/modules/notification/creer";
 import { normaliserNumeroOrdre } from "@/modules/identity/identite-professionnelle";
 import {
@@ -47,6 +48,7 @@ import {
   exigeDoubleValidation,
   verifierActionSurCompte,
   verifierDecisionSurDemande,
+  verifierRenvoiInvitation,
   type ContexteCible,
   type TypeActionCompte,
 } from "./gestion-comptes-nationale-regles";
@@ -116,8 +118,12 @@ export interface GestionComptesNationaleState {
   success: boolean;
   /** Vrai quand l'action n'est pas executee mais enregistree, en attente d'un second administrateur. */
   enAttente?: boolean;
-  /** Mot de passe temporaire d'un administrateur invite, montre une seule fois a l'approbateur. */
-  motDePasseTemporaire?: string;
+  /** Adresse a laquelle l'invitation d'activation a ete envoyee (F-AUTH-05 : plus de mot de passe temporaire). */
+  invitationEnvoyeeA?: string;
+  /** Lien d'activation, montre uniquement hors production ou pour un compte de demonstration. */
+  lienInvitation?: string;
+  /** Le compte est cree mais l'e-mail n'a pas pu partir : renvoyer l'invitation depuis la fiche du compte. */
+  invitationNonEnvoyee?: boolean;
 }
 
 const SELECTION_COMPTE = {
@@ -312,8 +318,16 @@ function compterAdministrateursActifsAutres(cibleId: string): Promise<number> {
   });
 }
 
-function genererMotDePasseTemporaire(): string {
-  return `${randomBytes(12).toString("base64url")}9a`;
+/** Mot de passe inutilisable : le compte reste "invite" jusqu'a ce que la personne choisisse le sien (F-AUTH-05). */
+async function motDePasseInutilisableHache(): Promise<string> {
+  return bcrypt.hash(randomBytes(32).toString("hex"), ROUNDS_BCRYPT);
+}
+
+/** Invitation a envoyer apres la validation de la transaction (jamais un e-mail pour une action annulee, RG-NOT-03). */
+interface InvitationAEnvoyer {
+  jeton: string;
+  email: string;
+  prenom: string;
 }
 
 interface ParametresAction {
@@ -340,7 +354,7 @@ async function executerAction(
     confirmeParSecondAdmin: boolean;
     adresseTechnique: string;
   }
-): Promise<{ motDePasseTemporaire?: string }> {
+): Promise<{ invitation?: InvitationAEnvoyer }> {
   const { type, cibleUserId, parametres, acteurId, confirmeParSecondAdmin, adresseTechnique } = params;
   const suffixe = confirmeParSecondAdmin ? " (confirmee par un second administrateur, RG-ADM-30)" : "";
 
@@ -402,15 +416,14 @@ async function executerAction(
     const existant = await tx.user.findUnique({ where: { email: parametres.email }, select: { id: true } });
     if (existant) throw new ErreurMetier("Cette adresse e-mail est deja utilisee par un autre compte.");
 
-    const motDePasseTemporaire = genererMotDePasseTemporaire();
     const cree = await tx.user.create({
       data: {
         nom: parametres.nom,
         prenom: parametres.prenom,
         email: parametres.email,
         telephone: parametres.telephone,
-        motDePasseHash: await bcrypt.hash(motDePasseTemporaire, ROUNDS_BCRYPT),
-        statut: "actif",
+        motDePasseHash: await motDePasseInutilisableHache(),
+        statut: "invite",
         roles: { create: { nom: ROLE_ADMINISTRATEUR } },
       },
       select: { id: true },
@@ -421,11 +434,13 @@ async function executerAction(
         action: "invitation_admin_plateforme",
         donneeConcernee: `utilisateur:${cree.id}`,
         adresseTechnique,
-        justification: `Compte administrateur national cree. Motif : ${parametres.motif}${suffixe}`,
+        justification: `Compte administrateur national cree au statut invite, invitation d'activation emise. Motif : ${parametres.motif}${suffixe}`,
       },
       tx
     );
-    return { motDePasseTemporaire };
+    // Le jeton n'est jamais journalise ni stocke en clair : il ne sert qu'a l'e-mail d'invitation.
+    const { jeton } = await emettreInvitation(tx, { userId: cree.id, creeParId: acteurId });
+    return { invitation: { jeton, email: parametres.email, prenom: parametres.prenom } };
   }
 
   throw new ErreurMetier("Action inconnue ou incomplete.");
@@ -557,6 +572,98 @@ export async function reinitialiserSecondFacteurAction(
 ): Promise<GestionComptesNationaleState> {
   const session = await getSessionComptePlateforme("update");
   return demanderOuExecuterActionSurCompte("reinitialisation_2fa", formData, session);
+}
+
+/**
+ * Envoie l'invitation d'activation d'un administrateur national. Le compte existe
+ * deja (statut "invite") meme si l'envoi echoue : l'invitation peut alors etre
+ * renvoyee depuis la fiche du compte.
+ */
+async function envoyerInvitationAdministrateur(invitation: InvitationAEnvoyer): Promise<Pick<GestionComptesNationaleState, "invitationEnvoyeeA" | "lienInvitation" | "invitationNonEnvoyee">> {
+  try {
+    const { lienAffichable } = await envoyerInvitation({
+      email: invitation.email,
+      prenom: invitation.prenom,
+      etablissement: null,
+      role: "administrateur national",
+      jeton: invitation.jeton,
+    });
+    return { invitationEnvoyeeA: invitation.email, lienInvitation: lienAffichable ?? undefined };
+  } catch (erreur) {
+    console.error("Envoi de l'invitation impossible :", erreur);
+    return { invitationNonEnvoyee: true };
+  }
+}
+
+/**
+ * Renvoie l'invitation d'un compte qui ne l'a pas encore activee (F-AUTH-05) : la
+ * precedente est annulee. L'adresse e-mail ne change pas, donc pas de second
+ * administrateur ; l'action est journalisee.
+ */
+export async function renvoyerInvitationCompteAction(
+  prevState: GestionComptesNationaleState,
+  formData: FormData
+): Promise<GestionComptesNationaleState> {
+  const session = await getSessionComptePlateforme("update");
+  if (!session) {
+    return { error: "Action reservee a l'administration nationale.", success: false };
+  }
+
+  const userId = formData.get("userId");
+  if (typeof userId !== "string" || userId.trim().length === 0) {
+    return { error: "Le compte est obligatoire.", success: false };
+  }
+
+  try {
+    const compte = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        prenom: true,
+        email: true,
+        statut: true,
+        roles: { select: { nom: true } },
+        professionnel: { select: { etablissement: { select: { nom: true } } } },
+      },
+    });
+    if (!compte) return { error: "Compte introuvable.", success: false };
+
+    const erreurGarde = verifierRenvoiInvitation({ acteurId: session.userId, cible: compte });
+    if (erreurGarde) return { error: erreurGarde, success: false };
+
+    const adresseTechnique = await adresseTechniqueCourante();
+    const { jeton } = await prisma.$transaction(async (tx) => {
+      const invitation = await emettreInvitation(tx, { userId: compte.id, creeParId: session.userId });
+      await journaliser(
+        {
+          utilisateurId: session.userId,
+          action: "renvoi_invitation_compte_plateforme",
+          donneeConcernee: "utilisateur:" + compte.id,
+          adresseTechnique,
+          justification: "Invitation d'activation renvoyee, la precedente est annulee.",
+        },
+        tx
+      );
+      return invitation;
+    });
+
+    try {
+      const { lienAffichable } = await envoyerInvitation({
+        email: compte.email,
+        prenom: compte.prenom,
+        etablissement: compte.professionnel?.etablissement.nom ?? null,
+        role: compte.roles[0]?.nom ?? "utilisateur",
+        jeton,
+      });
+      return { error: null, success: true, invitationEnvoyeeA: compte.email, lienInvitation: lienAffichable ?? undefined };
+    } catch (erreur) {
+      console.error("Envoi de l'invitation impossible :", erreur);
+      return { error: "L'invitation a ete renouvelee mais l'e-mail n'a pas pu partir. Reessayez dans un instant.", success: false };
+    }
+  } catch (erreur) {
+    console.error("Erreur lors du renvoi d'une invitation :", erreur);
+    return { error: "Une erreur est survenue. Veuillez reessayer.", success: false };
+  }
 }
 
 /** Demande l'invitation d'un administrateur national : toujours en attente d'un second administrateur (RG-ADM-30). */
@@ -735,7 +842,10 @@ export async function approuverActionEnAttenteAction(
     });
 
     await notifierApresAction(type, demande.cibleUserId);
-    return { error: null, success: true, motDePasseTemporaire: resultat.motDePasseTemporaire };
+    if (resultat.invitation) {
+      return { ...(await envoyerInvitationAdministrateur(resultat.invitation)), error: null, success: true };
+    }
+    return { error: null, success: true };
   } catch (erreur) {
     if (erreur instanceof ErreurMetier) return { error: erreur.message, success: false };
     console.error("Erreur lors de l'approbation d'une demande :", erreur);

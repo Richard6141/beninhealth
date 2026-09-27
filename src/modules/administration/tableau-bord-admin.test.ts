@@ -7,6 +7,7 @@ vi.mock("@/lib/prisma", () => ({
     tachePilotage: { findFirst: vi.fn(), count: vi.fn() },
     actionAdministrateurEnAttente: { count: vi.fn() },
     envoiSms: { count: vi.fn() },
+    invitationCompte: { count: vi.fn() },
     executionTache: { findFirst: vi.fn(), count: vi.fn() },
     userRole: { groupBy: vi.fn() },
   },
@@ -24,6 +25,7 @@ import { getFilesAttenteAdmin } from "@/modules/administration/tableau-bord-admi
 
 const p = prisma as unknown as {
   professionnelSante: { findMany: Mock };
+  invitationCompte: { count: Mock };
   tachePilotage: { findFirst: Mock; count: Mock };
   actionAdministrateurEnAttente: { count: Mock };
   envoiSms: { count: Mock };
@@ -36,6 +38,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   getSessionMock.mockResolvedValue({ userId: "admin-1", roles: ["admin_national"] });
   p.professionnelSante.findMany.mockResolvedValue([]);
+  p.invitationCompte.count.mockResolvedValue(0);
   p.tachePilotage.findFirst.mockResolvedValue(null);
   p.tachePilotage.count.mockResolvedValue(0);
   p.actionAdministrateurEnAttente.count.mockResolvedValue(0);
@@ -85,6 +88,22 @@ describe("getFilesAttenteAdmin : files et etat technique (F-ADM-01)", () => {
 
     expect(files.smsDifferesEnAttente).toBe(4);
     expect(files.smsDeposes24h).toBe(9);
+  });
+
+  it("ne compte pas comme 'professionnel a valider' un compte encore invite (F-AUTH-05)", async () => {
+    await getFilesAttenteAdmin();
+
+    expect(p.professionnelSante.findMany.mock.calls[0][0].where.user.statut).toEqual({ not: "invite" });
+  });
+
+  it("compte les invitations d'activation encore valables", async () => {
+    p.invitationCompte.count.mockResolvedValue(5);
+
+    const files = await getFilesAttenteAdmin();
+
+    expect(files.invitationsEnAttente).toBe(5);
+    expect(p.invitationCompte.count.mock.calls[0][0].where).toMatchObject({ utiliseLe: null, annuleeLe: null });
+    expect(p.invitationCompte.count.mock.calls[0][0].where.expireLe.gt).toBeInstanceOf(Date);
   });
 
   it("compte les SMS en reprise et en echec sur 24 h (RG-NOT-03)", async () => {

@@ -118,7 +118,8 @@ export async function getFileValidationProfessionnels(): Promise<ProfessionnelAV
   }
 
   const professionnels = await prisma.professionnelSante.findMany({
-    where: { user: { roles: { some: { nom: { in: [...PROFESSIONS_CLINIQUES] } } } } },
+    // F-AUTH-05 : un compte encore "invite" n'a pas active son invitation, il n'entre dans la file qu'apres son activation.
+    where: { user: { statut: { not: "invite" }, roles: { some: { nom: { in: [...PROFESSIONS_CLINIQUES] } } } } },
     include: {
       user: { select: { nom: true, prenom: true, email: true, dateCreation: true, roles: { select: { nom: true } } } },
       etablissement: { select: { nom: true } },

@@ -136,6 +136,10 @@ export function SectionFilesAttente({ files }: { files: FilesAttenteAdmin }) {
             SMS déposés sur 24 h : <span className="chiffres font-semibold">{files.smsDeposes24h}</span>
           </div>
           <div className="flex items-center gap-2 text-[14px] text-encre">
+            Invitations en attente :
+            <span className="chiffres font-semibold">{files.invitationsEnAttente}</span>
+          </div>
+          <div className="flex items-center gap-2 text-[14px] text-encre">
             SMS en reprise :
             <Badge tone={files.smsEnAttenteDeReprise > 0 ? "alert" : "good"}>{files.smsEnAttenteDeReprise}</Badge>
           </div>
