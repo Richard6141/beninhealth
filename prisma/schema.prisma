@@ -305,6 +305,7 @@ model Patient {
   codesPartage CodePartageDossier[]
   codesReclamation CodeReclamationDossier[]
   demandesAccesDossier DemandeAccesDossier[]
+  jetonsCarteSante JetonCarteSante[]
   @@index([dateNaissance])
   @@schema("public")
 }
@@ -1575,5 +1576,61 @@ model ExecutionTache {
 
   @@index([tache, date])
   @@index([statut, date])
+  @@schema("public")
+}
+
+// F-CIT-05 du pack (carte sante numerique), RG-CIT-40 : jeton de presence de
+// 5 minutes et a usage unique, desormais en base (l'ancien magasin en memoire
+// se perdait a chaque redemarrage et ne fonctionnait pas a plusieurs
+// instances). Seule l'empreinte SHA-256 du jeton est stockee : un jeton ne se
+// relit jamais. Voir src/modules/patient/carte-sante.ts.
+model JetonCarteSante {
+  id           String    @id @default(cuid())
+  jetonHash    String    @unique
+  patientId    String
+  patient      Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  expireLe     DateTime
+  consommeLe   DateTime?
+  dateCreation DateTime  @default(now())
+
+  @@index([patientId])
+  @@schema("public")
+}
+
+// F-ADM-04 du pack : referentiels administrables "listes simples" (services,
+// types d'etablissement, specialites...), une seule table discriminee par
+// "type" plutot qu'une table par liste. RG-ADM-20 : desactivation seule,
+// jamais suppression. RG-ADM-21 (versionnement) hors perimetre. Voir
+// src/modules/administration/referentiels-simples.ts.
+model ReferentielSimple {
+  id               String   @id @default(cuid())
+  type             String
+  code             String
+  libelle          String
+  ordre            Int      @default(0)
+  actif            Boolean  @default(true)
+  dateCreation     DateTime @default(now())
+  dateModification DateTime @default(now())
+
+  @@unique([type, code])
+  @@schema("public")
+}
+
+// F-ADM-04 du pack : sous-liste CIM-10 administrable (diagnostics courants),
+// avec groupe de maladies et indicateur de code sensible (RG-PIL-05,
+// RG-CLI-52). Table dediee (recherche par code ou libelle, colonnes typees)
+// et non ReferentielSimple. Voir src/modules/administration/referentiel-cim10.ts.
+model DiagnosticCim10 {
+  id               String   @id @default(cuid())
+  code             String   @unique
+  libelle          String
+  chapitre         String   @default("")
+  groupeMaladie    String   @default("")
+  sensible         Boolean  @default(false)
+  actif            Boolean  @default(true)
+  dateCreation     DateTime @default(now())
+  dateModification DateTime @default(now())
+
+  @@index([groupeMaladie])
   @@schema("public")
 }

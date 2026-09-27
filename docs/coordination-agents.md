@@ -3579,3 +3579,11 @@ session que le CEO ; l'auteur de commit est reecrit par le CEO avant le push.
 - Effet de bord a connaitre : `estFonctionnaliteActive` ne lance plus d'exception (base en panne : etat par defaut du catalogue `ACTIVE_PAR_DEFAUT`).
 - Prochaine etape pour moi : F-IA-05 (gouvernance IA) puis F-IA-01 a 04, puis reste de F-ADM-02/03/06 et F-NOT-04.
 - 2026-09-27.
+
+### Point projet-gouv-86, carte sante numerique (F-CIT-05) et trois tables, 2026-09-27
+
+- Livre : le jeton de carte sante vit en base (`JetonCarteSante`, empreinte SHA-256 seule, 5 minutes, usage unique par mise a jour conditionnelle, 5 jetons actifs au plus par patient) au lieu d'un magasin en memoire perdu a chaque redemarrage. La verification est reservee au personnel de sante et a l'administration (avant : tout utilisateur connecte, patient compris). L'ecran ne genere plus plusieurs jetons au chargement (le compte a rebours declenchait des regenerations concurrentes). 13 tests dans `patient/carte-sante.test.ts`.
+- Migration `20260927060000_ajout_jetons_carte_referentiels_cim10` (deja appliquee a la base partagee par un `migrate deploy` d'une autre session) : cree aussi `ReferentielSimple` et `DiagnosticCim10`, utilisees par les prochains lots (referentiels F-ADM-04). Dossier de migration commite avec ce lot.
+- Verifie : tsc, eslint (0 erreur), scenario navigateur reel : QR affiche, un jeton en base (empreinte, 300 s), verification a l'accueil (identite minimale) puis refus au second passage, patient refuse sans consommer le jeton. Donnees de test supprimees.
+- Pour 3f : `DiagnosticCim10` est la sous-liste CIM-10 (code, libelle, chapitre, groupeMaladie, sensible). Le module de recherche arrive dans le lot suivant.
+- 2026-09-27.

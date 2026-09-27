@@ -8,22 +8,24 @@
  * dernier encode une URL statique (/app/verification/[userId]) qui ne
  * prouve aucune fraicheur (un QR photographie une fois resterait valable
  * indefiniment, seul le controle de consentement protege la donnee
- * medicale derriere) - inadapte a l'objectif de F-CIT-05 ("prouver la
+ * medicale derriere), inadapte a l'objectif de F-CIT-05 ("prouver la
  * presence"), non modifie ici pour ne pas perturber cet usage different
  * (badge d'identite, sans exigence de fraicheur).
  *
  * RG-CIT-40 : jeton temporaire (5 minutes, usage unique), jamais
- * l'identifiant sante en clair ni de donnee medicale dans le QR lui-meme -
- * seul un jeton opaque y est encode. Store en memoire (meme technique que
- * src/modules/prescription/jetons-telechargement.ts, meme limite assumee :
- * ne survivrait pas a un redemarrage ni a une instance multiple).
+ * l'identifiant sante en clair ni de donnee medicale dans le QR lui-meme,
+ * seul un jeton opaque y est encode. Le jeton vit en base (JetonCarteSante) :
+ * seule son empreinte SHA-256 est conservee, il survit donc a un redemarrage
+ * et fonctionne avec plusieurs instances. Au plus MAX_JETONS_ACTIFS jetons
+ * actifs par patient (les plus anciens sont supprimes) : generer un jeton n'en
+ * invalide jamais un autre d'un seul coup, deux onglets ou deux appels
+ * concurrents ne s'annulent donc pas.
  *
  * Perimetre reduit assume : pas de mode hors ligne (F-CIT-05, etape 3, QR
- * de secours identifiant seul) ni d'impression PDF (etape 4, P1) - les deux
- * supposent une infrastructure ou une priorite hors de portee ce soir.
+ * de secours identifiant seul) ni d'impression PDF (etape 4, P1).
  */
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { headers } from "next/headers";
 import QRCode from "qrcode";
 import { prisma } from "@/lib/prisma";
@@ -31,21 +33,26 @@ import { getSession } from "@/lib/session";
 import { journaliser } from "@/modules/audit/journaliser";
 
 const DUREE_JETON_MS = 5 * 60 * 1000;
+const CONSERVATION_JETONS_EXPIRES_MS = 24 * 60 * 60 * 1000;
+const LONGUEUR_MAX_JETON = 100;
+const MAX_JETONS_ACTIFS = 5;
 
-interface DonneesJetonCarte {
-  patientId: string;
-  expiration: number;
-}
+/**
+ * Roles qui verifient une carte : le personnel de sante et l'administration.
+ * Jamais un patient (verifier la carte d'un autre n'a aucun sens).
+ */
+const ROLES_VERIFICATEURS = [
+  "medecin",
+  "infirmier",
+  "agent_communautaire",
+  "pharmacien",
+  "laboratoire",
+  "admin_etablissement",
+  "admin_national",
+];
 
-const jetons = new Map<string, DonneesJetonCarte>();
-
-function nettoyerJetonsExpires(): void {
-  const maintenant = Date.now();
-  for (const [jeton, donnees] of jetons) {
-    if (donnees.expiration < maintenant) {
-      jetons.delete(jeton);
-    }
-  }
+function empreinteJeton(jeton: string): string {
+  return createHash("sha256").update(jeton).digest("hex");
 }
 
 async function urlAbsolue(chemin: string): Promise<string> {
@@ -78,10 +85,26 @@ export async function genererJetonCarteSanteAction(): Promise<JetonCarteSante | 
     return null;
   }
 
-  nettoyerJetonsExpires();
-  const jeton = randomUUID();
-  const expiration = Date.now() + DUREE_JETON_MS;
-  jetons.set(jeton, { patientId: patient.id, expiration });
+  const maintenant = Date.now();
+  const jeton = randomBytes(24).toString("base64url");
+  const expiration = maintenant + DUREE_JETON_MS;
+
+  // On garde les MAX_JETONS_ACTIFS - 1 plus recents (le nouveau fait le compte) ;
+  // les plus anciens actifs sont supprimes, ainsi que les expires depuis plus d'un jour.
+  const aSupprimer = await prisma.jetonCarteSante.findMany({
+    where: { patientId: patient.id, consommeLe: null, expireLe: { gt: new Date(maintenant) } },
+    orderBy: { dateCreation: "desc" },
+    skip: MAX_JETONS_ACTIFS - 1,
+    select: { id: true },
+  });
+
+  await prisma.$transaction([
+    prisma.jetonCarteSante.deleteMany({ where: { id: { in: aSupprimer.map((ancien) => ancien.id) } } }),
+    prisma.jetonCarteSante.deleteMany({ where: { expireLe: { lt: new Date(maintenant - CONSERVATION_JETONS_EXPIRES_MS) } } }),
+    prisma.jetonCarteSante.create({
+      data: { jetonHash: empreinteJeton(jeton), patientId: patient.id, expireLe: new Date(expiration) },
+    }),
+  ]);
 
   const url = await urlAbsolue(`/app/carte-sante/verifier?jeton=${jeton}`);
   const dataUrlQr = await QRCode.toDataURL(url, { width: 240, margin: 1 });
@@ -97,31 +120,42 @@ export type StatutVerificationCarte =
 /**
  * Consomme un jeton de carte sante (usage unique, RG-CIT-40/41) : la toute
  * premiere consultation reussie renvoie l'identite minimale du patient
- * (jamais de donnee medicale, jamais l'identifiant en clair transmis avant
- * cet appel), toute consultation suivante du meme jeton echoue (CA-1).
- * Reserve a un utilisateur authentifie de la plateforme (professionnel ou
- * administratif) : jamais un acces public anonyme.
+ * (jamais de donnee medicale), toute consultation suivante du meme jeton
+ * echoue (CA-1), y compris deux verifications simultanees (mise a jour
+ * conditionnelle). Reserve au personnel de sante et a l'administration :
+ * jamais un patient ni un acces anonyme.
  */
 export async function verifierCarteSanteAction(jeton: string): Promise<StatutVerificationCarte> {
   const session = await getSession();
 
-  if (!session) {
+  if (!session || !session.roles.some((role) => ROLES_VERIFICATEURS.includes(role))) {
     return { statut: "refuse" };
   }
 
-  nettoyerJetonsExpires();
-  const donnees = jetons.get(jeton);
-
-  if (!donnees || donnees.expiration < Date.now()) {
+  if (typeof jeton !== "string" || jeton.length === 0 || jeton.length > LONGUEUR_MAX_JETON) {
     return { statut: "expire_ou_utilise" };
   }
 
-  jetons.delete(jeton);
+  const maintenant = new Date();
+  const jetonHash = empreinteJeton(jeton);
 
-  const patient = await prisma.patient.findUnique({
-    where: { id: donnees.patientId },
-    include: { user: true },
+  const consomme = await prisma.jetonCarteSante.updateMany({
+    where: { jetonHash, consommeLe: null, expireLe: { gt: maintenant } },
+    data: { consommeLe: maintenant },
   });
+
+  if (consomme.count !== 1) {
+    return { statut: "expire_ou_utilise" };
+  }
+
+  const enregistrement = await prisma.jetonCarteSante.findUnique({
+    where: { jetonHash },
+    select: { patientId: true },
+  });
+
+  const patient = enregistrement
+    ? await prisma.patient.findUnique({ where: { id: enregistrement.patientId }, include: { user: true } })
+    : null;
 
   if (!patient) {
     return { statut: "expire_ou_utilise" };
