@@ -15,8 +15,9 @@ Phase d'implémentation : Phase 2.
 ## Implémentation Phase 2 (authentification)
 
 Authentification réelle par identifiant/mot de passe, implémentée dans
-`src/modules/identity/actions.ts` (Server Actions : `registerPatientAction`,
-`loginAction`, `logoutAction`) et `src/lib/session.ts` (session JWT via jose,
+`src/modules/identity/actions.ts` (Server Actions : `loginAction`,
+`logoutAction`) et `src/modules/identity/inscription.ts` (inscription en deux
+temps : `demarrerInscriptionAction`, `verifierCodeInscriptionAction`) et `src/lib/session.ts` (session JWT via jose,
 cookie httpOnly `session`). Le contrôle d'accès par rôle (RBAC) s'appuie sur
 `src/security/permissions.ts`, et la protection des routes `/app/*` sur
 `proxy.ts` à la racine du projet (nom Next.js 16, ancien `middleware.ts`).

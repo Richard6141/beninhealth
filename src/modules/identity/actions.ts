@@ -14,7 +14,6 @@
 
 import { randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
-import { Prisma } from "@prisma/client";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
@@ -39,11 +38,7 @@ import {
   creerEtEnvoyerCodeVerificationEmail,
   verifierEtConsommerCodeVerificationEmail,
 } from "@/modules/identity/verification-email";
-import {
-  CODES_IDENTIFIANT_PAR_ROLE,
-  prefixeIdentifiant,
-  prochainIdentifiant,
-} from "@/modules/identity/identifiants";
+import { genererIdentifiantSante } from "@/modules/identity/identifiant-sante";
 import { can } from "@/security/permissions";
 import { calculerDateFinConsentement } from "@/modules/patient/consentement-durees";
 import type { NomRole } from "@/types";
@@ -131,18 +126,6 @@ async function finaliserConnexion(
 
 const ROUNDS_BCRYPT = 12;
 
-const schemaInscriptionPatient = z.object({
-  nom: z.string().trim().min(1, "Le nom est obligatoire."),
-  prenom: z.string().trim().min(1, "Le prenom est obligatoire."),
-  email: z.email("Adresse email invalide."),
-  telephone: z.string().trim().min(1, "Le numero de telephone est obligatoire."),
-  motDePasse: z.string().min(8, "Le mot de passe doit contenir au moins 8 caracteres."),
-  dateNaissance: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, "Date de naissance invalide (format attendu : AAAA-MM-JJ)."),
-  sexe: z.enum(["M", "F"], { message: "Sexe invalide (M ou F attendu)." }),
-});
-
 const schemaConnexion = z.object({
   email: z.email("Adresse email invalide."),
   motDePasse: z.string().min(1, "Le mot de passe est obligatoire."),
@@ -215,114 +198,6 @@ async function adresseTechniqueCourante(): Promise<string> {
 
 function premierMessageErreur(erreur: z.ZodError, messageParDefaut: string): string {
   return erreur.issues[0]?.message ?? messageParDefaut;
-}
-
-function estErreurContrainteUnique(erreur: unknown): boolean {
-  return (
-    erreur instanceof Prisma.PrismaClientKnownRequestError && erreur.code === "P2002"
-  );
-}
-
-/**
- * Inscription d'un nouveau patient : cree le compte User, le role "patient"
- * et le profil Patient minimal en une transaction, ouvre la session, puis
- * redirige vers l'espace patient.
- */
-export async function registerPatientAction(
-  prevState: AuthActionState,
-  formData: FormData
-): Promise<AuthActionState> {
-  const validation = schemaInscriptionPatient.safeParse({
-    nom: formData.get("nom"),
-    prenom: formData.get("prenom"),
-    email: formData.get("email"),
-    telephone: formData.get("telephone"),
-    motDePasse: formData.get("motDePasse"),
-    dateNaissance: formData.get("dateNaissance"),
-    sexe: formData.get("sexe"),
-  });
-
-  if (!validation.success) {
-    return { error: premierMessageErreur(validation.error, "Donnees d'inscription invalides.") };
-  }
-
-  const donnees = validation.data;
-  const dateNaissance = new Date(donnees.dateNaissance);
-
-  if (Number.isNaN(dateNaissance.getTime())) {
-    return { error: "Date de naissance invalide." };
-  }
-
-  const compteExistant = await prisma.user.findUnique({ where: { email: donnees.email } });
-
-  if (compteExistant) {
-    return { error: "Un compte existe deja avec cet email." };
-  }
-
-  let userId: string;
-
-  try {
-    const motDePasseHash = await bcrypt.hash(donnees.motDePasse, ROUNDS_BCRYPT);
-    const adresseTechnique = await adresseTechniqueCourante();
-
-    const utilisateurCree = await prisma.$transaction(async (tx) => {
-      const nombreExistant = await tx.patient.count({
-        where: { identifiantSante: { startsWith: prefixeIdentifiant(CODES_IDENTIFIANT_PAR_ROLE.patient) } },
-      });
-      const identifiantSante = prochainIdentifiant(CODES_IDENTIFIANT_PAR_ROLE.patient, nombreExistant);
-
-      const utilisateur = await tx.user.create({
-        data: {
-          nom: donnees.nom,
-          prenom: donnees.prenom,
-          email: donnees.email,
-          telephone: donnees.telephone,
-          motDePasseHash,
-          statut: "actif",
-          roles: {
-            create: [{ nom: "patient" }],
-          },
-          patient: {
-            create: {
-              identifiantSante,
-              dateNaissance,
-              sexe: donnees.sexe,
-              groupeSanguin: "inconnu",
-              contactsUrgence: "[]",
-            },
-          },
-        },
-      });
-
-      await journaliser(
-        {
-          utilisateurId: utilisateur.id,
-          action: "creation",
-          donneeConcernee: `patient:${utilisateur.id}`,
-          adresseTechnique,
-          justification: "Inscription patient",
-        },
-        tx
-      );
-
-      return utilisateur;
-    });
-
-    userId = utilisateurCree.id;
-  } catch (erreur) {
-    if (estErreurContrainteUnique(erreur)) {
-      return { error: "Un compte existe deja avec cet email." };
-    }
-
-    console.error("Erreur lors de l'inscription patient :", erreur);
-    return { error: "Une erreur est survenue lors de l'inscription. Veuillez reessayer." };
-  }
-
-  await createSession({ userId, roles: ["patient"] });
-  // F-CIT-01 : assistant de premiere utilisation, affiche une seule fois
-  // juste apres l'inscription plutot que d'atterrir directement sur un
-  // dossier vide (voir src/app/app/patient/bienvenue).
-  redirect("/app/patient/bienvenue");
 }
 
 /**
@@ -450,10 +325,7 @@ export async function creerPatientParProfessionnelAction(
       : "[]";
 
     const resultat = await prisma.$transaction(async (tx) => {
-      const nombreExistant = await tx.patient.count({
-        where: { identifiantSante: { startsWith: prefixeIdentifiant(CODES_IDENTIFIANT_PAR_ROLE.patient) } },
-      });
-      const identifiantSante = prochainIdentifiant(CODES_IDENTIFIANT_PAR_ROLE.patient, nombreExistant);
+      const identifiantSante = genererIdentifiantSante();
 
       const utilisateur = await tx.user.create({
         data: {

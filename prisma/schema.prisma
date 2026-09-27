@@ -48,6 +48,10 @@ model User {
   // l'activation). mfaSecret peut exister sans mfaActif=true pendant la
   // fenetre d'activation (avant confirmation du premier code).
   mfaActif          Boolean   @default(false)
+  // F-AUTH-01 (RG-AUTH-07) : version du texte des conditions d'utilisation acceptees
+  // a l'inscription et date d'acceptation. Null pour un compte cree avant cette regle.
+  conditionsVersion     String?
+  conditionsAccepteesLe DateTime?
 
   roles         UserRole[]
   patient       Patient?
@@ -1449,6 +1453,32 @@ model CodeSecoursMfa {
   creeLe    DateTime  @default(now())
 
   @@index([userId, empreinte])
+  @@schema("public")
+}
+
+// F-AUTH-01 (RG-AUTH-03, RG-AUTH-04) : inscription en attente de verification du code
+// envoye par e-mail. Le compte n'est cree qu'apres la saisie du bon code. Aucun mot
+// de passe en clair : seul le hash bcrypt est conserve, comme le code. Les lignes
+// expirees sont purgees a chaque nouvelle demande.
+model InscriptionEnAttente {
+  id                String   @id @default(cuid())
+  email             String
+  telephone         String
+  nom               String
+  prenom            String
+  dateNaissance     DateTime
+  sexe              String
+  motDePasseHash    String
+  conditionsVersion String
+  codeHash          String
+  essais            Int      @default(0)
+  envois            Int      @default(1)
+  dernierEnvoiLe    DateTime @default(now())
+  dateCreation      DateTime @default(now())
+  expireLe          DateTime
+
+  @@index([email])
+  @@index([expireLe])
   @@schema("public")
 }
 

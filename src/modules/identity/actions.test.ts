@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
 /**
- * Tests de registerPatientAction et loginAction, avec @/lib/prisma et
+ * Tests de loginAction, avec @/lib/prisma et
  * @/lib/session entierement mockes (jamais de vraie connexion base de
  * donnees dans ces tests).
  *
@@ -69,7 +69,6 @@ import bcrypt from "bcryptjs";
 import { redirect } from "next/navigation";
 import {
   loginAction,
-  registerPatientAction,
   verifierCodeEmailEtConnecterAction,
   type AuthActionState,
 } from "@/modules/identity/actions";
@@ -95,90 +94,6 @@ function buildFormData(donnees: Record<string, string>): FormData {
   }
   return formData;
 }
-
-const donneesInscriptionValides = {
-  nom: "Doe",
-  prenom: "Jeanne",
-  email: "jeanne.doe@example.com",
-  telephone: "+22990000000",
-  motDePasse: "motdepasse123",
-  dateNaissance: "1990-01-01",
-  sexe: "F",
-};
-
-describe("registerPatientAction", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it("rejette un email manquant sans appeler prisma.user.create", async () => {
-    const formData = buildFormData({ ...donneesInscriptionValides, email: "" });
-
-    const resultat = await registerPatientAction(ETAT_INITIAL, formData);
-
-    expect(resultat.error).toBeTruthy();
-    expect(prismaMock.user.create).not.toHaveBeenCalled();
-    expect(prismaMock.user.findUnique).not.toHaveBeenCalled();
-  });
-
-  it("rejette un email mal forme sans appeler prisma.user.create", async () => {
-    const formData = buildFormData({ ...donneesInscriptionValides, email: "pas-un-email" });
-
-    const resultat = await registerPatientAction(ETAT_INITIAL, formData);
-
-    expect(resultat.error).toBeTruthy();
-    expect(prismaMock.user.create).not.toHaveBeenCalled();
-  });
-
-  it("rejette un mot de passe trop court sans appeler prisma.user.create", async () => {
-    const formData = buildFormData({ ...donneesInscriptionValides, motDePasse: "court1" });
-
-    const resultat = await registerPatientAction(ETAT_INITIAL, formData);
-
-    expect(resultat.error).toBeTruthy();
-    expect(prismaMock.user.create).not.toHaveBeenCalled();
-  });
-
-  it("refuse un email deja utilise, avec le message dedie, sans appeler prisma.user.create", async () => {
-    prismaMock.user.findUnique.mockResolvedValue({ id: "utilisateur-existant" });
-
-    const resultat = await registerPatientAction(ETAT_INITIAL, buildFormData(donneesInscriptionValides));
-
-    expect(resultat.error).toBe("Un compte existe deja avec cet email.");
-    expect(prismaMock.user.create).not.toHaveBeenCalled();
-  });
-
-  it("cree le compte, ouvre la session et redirige vers l'assistant de premiere utilisation quand tout est valide", async () => {
-    prismaMock.user.findUnique.mockResolvedValue(null);
-    prismaMock.$transaction.mockImplementation(
-      async (callback: (tx: unknown) => Promise<unknown>) => {
-        const tx = {
-          patient: {
-            count: vi.fn().mockResolvedValue(0),
-          },
-          user: {
-            create: vi.fn().mockResolvedValue({ id: "nouvel-utilisateur" }),
-          },
-          journalAudit: {
-            create: vi.fn().mockResolvedValue({}),
-          },
-        };
-        return callback(tx);
-      }
-    );
-
-    await registerPatientAction(ETAT_INITIAL, buildFormData(donneesInscriptionValides));
-
-    expect(createSessionMock).toHaveBeenCalledWith({
-      userId: "nouvel-utilisateur",
-      roles: ["patient"],
-    });
-    // F-CIT-01 : redirige vers l'assistant de premiere utilisation plutot que
-    // directement vers le tableau de bord (voir src/app/app/patient/bienvenue),
-    // affiche une seule fois juste apres l'inscription.
-    expect(redirectMock).toHaveBeenCalledWith("/app/patient/bienvenue");
-  });
-});
 
 describe("loginAction", () => {
   const MESSAGE_ERREUR_GENERIQUE = "Identifiants incorrects.";

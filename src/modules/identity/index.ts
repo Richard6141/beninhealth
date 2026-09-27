@@ -5,13 +5,20 @@
 // (contrat d'integration) ou depuis ce point d'entree.
 
 export {
-  registerPatientAction,
   loginAction,
   logoutAction,
   verifierCodeEmailEtConnecterAction,
   verifierMfaEtConnecterAction,
   type AuthActionState,
 } from "./actions";
+
+// F-AUTH-01 : inscription en deux temps (code envoye par e-mail).
+export {
+  demarrerInscriptionAction,
+  verifierCodeInscriptionAction,
+  renvoyerCodeInscriptionAction,
+  type InscriptionActionState,
+} from "./inscription";
 
 // Systeme de profil ("Mon profil") : consultation/modification des
 // informations personnelles et televersement de la photo de profil. Le
