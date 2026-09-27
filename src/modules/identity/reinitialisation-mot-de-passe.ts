@@ -45,6 +45,11 @@ const QUINZE_MINUTES_MS = 15 * 60 * 1000;
 const DEMANDES_MAX_PAR_COMPTE_PAR_HEURE = 3;
 const DEMANDES_MAX_PAR_ADRESSE_PAR_HEURE = 20;
 const ECHECS_MAX_PAR_COMPTE_PAR_QUINZE_MINUTES = 5;
+// RG-AUTH-03 : au moins 60 secondes entre deux demandes pour le meme compte,
+// en plus (jamais a la place) du plafond par heure ci-dessus : celui-ci
+// n'empeche pas d'envoyer 3 demandes en quelques secondes puis d'attendre le
+// reste de l'heure, ce que ce delai minimal interdit specifiquement.
+const DELAI_MINIMAL_ENTRE_DEMANDES_MS = 60 * 1000;
 
 function cleEchecsReinitialisation(email: string): string {
   return `reinitialisation:echecs:${email.trim().toLowerCase()}`;
@@ -153,6 +158,21 @@ async function genererEtEnvoyerCodeReinitialisation(userId: string, email: strin
   return code;
 }
 
+// Valeur arbitraire, jamais un mot de passe ni un code reel : seul le cout
+// bcrypt de son hachage est utile ici (voir simulerCoutGenerationCode).
+const VALEUR_FACTICE_POUR_SYNCHRONISATION_TEMPORELLE = "reponse-temporellement-neutre";
+
+/**
+ * Meme cout bcrypt que genererEtEnvoyerCodeReinitialisation (un seul hash au
+ * meme nombre de rounds), sans effet de bord (rien en base, rien envoye) :
+ * appelee a la place de cette derniere quand le compte n'existe pas, est
+ * inactif ou exclu du libre-service, pour qu'aucun temps de reponse ne
+ * distingue ce cas d'un compte reel (CA-2).
+ */
+async function simulerCoutGenerationCode(): Promise<void> {
+  await bcrypt.hash(VALEUR_FACTICE_POUR_SYNCHRONISATION_TEMPORELLE, ROUNDS_BCRYPT);
+}
+
 async function verifierEtConsommerCodeReinitialisation(userId: string, code: string): Promise<boolean> {
   if (!/^\d{6}$/.test(code)) {
     return false;
@@ -205,6 +225,7 @@ export async function demanderReinitialisationMotDePasseAction(
   const adresse = await adresseDeLaRequete();
   const autorise =
     verifierEtIncrementerDebit(`reinitialisation:demande:compte:${email.toLowerCase()}`, DEMANDES_MAX_PAR_COMPTE_PAR_HEURE, UNE_HEURE_MS).autorise &&
+    verifierEtIncrementerDebit(`reinitialisation:demande:cooldown:${email.toLowerCase()}`, 1, DELAI_MINIMAL_ENTRE_DEMANDES_MS).autorise &&
     (adresse === null ||
       verifierEtIncrementerDebit(`reinitialisation:demande:adresse:${adresse}`, DEMANDES_MAX_PAR_ADRESSE_PAR_HEURE, UNE_HEURE_MS).autorise);
 
@@ -226,6 +247,16 @@ export async function demanderReinitialisationMotDePasseAction(
         codeDemo: codeAfficheALEcran(utilisateur.email) ? codeDemo : undefined,
       };
     }
+
+    // CA-2 : compte inexistant, inactif ou exclu du libre-service (RG-AUTH-31).
+    // Le travail ci-dessus (bcrypt.hash, meme nombre de rounds que
+    // genererEtEnvoyerCodeReinitialisation) est le cout dominant de la
+    // branche "compte reel" : le simuler ici rend les deux cas indiscernables
+    // par le temps de reponse, pas seulement par le message. Residuel non
+    // couvert, documente plutot que traite comme regle : les 2 requetes en
+    // base et l'envoi de l'e-mail de la branche reelle restent un ecart
+    // marginal face au cout du bcrypt, qui domine largement les deux cas.
+    await simulerCoutGenerationCode();
   } catch (erreur) {
     console.error("Erreur lors de la demande de reinitialisation de mot de passe :", erreur);
     // Une erreur technique (ex. e-mail injoignable en production, voir
