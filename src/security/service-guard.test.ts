@@ -75,6 +75,7 @@ const LECTURES_PUBLIQUES: Record<string, string> = {
   "src/modules/facility/annuaire-public.ts:getEtablissementPublicParId": "fiche publique d'un etablissement (F-ETA-02)",
   "src/modules/identity/reinitialisation-mot-de-passe.ts:demanderReinitialisationMotDePasseAction": "mot de passe oublie : parcours deconnecte, limite par compte et par adresse",
   "src/modules/identity/reinitialisation-mot-de-passe.ts:reinitialiserMotDePasseAction": "mot de passe oublie : parcours deconnecte, limite d'essais par compte",
+  "src/modules/identity/activation.ts:activerCompteAction": "activation sur invitation : parcours deconnecte, jeton de 32 octets hache, usage unique, envois limites par adresse",
   "src/modules/identity/inscription.ts:demarrerInscriptionAction": "inscription : parcours deconnecte, reponse identique que le compte existe ou non, envois limites par adresse et par IP",
   "src/modules/identity/inscription.ts:verifierCodeInscriptionAction": "inscription : jeton signe, code hache, 5 essais",
   "src/modules/identity/inscription.ts:renvoyerCodeInscriptionAction": "inscription : jeton signe, 60 s entre deux envois, 5 par heure",

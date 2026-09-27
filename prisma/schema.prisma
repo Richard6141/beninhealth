@@ -70,6 +70,7 @@ model User {
   codesReinitialisationMotDePasse CodeReinitialisationMotDePasse[]
   sessionsActives SessionActive[]
   codesSecoursMfa CodeSecoursMfa[]
+  invitationsCompte InvitationCompte[]
   revuesAccesUrgence RevueAccesUrgence[]
   alertesRevues HealthAlertReview[]
   traitementsDemandesPersonnes TraitementDemandePersonne[]
@@ -1461,6 +1462,25 @@ model CodeSecoursMfa {
   creeLe    DateTime  @default(now())
 
   @@index([userId, empreinte])
+  @@schema("public")
+}
+
+// F-AUTH-05 (RG-AUTH-40) : invitation a activer un compte cree par un responsable.
+// Le jeton (32 octets aleatoires) n'est jamais stocke : seule son empreinte HMAC.
+// Valable 7 jours, a usage unique ; renvoyer une invitation annule la precedente.
+// Le compte reste au statut "invite" (aucune connexion possible) jusqu'a l'activation.
+model InvitationCompte {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jetonHash    String    @unique
+  creeParId    String?
+  expireLe     DateTime
+  utiliseLe    DateTime?
+  annuleeLe    DateTime?
+  dateCreation DateTime  @default(now())
+
+  @@index([userId])
   @@schema("public")
 }
 

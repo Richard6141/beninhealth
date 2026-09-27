@@ -6,6 +6,8 @@ vi.mock("@/lib/prisma", () => {
   const prisma = {
     professionnelSante: { findUnique: vi.fn(), findFirst: vi.fn(), count: vi.fn(), create: vi.fn() },
     user: { findUnique: vi.fn(), create: vi.fn() },
+    invitationCompte: { updateMany: vi.fn(), create: vi.fn() },
+    etablissementSanitaire: { findUnique: vi.fn() },
     $transaction: vi.fn(),
   };
   prisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(prisma));
@@ -18,6 +20,7 @@ vi.mock("bcryptjs", () => {
   return { default: { hash }, hash };
 });
 vi.mock("@/modules/audit/journaliser", () => ({ journaliser: vi.fn() }));
+vi.mock("@/lib/mail", () => ({ envoyerEmail: vi.fn(async () => {}) }));
 
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
@@ -26,6 +29,8 @@ import { creerProfessionnelAction } from "@/modules/identity/gestion-comptes";
 const p = prisma as unknown as {
   professionnelSante: { findUnique: Mock; findFirst: Mock; count: Mock; create: Mock };
   user: { findUnique: Mock; create: Mock };
+  invitationCompte: { updateMany: Mock; create: Mock };
+  etablissementSanitaire: { findUnique: Mock };
 };
 const getSessionMock = getSession as unknown as Mock;
 
@@ -56,6 +61,9 @@ beforeEach(() => {
   p.professionnelSante.create.mockResolvedValue({ id: "prof-neuf" });
   p.user.findUnique.mockResolvedValue(null);
   p.user.create.mockResolvedValue({ id: "user-neuf" });
+  p.invitationCompte.updateMany.mockResolvedValue({ count: 0 });
+  p.invitationCompte.create.mockResolvedValue({});
+  p.etablissementSanitaire.findUnique.mockResolvedValue({ nom: "CHU de Cotonou" });
 });
 
 describe("creerProfessionnelAction : identite professionnelle et affiliation", () => {

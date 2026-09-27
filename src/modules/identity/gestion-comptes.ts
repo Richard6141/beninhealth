@@ -20,7 +20,7 @@
  * de toute creation ou modification de compte.
  */
 
-import { randomInt } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { Prisma } from "@prisma/client";
 import { headers } from "next/headers";
@@ -29,6 +29,7 @@ import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
 import { evaluerMotDePasse, longueurMinimaleSelonRoles } from "./politique-mot-de-passe";
+import { emettreInvitation, envoyerInvitation } from "./invitations";
 import type { NomRole, TypeEtablissement } from "@/types";
 import {
   CODES_IDENTIFIANT_PAR_ROLE,
@@ -49,10 +50,14 @@ import {
 export interface GestionCompteActionState {
   error: string | null;
   success: boolean;
-  /** Present uniquement en cas de succes de creation de compte : mot de passe
-   * temporaire en clair, a communiquer une seule fois a la personne concernee.
-   * Jamais stocke en clair ni journalise. */
+  /** Mot de passe temporaire en clair (parcours historique de la gestion nationale des comptes,
+   * a communiquer une seule fois ; jamais stocke en clair ni journalise). Les comptes crees par
+   * un etablissement ou par le ministere passent par une invitation (F-AUTH-05). */
   motDePasseTemporaire?: string;
+  /** Adresse a laquelle l'invitation a ete envoyee (F-AUTH-05). */
+  invitationEnvoyeeA?: string;
+  /** Lien d'activation, montre a la personne qui invite uniquement hors production ou pour un compte de demonstration. */
+  lienInvitation?: string;
 }
 
 /** Etablissement avec les indicateurs de gestion utiles au ministere. */
@@ -224,48 +229,9 @@ function contrainteNumeroOrdre(erreur: unknown): boolean {
   return Array.isArray(cible) && cible.includes("numeroOrdre");
 }
 
-const MAJUSCULES_LISIBLES = "ABCDEFGHJKLMNPQRSTUVWXYZ"; // sans I ni O (ambigus)
-const MINUSCULES_LISIBLES = "abcdefghijkmnpqrstuvwxyz"; // sans l ni o (ambigus)
-const CHIFFRES_LISIBLES = "23456789"; // sans 0 ni 1 (ambigus)
-const TOUS_CARACTERES_LISIBLES = MAJUSCULES_LISIBLES + MINUSCULES_LISIBLES + CHIFFRES_LISIBLES;
-const LONGUEUR_MOT_DE_PASSE_TEMPORAIRE = 12;
-
-function caractereAleatoire(alphabet: string): string {
-  return alphabet[randomInt(alphabet.length)];
-}
-
-/**
- * Genere un mot de passe temporaire aleatoire et lisible (12 caracteres,
- * majuscules, minuscules et chiffres, sans caracteres ambigus). Utilise
- * node:crypto (randomInt), jamais Math.random. A communiquer une seule fois
- * a la personne concernee ; jamais stocke ni journalise en clair.
- */
-function genererMotDePasseTemporaire(): string {
-  const caracteresObligatoires = [
-    caractereAleatoire(MAJUSCULES_LISIBLES),
-    caractereAleatoire(MINUSCULES_LISIBLES),
-    caractereAleatoire(CHIFFRES_LISIBLES),
-  ];
-
-  const nombreCaracteresRestants =
-    LONGUEUR_MOT_DE_PASSE_TEMPORAIRE - caracteresObligatoires.length;
-  const caracteresRestants = Array.from({ length: nombreCaracteresRestants }, () =>
-    caractereAleatoire(TOUS_CARACTERES_LISIBLES)
-  );
-
-  const motDePasse = [...caracteresObligatoires, ...caracteresRestants];
-
-  // Melange Fisher-Yates (avec randomInt) pour eviter un motif previsible
-  // (ex : toujours une majuscule en premiere position).
-  for (let indice = motDePasse.length - 1; indice > 0; indice -= 1) {
-    const autreIndice = randomInt(indice + 1);
-    [motDePasse[indice], motDePasse[autreIndice]] = [
-      motDePasse[autreIndice],
-      motDePasse[indice],
-    ];
-  }
-
-  return motDePasse.join("");
+/** Mot de passe inutilisable : le compte reste "invite" jusqu'a ce que la personne choisisse le sien (F-AUTH-05). */
+async function motDePasseInutilisableHache(): Promise<string> {
+  return bcrypt.hash(randomBytes(32).toString("hex"), ROUNDS_BCRYPT);
 }
 
 /** Convertit le contenu d'une zone de texte (une entree par ligne) en tableau JSON. */
@@ -363,14 +329,14 @@ export async function creerEtablissementAction(
     return { error: "Un compte existe deja avec cet email.", success: false };
   }
 
-  const motDePasseTemporaire = genererMotDePasseTemporaire();
+  let jetonInvitation: string;
 
   try {
-    const motDePasseHash = await bcrypt.hash(motDePasseTemporaire, ROUNDS_BCRYPT);
+    const motDePasseHash = await motDePasseInutilisableHache();
     const adresseTechnique = await adresseTechniqueCourante();
     const servicesJSON = servicesDisponiblesEnJSON(donnees.servicesDisponibles);
 
-    await prisma.$transaction(async (tx) => {
+    jetonInvitation = await prisma.$transaction(async (tx) => {
       const nombreEtablissements = await tx.etablissementSanitaire.count({
         where: { identifiant: { startsWith: prefixeIdentifiant(CODE_IDENTIFIANT_ETABLISSEMENT) } },
       });
@@ -408,14 +374,14 @@ export async function creerEtablissementAction(
         nombreAdmins
       );
 
-      await tx.user.create({
+      const administrateur = await tx.user.create({
         data: {
           nom: donnees.adminNom,
           prenom: donnees.adminPrenom,
           email: donnees.adminEmail,
           telephone: donnees.adminTelephone,
           motDePasseHash,
-          statut: "actif",
+          statut: "invite",
           roles: { create: [{ nom: "admin_etablissement" }] },
           professionnel: {
             create: {
@@ -442,10 +408,13 @@ export async function creerEtablissementAction(
           action: "creation",
           donneeConcernee: `etablissement:${etablissement.id}`,
           adresseTechnique,
-          justification: "Creation d'etablissement et de son compte administrateur",
+          justification: "Creation d'etablissement et invitation de son administrateur",
         },
         tx
       );
+
+      const invitation = await emettreInvitation(tx, { userId: administrateur.id, creeParId: session.userId });
+      return invitation.jeton;
     });
   } catch (erreur) {
     if (estErreurContrainteUnique(erreur)) {
@@ -459,7 +428,42 @@ export async function creerEtablissementAction(
     };
   }
 
-  return { error: null, success: true, motDePasseTemporaire };
+  return envoyerEtRepondre({
+    email: donnees.adminEmail,
+    prenom: donnees.adminPrenom,
+    etablissement: donnees.nom,
+    role: "administrateur d'etablissement",
+    jeton: jetonInvitation,
+  });
+}
+
+/**
+ * Envoie l'invitation et construit la reponse des actions de creation : le compte
+ * existe deja (statut "invite") meme si l'envoi echoue, auquel cas l'invitation
+ * peut etre renvoyee depuis la liste du personnel.
+ */
+async function envoyerEtRepondre(params: {
+  email: string;
+  prenom: string;
+  etablissement: string | null;
+  role: string;
+  jeton: string;
+}): Promise<GestionCompteActionState> {
+  try {
+    const { lienAffichable } = await envoyerInvitation(params);
+    return {
+      error: null,
+      success: true,
+      invitationEnvoyeeA: params.email,
+      lienInvitation: lienAffichable ?? undefined,
+    };
+  } catch (erreur) {
+    console.error("Envoi de l'invitation impossible :", erreur);
+    return {
+      error: "Le compte est cree mais l'invitation n'a pas pu etre envoyee. Renvoyez-la depuis la liste du personnel.",
+      success: false,
+    };
+  }
 }
 
 /**
@@ -578,13 +582,13 @@ export async function creerProfessionnelAction(
     }
   }
 
-  const motDePasseTemporaire = genererMotDePasseTemporaire();
+  let jetonInvitation: string;
 
   try {
-    const motDePasseHash = await bcrypt.hash(motDePasseTemporaire, ROUNDS_BCRYPT);
+    const motDePasseHash = await motDePasseInutilisableHache();
     const adresseTechnique = await adresseTechniqueCourante();
 
-    await prisma.$transaction(async (tx) => {
+    jetonInvitation = await prisma.$transaction(async (tx) => {
       const nouvelUtilisateur = await tx.user.create({
         data: {
           nom: donnees.nom,
@@ -592,7 +596,7 @@ export async function creerProfessionnelAction(
           email: donnees.email,
           telephone: donnees.telephone,
           motDePasseHash,
-          statut: "actif",
+          statut: "invite",
           roles: { create: [{ nom: donnees.role }] },
         },
       });
@@ -629,10 +633,13 @@ export async function creerProfessionnelAction(
           action: "creation",
           donneeConcernee: `professionnel:${professionnel.id}`,
           adresseTechnique,
-          justification: "Creation de compte professionnel par l'administrateur d'etablissement",
+          justification: "Invitation d'un professionnel par l'administrateur d'etablissement",
         },
         tx
       );
+
+      const invitation = await emettreInvitation(tx, { userId: nouvelUtilisateur.id, creeParId: session.userId });
+      return invitation.jeton;
     });
   } catch (erreur) {
     if (contrainteNumeroOrdre(erreur)) {
@@ -653,7 +660,82 @@ export async function creerProfessionnelAction(
     };
   }
 
-  return { error: null, success: true, motDePasseTemporaire };
+  const etablissement = await prisma.etablissementSanitaire.findUnique({
+    where: { id: adminProfil.etablissementId },
+    select: { nom: true },
+  });
+
+  return envoyerEtRepondre({
+    email: donnees.email,
+    prenom: donnees.prenom,
+    etablissement: etablissement?.nom ?? null,
+    role: donnees.role,
+    jeton: jetonInvitation,
+  });
+}
+
+/**
+ * Renvoie l'invitation d'un compte qui n'est pas encore active (F-AUTH-05,
+ * RG-AUTH-40) : l'ancienne est annulee. Reserve a l'administrateur de
+ * l'etablissement du compte (ou au ministere).
+ */
+export async function renvoyerInvitationAction(
+  prevState: GestionCompteActionState,
+  formData: FormData
+): Promise<GestionCompteActionState> {
+  const session = await getSession();
+
+  if (!session || !(session.roles.includes("admin_etablissement") || session.roles.includes("admin_national"))) {
+    return { error: "Action reservee aux administrateurs.", success: false };
+  }
+
+  const userId = String(formData.get("userId") ?? "");
+
+  if (!userId) {
+    return { error: "Compte introuvable.", success: false };
+  }
+
+  const cible = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      prenom: true,
+      email: true,
+      statut: true,
+      roles: { select: { nom: true } },
+      professionnel: { select: { etablissementId: true, etablissement: { select: { nom: true } } } },
+    },
+  });
+
+  if (!cible || cible.statut !== "invite") {
+    return { error: "Ce compte n'a pas d'invitation en attente.", success: false };
+  }
+
+  if (!session.roles.includes("admin_national")) {
+    const adminProfil = await prisma.professionnelSante.findUnique({ where: { userId: session.userId } });
+
+    if (!adminProfil || cible.professionnel?.etablissementId !== adminProfil.etablissementId) {
+      return { error: "Ce compte n'a pas d'invitation en attente.", success: false };
+    }
+  }
+
+  const { jeton } = await emettreInvitation(prisma, { userId: cible.id, creeParId: session.userId });
+
+  await journaliser({
+    utilisateurId: session.userId,
+    action: "renvoi_invitation",
+    donneeConcernee: `utilisateur:${cible.id}`,
+    adresseTechnique: await adresseTechniqueCourante(),
+    justification: "Invitation renvoyee, l'ancienne est annulee",
+  });
+
+  return envoyerEtRepondre({
+    email: cible.email,
+    prenom: cible.prenom,
+    etablissement: cible.professionnel?.etablissement.nom ?? null,
+    role: cible.roles[0]?.nom ?? "professionnel",
+    jeton,
+  });
 }
 
 /**

@@ -299,7 +299,13 @@ function SectionPersonnel({ personnel }: { personnel: MembrePersonnel[] }) {
                       </td>
                       <td className="border-b border-bordure px-3 py-2">
                         <Badge tone={membre.statutCompte === "actif" ? "good" : membre.statutCompte === "suspendu" ? "warning" : "neutral"}>
-                          {membre.statutCompte === "actif" ? "Actif" : membre.statutCompte === "suspendu" ? "Suspendu" : "Terminé"}
+                          {membre.statutCompte === "actif"
+                            ? "Actif"
+                            : membre.statutCompte === "suspendu"
+                              ? "Suspendu"
+                              : membre.statutCompte === "invite"
+                                ? "Invitation en attente"
+                                : "Terminé"}
                         </Badge>
                       </td>
                       <td className="border-b border-bordure px-3 py-2">

@@ -1,13 +1,13 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Copy } from "lucide-react";
 import {
   creerEtablissementAction,
   type GestionCompteActionState,
 } from "@/modules/identity/gestion-comptes";
 import { Alert } from "@/components/ui/Alert";
+import { InvitationEnvoyee } from "@/components/InvitationEnvoyee";
 import { Button } from "@/components/ui/Button";
 import { SelectField } from "@/components/ui/SelectField";
 import { TextField } from "@/components/ui/TextField";
@@ -23,15 +23,13 @@ export interface FormulaireCreationEtablissementProps {
 /**
  * Formulaire de creation d'un etablissement et de son compte administrateur
  * (creerEtablissementAction, module identity/gestion-comptes). En cas de
- * succes, le formulaire est remplace par un encart d'attention affichant le
- * mot de passe temporaire en clair : il n'est jamais reaffiche apres cette
- * fermeture, donc jamais masque automatiquement ici.
+ * succes, le formulaire est remplace par la confirmation de l'invitation
+ * envoyee a l'administrateur (F-AUTH-05) : il choisit lui-meme son mot de passe.
  */
 export function FormulaireCreationEtablissement({
   onFermer,
 }: FormulaireCreationEtablissementProps) {
   const [state, formAction, pending] = useActionState(creerEtablissementAction, etatInitial);
-  const [copie, setCopie] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -40,50 +38,15 @@ export function FormulaireCreationEtablissement({
     }
   }, [state.success, router]);
 
-  async function copierMotDePasse(motDePasse: string) {
-    try {
-      await navigator.clipboard.writeText(motDePasse);
-      setCopie(true);
-      setTimeout(() => setCopie(false), 2000);
-    } catch {
-      // La copie manuelle reste possible depuis le texte affiche (select-all).
-    }
-  }
-
   if (state.success) {
     return (
       <div className="flex flex-col gap-4">
         <Alert level="success" title="Etablissement cree">
-          L&apos;etablissement et le compte de son administrateur ont ete
-          crees avec succes.
+          L&apos;etablissement est cree et actif. Son administrateur pourra se connecter des qu&apos;il aura active
+          son compte avec l&apos;invitation envoyee.
         </Alert>
 
-        {state.motDePasseTemporaire ? (
-          <div className="flex flex-col gap-3 rounded-champ border border-vigilance bg-vigilance-clair p-4">
-            <p className="text-[14px] font-semibold text-encre">
-              Mot de passe temporaire de l&apos;administrateur
-            </p>
-            <p className="text-[13px] text-encre-secondaire">
-              Notez ce mot de passe temporaire et transmettez-le de facon
-              securisee a l&apos;administrateur de l&apos;etablissement, il ne
-              sera plus jamais affiche.
-            </p>
-            <div className="flex items-center gap-2">
-              <code className="flex-1 select-all break-all rounded-champ border border-bordure-forte bg-surface px-3 py-2 text-[16px] font-semibold tracking-wide text-encre">
-                {state.motDePasseTemporaire}
-              </code>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                iconBefore={copie ? Check : Copy}
-                onClick={() => copierMotDePasse(state.motDePasseTemporaire ?? "")}
-              >
-                {copie ? "Copie" : "Copier"}
-              </Button>
-            </div>
-          </div>
-        ) : null}
+        <InvitationEnvoyee email={state.invitationEnvoyeeA ?? ""} lien={state.lienInvitation} />
 
         <div className="flex justify-end">
           <Button type="button" variant="primary" onClick={onFermer}>

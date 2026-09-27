@@ -7,6 +7,7 @@ import {
   type GestionCompteActionState,
 } from "@/modules/identity/gestion-comptes";
 import { Alert } from "@/components/ui/Alert";
+import { InvitationEnvoyee } from "@/components/InvitationEnvoyee";
 import { Button } from "@/components/ui/Button";
 import { Modal, type ModalHandle } from "@/components/ui/Modal";
 import { SelectField, type SelectOption } from "@/components/ui/SelectField";
@@ -44,19 +45,10 @@ function ContenuFormulaireAjout({ onFermer }: { onFermer: () => void }) {
   if (state.success) {
     return (
       <div className="flex flex-col gap-4">
-        <Alert level="success" title="Compte professionnel créé">
-          Le compte a bien été créé et rattaché à votre établissement.
+        <Alert level="success" title="Invitation envoyée">
+          Le compte est créé et rattaché à votre établissement. Il sera actif dès que la personne aura activé son compte.
         </Alert>
-        <div className="rounded-champ border-2 border-vigilance bg-vigilance-clair p-4">
-          <p className="text-[14px] font-bold text-encre">Mot de passe temporaire</p>
-          <p className="chiffres mt-2 break-all rounded-champ border border-bordure bg-surface px-3 py-2 text-[16px] font-bold text-encre">
-            {state.motDePasseTemporaire}
-          </p>
-          <p className="mt-2 text-[13px] text-encre-secondaire">
-            Notez ce mot de passe temporaire et transmettez-le de façon
-            sécurisée à la personne concernée, il ne sera plus jamais affiché.
-          </p>
-        </div>
+        <InvitationEnvoyee email={state.invitationEnvoyeeA ?? ""} lien={state.lienInvitation} />
         <Button type="button" variant="secondary" className="w-fit" onClick={onFermer}>
           Fermer
         </Button>

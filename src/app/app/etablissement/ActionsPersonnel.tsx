@@ -10,10 +10,13 @@ import {
   terminerAffiliationAction,
   type GestionPersonnelActionState,
 } from "@/modules/facility/gestion-personnel";
+import { renvoyerInvitationAction, type GestionCompteActionState } from "@/modules/identity/gestion-comptes";
 import { Alert } from "@/components/ui/Alert";
+import { InvitationEnvoyee } from "@/components/InvitationEnvoyee";
 import { Button } from "@/components/ui/Button";
 
 const etatInitial: GestionPersonnelActionState = { error: null, success: false };
+const etatInitialInvitation: GestionCompteActionState = { error: null, success: false };
 
 /** Formulaire avec motif obligatoire (suspendre / terminer), replie par defaut. */
 function ActionAvecMotif({
@@ -135,6 +138,29 @@ function ActionNumeroOrdre({ userId, numeroOrdre }: { userId: string; numeroOrdr
   );
 }
 
+/** Compte invite qui n'a pas encore active son compte (F-AUTH-05) : renvoyer l'invitation (l'ancienne est annulee). */
+function ActionInvitation({ userId }: { userId: string }) {
+  const [state, formAction, pending] = useActionState(renvoyerInvitationAction, etatInitialInvitation);
+
+  if (state.success) {
+    return <InvitationEnvoyee email={state.invitationEnvoyeeA ?? ""} lien={state.lienInvitation} />;
+  }
+
+  return (
+    <form action={formAction} className="flex flex-col gap-1">
+      <input type="hidden" name="userId" value={userId} />
+      {state.error ? (
+        <p role="alert" className="max-w-[220px] text-[12px] text-critique">
+          {state.error}
+        </p>
+      ) : null}
+      <Button type="submit" variant="secondary" size="sm" disabled={pending}>
+        {pending ? "Envoi..." : "Renvoyer l'invitation"}
+      </Button>
+    </form>
+  );
+}
+
 /** Actions sur un membre du personnel (F-ETA-04) : suspendre, réactiver, terminer l'affiliation, renseigner le n° d'Ordre, selon le statut actuel du compte. */
 export function ActionsPersonnel({
   userId,
@@ -162,6 +188,10 @@ export function ActionsPersonnel({
 
   if (statutCompte === "termine") {
     return <span className="text-[12px] text-encre-attenuee">Affiliation terminée</span>;
+  }
+
+  if (statutCompte === "invite") {
+    return <ActionInvitation userId={userId} />;
   }
 
   if (statutCompte === "suspendu") {
