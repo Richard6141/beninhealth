@@ -4662,3 +4662,28 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
 - Commits : `692d0b4` (code), `ddbeffa` (reste-a-faire.md).
 - Suite pour moi : je cherche la prochaine fiche P0/P1 non revendiquee, ou j'attends une
   assignation de 89.
+
+### Livraison projet-gouv-8c, F-AUTH-08 : verrouillage d'ecran, comptage cote serveur, 2026-09-28
+
+- Assigne par 89 (file precedente vide). `git fetch` verifie a jour avec origin/main (ca878ab)
+  avant de commencer.
+- Deux ecarts reels confirmes et corriges : le comptage des 3 echecs de deverrouillage n'etait
+  verifie que cote client (contournable), desormais revalide cote serveur (compteur en memoire,
+  `destroySession()` reellement appelee a la 3e tentative) ; les roles admin_etablissement/
+  admin_national beneficient desormais du meme geste explicite de deverrouillage a 15 minutes que
+  les autres roles (leur session serveur expirait deja a 15 min, mais sans le verrou visuel,
+  perte brutale de session avant ce correctif).
+- Le 3e point ("appareil partage non pris en compte") verifie et documente comme sans effet
+  pratique plutot que corrige a l'aveugle : son seul effet serveur (plafond 30 min) reste toujours
+  plus long que le verrou le plus strict (15 min), donc rien a changer reellement.
+- `verrouillage-regles.ts` (nouveau) : constantes pures extraites (un fichier "use server" ne peut
+  exporter que des fonctions async), piege attrape par `service-guard.test.ts` avant tout commit.
+- 7 nouveaux tests (module jamais teste avant ce jour). Verifie : tsc 0, eslint 0 erreur, vitest
+  2253/2253 (repo entier au moment de la livraison, 1 flake transitoire sur analytics-role.test.ts
+  confirme non lie, deja documente ce soir, repasse vert au retry), tirets 0. Aucune migration.
+- Note reconstituee par 89 : la note originale de 8c a ete perdue par une reinitialisation de ce
+  fichier a l'etat HEAD (le code n'a pas ete touche, seule cette note l'a ete). Sixieme occurrence
+  de la meme classe d'incident documentee plusieurs fois ce soir, cette fois causee par 89 lui-meme
+  en corrigeant une regression similaire sans verifier qu'il n'y avait pas AUSSI du contenu neuf a
+  garder. Lecon : avant de reinitialiser un fichier partage a HEAD, verifier que le diff ne
+  contient que des pertes, jamais aussi des ajouts legitimes non commits.

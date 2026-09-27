@@ -4,19 +4,32 @@ import { useActionState, useEffect, useRef, useState } from "react";
 import { Lock } from "lucide-react";
 import type { NomRole } from "@/types";
 import { deverrouillerEcranAction, type DeverrouillageActionState } from "@/modules/identity/verrouillage";
+import { TENTATIVES_MAX_VERROUILLAGE } from "@/modules/identity/verrouillage-regles";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { TextField } from "@/components/ui/TextField";
 
 /**
- * Verrouillage d'ecran pour inactivite (F-AUTH-08 du pack). Perimetre
- * reduit et assume : le pack fixe 10 minutes pour DOCTOR, NURSE,
- * RECEPTIONIST, CHW et les roles LAB (divers) et PHARMACIST, puis renvoie a
- * un "tableau 23.3" (non fourni dans les fiches de ce depot) pour les
- * autres roles. Seuls les 5 roles
- * professionnels explicitement chiffres ici sont donc verrouilles ;
- * patient/admin_etablissement/admin_national ne le sont PAS (pas de valeur
- * documentee a leur appliquer, plutot que d'inventer un delai).
+ * Verrouillage d'ecran pour inactivite (F-AUTH-08 du pack, section 23.3
+ * "tableau 23.3" desormais trouve dans docs/pack claude/specs/23-securite-conformite.md).
+ * 10 minutes pour DOCTOR, NURSE, RECEPTIONIST, CHW et les roles LAB (divers)
+ * et PHARMACIST ; 15 minutes pour les roles "Etablissement, pilotage" et
+ * "Administrateur, auditeur" (admin_etablissement, admin_national),
+ * ajoutes le 2026-09-28 (jusque-la absents de tout verrou d'ecran cote
+ * navigateur, meme si leur SESSION SERVEUR expirait deja apres 15 minutes
+ * d'inactivite, voir src/lib/regles-session.ts : sans ce verrou visuel, ces
+ * roles perdaient leur session brutalement a la requete suivante, sans le
+ * geste explicite de deverrouillage que ce composant offre aux autres
+ * roles). patient n'est PAS concerne par ce verrou : son inactivite se gere
+ * au niveau de la session elle-meme (30 min si "appareil partage" via
+ * regles-session.ts, jamais un ecran de verrouillage local).
+ *
+ * "Appareil partage" (F-AUTH-02) sciemment PAS lu ici, verifie ne rien
+ * changer en pratique : son seul effet cote serveur est un plafond de 30 min
+ * d'inactivite (regles-session.ts), toujours plus long que le delai de
+ * verrouillage le plus long applique ici (15 min) - le verrou visuel reste
+ * donc toujours la contrainte la plus stricte, avec ou sans appareil
+ * partage, pour tous les roles couverts par ce composant.
  *
  * RG-AUTH-70 : le contenu proteg retire du DOM, pas seulement masque -
  * cette verification apparaissant tant que verrouille est vrai,
@@ -27,18 +40,24 @@ import { TextField } from "@/components/ui/TextField";
  *
  * Apres 3 tentatives de mot de passe incorrectes, deconnexion complete
  * (meme form action que le bouton de deconnexion existant, AvatarMenu).
+ * Revalide cote serveur depuis le 2026-09-28
+ * (src/modules/identity/verrouillage.ts) : le compteur local ci-dessous
+ * reste utile pour le retour immediat a l'ecran, mais state.deconnecte
+ * (autorite serveur) declenche la deconnexion tout autant, meme si ce
+ * compteur local avait ete contourne.
  */
 
-const ROLES_VERROUILLES_10MIN: NomRole[] = [
-  "medecin",
-  "infirmier",
-  "agent_communautaire",
-  "laboratoire",
-  "pharmacien",
-];
+const DELAIS_VERROUILLAGE_MS: Partial<Record<NomRole, number>> = {
+  medecin: 10 * 60 * 1000,
+  infirmier: 10 * 60 * 1000,
+  agent_communautaire: 10 * 60 * 1000,
+  laboratoire: 10 * 60 * 1000,
+  pharmacien: 10 * 60 * 1000,
+  admin_etablissement: 15 * 60 * 1000,
+  admin_national: 15 * 60 * 1000,
+};
 
-const DELAI_INACTIVITE_MS = 10 * 60 * 1000;
-const TENTATIVES_MAX = 3;
+const TENTATIVES_MAX = TENTATIVES_MAX_VERROUILLAGE;
 const EVENEMENTS_ACTIVITE = ["mousedown", "mousemove", "keydown", "scroll", "touchstart"] as const;
 
 const etatInitial: DeverrouillageActionState = { error: null, success: false };
@@ -78,6 +97,16 @@ function EcranVerrouille({ onDeverrouille, onDepasseTentatives }: { onDeverrouil
       onDepasseTentatives();
     }
   }, [tentatives, onDepasseTentatives]);
+
+  // Autorite serveur (F-AUTH-08) : declenche la deconnexion des que le
+  // serveur signale la session detruite, meme si le compteur local
+  // ci-dessus n'a, pour une raison quelconque, jamais atteint TENTATIVES_MAX
+  // (page rechargee entre deux tentatives, par exemple).
+  useEffect(() => {
+    if (state.deconnecte) {
+      onDepasseTentatives();
+    }
+  }, [state.deconnecte, onDepasseTentatives]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-marine-fonce/95 backdrop-blur-sm">
@@ -129,14 +158,15 @@ export function VerrouillageInactivite({
   const minuteurRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const formDeconnexionRef = useRef<HTMLFormElement>(null);
 
-  const soumisAuVerrouillage = role ? ROLES_VERROUILLES_10MIN.includes(role) : false;
+  const delaiInactiviteMs = role ? DELAIS_VERROUILLAGE_MS[role] : undefined;
+  const soumisAuVerrouillage = delaiInactiviteMs !== undefined;
 
   useEffect(() => {
-    if (!soumisAuVerrouillage) return;
+    if (!delaiInactiviteMs) return;
 
     function reinitialiserMinuteur() {
       if (minuteurRef.current) clearTimeout(minuteurRef.current);
-      minuteurRef.current = setTimeout(() => setVerrouille(true), DELAI_INACTIVITE_MS);
+      minuteurRef.current = setTimeout(() => setVerrouille(true), delaiInactiviteMs);
     }
 
     reinitialiserMinuteur();
@@ -146,7 +176,7 @@ export function VerrouillageInactivite({
       if (minuteurRef.current) clearTimeout(minuteurRef.current);
       EVENEMENTS_ACTIVITE.forEach((evenement) => window.removeEventListener(evenement, reinitialiserMinuteur));
     };
-  }, [soumisAuVerrouillage]);
+  }, [delaiInactiviteMs]);
 
   if (!soumisAuVerrouillage) {
     return <>{children}</>;
