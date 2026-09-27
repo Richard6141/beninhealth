@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useActionState, useEffect, useTransition } from "react";
+import { useActionState, useCallback, useEffect, useState, useTransition } from "react";
 import {
+  getMesNotifications,
   marquerNotificationLueAction,
   marquerToutesLuesAction,
   type NotificationResume,
@@ -63,7 +64,7 @@ function grouperParJour(notifications: NotificationResume[]): GroupeJour[] {
   return groupes;
 }
 
-function LigneNotification({ notification }: { notification: NotificationResume }) {
+function LigneNotification({ notification, onLue }: { notification: NotificationResume; onLue: (id: string) => void }) {
   const router = useRouter();
   const [state, formAction, pending] = useActionState(marquerNotificationLueAction, {
     error: null,
@@ -72,9 +73,10 @@ function LigneNotification({ notification }: { notification: NotificationResume 
 
   useEffect(() => {
     if (state.success) {
+      onLue(notification.id);
       router.refresh();
     }
-  }, [state.success, router]);
+  }, [state.success, router, onLue, notification.id]);
 
   const contenu = (
     <div
@@ -117,21 +119,45 @@ function LigneNotification({ notification }: { notification: NotificationResume 
 }
 
 export function ListeNotifications({
-  notifications,
+  notifications: premierePage,
+  curseurInitial,
 }: {
   notifications: NotificationResume[];
+  curseurInitial: string | null;
 }) {
   const router = useRouter();
   const [enCours, demarrer] = useTransition();
+  // Pages plus anciennes chargees a la demande (F-NOT-01, curseur) ; la premiere page vient du serveur et se rafraichit avec lui.
+  const [plusAnciennes, setPlusAnciennes] = useState<NotificationResume[]>([]);
+  const [curseur, setCurseur] = useState<string | null>(curseurInitial);
+  const [luesLocalement, setLuesLocalement] = useState<ReadonlySet<string>>(new Set());
+  const [chargement, demarrerChargement] = useTransition();
+
+  const notifications = [...premierePage, ...plusAnciennes].map((notification) => (luesLocalement.has(notification.id) ? { ...notification, lu: true } : notification));
   const nombreNonLues = notifications.filter((n) => !n.lu).length;
   const groupes = grouperParJour(notifications);
 
   function marquerToutesLues() {
     demarrer(async () => {
       await marquerToutesLuesAction();
+      setLuesLocalement(new Set(notifications.map((notification) => notification.id)));
       router.refresh();
     });
   }
+
+  function chargerPlus() {
+    if (curseur === null) return;
+    demarrerChargement(async () => {
+      const page = await getMesNotifications(curseur);
+      setPlusAnciennes((precedentes) => [...precedentes, ...page.notifications]);
+      setCurseur(page.curseurSuivant);
+    });
+  }
+
+  // Identite stable : LigneNotification la met en dependance d'un effet.
+  const marquerLueLocalement = useCallback((id: string) => {
+    setLuesLocalement((precedentes) => new Set(precedentes).add(id));
+  }, []);
 
   return (
     <div className="flex flex-col gap-4">
@@ -154,11 +180,18 @@ export function ListeNotifications({
               {groupe.libelle}
             </p>
             {groupe.notifications.map((notification) => (
-              <LigneNotification key={notification.id} notification={notification} />
+              <LigneNotification key={notification.id} notification={notification} onLue={marquerLueLocalement} />
             ))}
           </div>
         ))}
       </div>
+      {curseur !== null ? (
+        <div className="flex justify-center">
+          <Button variant="secondary" size="sm" onClick={chargerPlus} disabled={chargement}>
+            {chargement ? "Chargement" : "Voir les notifications plus anciennes"}
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }

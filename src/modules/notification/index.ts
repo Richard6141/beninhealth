@@ -8,5 +8,6 @@ export {
   marquerNotificationLueAction,
   marquerToutesLuesAction,
   type NotificationResume,
+  type PageNotifications,
   type NotificationActionState,
 } from "./actions";

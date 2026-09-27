@@ -15,6 +15,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
+import { conditionEspace, espaceDesRoles, TAILLE_PAGE_NOTIFICATIONS } from "./espace-notification";
 
 export interface NotificationResume {
   id: string;
@@ -30,31 +31,49 @@ export interface NotificationActionState {
   success: boolean;
 }
 
-/** Notifications de l'utilisateur connecte, les plus recentes en premier. */
-export async function getMesNotifications(): Promise<NotificationResume[]> {
+export interface PageNotifications {
+  notifications: NotificationResume[];
+  /** A passer a l'appel suivant pour les notifications plus anciennes, null s'il n'y en a plus. */
+  curseurSuivant: string | null;
+}
+
+/**
+ * Notifications de l'utilisateur connecte DANS SON ESPACE ACTIF (F-NOT-01), les
+ * plus recentes en premier, par pages de TAILLE_PAGE_NOTIFICATIONS avec un
+ * curseur (l'identifiant de la derniere notification recue). Un curseur qui
+ * n'appartient pas a l'utilisateur ne donne rien : la requete reste bornee a
+ * ses propres notifications.
+ */
+export async function getMesNotifications(curseur?: string): Promise<PageNotifications> {
   const session = await getSession();
 
   if (!session) {
-    return [];
+    return { notifications: [], curseurSuivant: null };
   }
 
-  const notifications = await prisma.notification.findMany({
-    where: { utilisateurId: session.userId },
-    orderBy: { date: "desc" },
-    take: 50,
+  const debut = typeof curseur === "string" && curseur.length > 0 ? curseur : null;
+  const lignes = await prisma.notification.findMany({
+    where: { utilisateurId: session.userId, ...conditionEspace(espaceDesRoles(session.roles)) },
+    orderBy: [{ date: "desc" }, { id: "desc" }],
+    take: TAILLE_PAGE_NOTIFICATIONS + 1,
+    ...(debut ? { cursor: { id: debut }, skip: 1 } : {}),
   });
 
-  return notifications.map((notification) => ({
-    id: notification.id,
-    type: notification.type,
-    message: notification.message,
-    lien: notification.lien,
-    lu: notification.lu,
-    date: notification.date.toISOString(),
-  }));
+  const page = lignes.slice(0, TAILLE_PAGE_NOTIFICATIONS);
+  return {
+    notifications: page.map((notification) => ({
+      id: notification.id,
+      type: notification.type,
+      message: notification.message,
+      lien: notification.lien,
+      lu: notification.lu,
+      date: notification.date.toISOString(),
+    })),
+    curseurSuivant: lignes.length > TAILLE_PAGE_NOTIFICATIONS ? page[page.length - 1].id : null,
+  };
 }
 
-/** Nombre de notifications non lues de l'utilisateur connecte (0 si aucune session). */
+/** Nombre de notifications non lues de l'utilisateur connecte dans son espace actif (0 si aucune session). */
 export async function getNombreNotificationsNonLues(): Promise<number> {
   const session = await getSession();
 
@@ -63,7 +82,7 @@ export async function getNombreNotificationsNonLues(): Promise<number> {
   }
 
   return prisma.notification.count({
-    where: { utilisateurId: session.userId, lu: false },
+    where: { utilisateurId: session.userId, lu: false, ...conditionEspace(espaceDesRoles(session.roles)) },
   });
 }
 
@@ -104,7 +123,7 @@ export async function marquerNotificationLueAction(
   return { error: null, success: true };
 }
 
-/** Marque toutes les notifications de l'utilisateur connecte comme lues. */
+/** Marque comme lues toutes les notifications de l'utilisateur connecte dans son espace actif. */
 export async function marquerToutesLuesAction(): Promise<void> {
   const session = await getSession();
 
@@ -113,7 +132,7 @@ export async function marquerToutesLuesAction(): Promise<void> {
   }
 
   await prisma.notification.updateMany({
-    where: { utilisateurId: session.userId, lu: false },
+    where: { utilisateurId: session.userId, lu: false, ...conditionEspace(espaceDesRoles(session.roles)) },
     data: { lu: true },
   });
 }

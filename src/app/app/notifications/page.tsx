@@ -19,7 +19,7 @@ export default async function NotificationsPage() {
     redirect("/connexion");
   }
 
-  const notifications = await getMesNotifications();
+  const page = await getMesNotifications();
 
   return (
     <div className="conteneur-page mx-auto flex flex-col gap-8 px-4 py-8 sm:px-6">
@@ -44,12 +44,12 @@ export default async function NotificationsPage() {
       </header>
 
       <Card>
-        {notifications.length === 0 ? (
+        {page.notifications.length === 0 ? (
           <Alert level="info" title="Aucune notification">
             Vous n&apos;avez reçu aucune notification pour le moment.
           </Alert>
         ) : (
-          <ListeNotifications notifications={notifications} />
+          <ListeNotifications notifications={page.notifications} curseurInitial={page.curseurSuivant} />
         )}
       </Card>
     </div>
