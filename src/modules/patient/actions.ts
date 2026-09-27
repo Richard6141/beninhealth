@@ -22,6 +22,7 @@ import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
 import type { ContactUrgence, GroupeSanguin, NomRole, TypeAccesConsentement } from "@/types";
 import { calculerDateFinConsentement, DUREES_CONSENTEMENT_CONNUES } from "./consentement-durees";
+import { clesAuditDuPatient } from "./cles-audit-patient";
 
 /** Etat renvoye par chaque Server Action de ce module, consomme via useActionState. */
 export interface PatientActionState {
@@ -308,20 +309,7 @@ export async function getMesAccesDossier(): Promise<AccesDossier[]> {
     return [];
   }
 
-  const [consultations, prescriptions, examens, suivis] = await Promise.all([
-    prisma.consultation.findMany({ where: { patientId: patient.id }, select: { id: true } }),
-    prisma.prescription.findMany({ where: { patientId: patient.id }, select: { id: true } }),
-    prisma.examenMedical.findMany({ where: { patientId: patient.id }, select: { id: true } }),
-    prisma.suiviCommunautaire.findMany({ where: { patientId: patient.id }, select: { id: true } }),
-  ]);
-
-  const clesConcernees = [
-    `patient:${patient.id}`,
-    ...consultations.map((c) => `consultation:${c.id}`),
-    ...prescriptions.map((p) => `prescription:${p.id}`),
-    ...examens.map((e) => `examen_medical:${e.id}`),
-    ...suivis.map((s) => `suivi_communautaire:${s.id}`),
-  ];
+  const clesConcernees = await clesAuditDuPatient(patient.id);
 
   const entrees = await prisma.journalAudit.findMany({
     where: {

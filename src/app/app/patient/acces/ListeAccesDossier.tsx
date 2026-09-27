@@ -61,6 +61,26 @@ const LIBELLES_ACTION: Record<string, Record<string, string>> = {
     creation: "visite de suivi communautaire",
     consultation_historique_detail: "suivi communautaire (détail depuis l'historique)",
   },
+  document_medical: {
+    consultation_document_medical: "document médical (ouverture)",
+    ajout_document_medical: "document médical (ajout)",
+    retrait_document_medical: "document médical (retrait pour erreur)",
+  },
+  vaccination: {
+    creation_vaccination: "vaccination (enregistrement)",
+    retrait_vaccination: "vaccination (retrait pour erreur)",
+  },
+  prise_en_charge_infirmiere: {
+    creation_prise_en_charge_infirmiere: "prise en charge infirmière",
+  },
+  reference_patient: {
+    creation_reference_patient: "référence vers un autre établissement",
+    contre_reference_patient: "retour de référence",
+  },
+  delivrance: {
+    creation_delivrance: "délivrance de médicaments",
+    annulation_delivrance: "délivrance de médicaments (annulée)",
+  },
 };
 
 function libelleAcces(cible: string, action: string): string {
