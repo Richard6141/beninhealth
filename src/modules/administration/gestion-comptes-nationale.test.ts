@@ -5,6 +5,7 @@ vi.mock("@/lib/prisma", () => {
   const prisma = {
     user: { findUnique: vi.fn(), findMany: vi.fn(), count: vi.fn(), updateMany: vi.fn(), create: vi.fn() },
     sessionActive: { deleteMany: vi.fn() },
+    codeSecoursMfa: { deleteMany: vi.fn() },
     journalAudit: { findMany: vi.fn() },
     actionAdministrateurEnAttente: { create: vi.fn(), findUnique: vi.fn(), findMany: vi.fn(), count: vi.fn(), updateMany: vi.fn() },
     $transaction: vi.fn(),
@@ -36,6 +37,7 @@ import {
 const p = prisma as unknown as {
   user: { findUnique: Mock; findMany: Mock; count: Mock; updateMany: Mock; create: Mock };
   sessionActive: { deleteMany: Mock };
+  codeSecoursMfa: { deleteMany: Mock };
   journalAudit: { findMany: Mock };
   actionAdministrateurEnAttente: { create: Mock; findUnique: Mock; findMany: Mock; count: Mock; updateMany: Mock };
 };
@@ -337,6 +339,7 @@ describe("second facteur et reactivation", () => {
 
     expect(resultat.success).toBe(true);
     expect(p.user.updateMany).toHaveBeenCalledWith({ where: { id: "cible-1", mfaActif: true }, data: { mfaSecret: null, mfaActif: false } });
+    expect(p.codeSecoursMfa.deleteMany).toHaveBeenCalledWith({ where: { userId: "cible-1" } });
     expect(p.sessionActive.deleteMany).toHaveBeenCalledWith({ where: { userId: "cible-1" } });
     expect(creerNotificationMock).toHaveBeenCalledWith("cible-1", "second_facteur_reinitialise", expect.any(String), "/app/securite", { codeCatalogue: "N-2FA-RESET" });
   });

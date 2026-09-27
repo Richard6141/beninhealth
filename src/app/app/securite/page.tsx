@@ -38,7 +38,11 @@ export default async function SecuritePage() {
         title="Double authentification"
         description="Application d'authentification (TOTP), compatible Google Authenticator, Authy et équivalents."
       >
-        <GestionMfa actif={statutMfa?.actif ?? false} />
+        <GestionMfa
+          actif={statutMfa?.actif ?? false}
+          obligatoire={statutMfa?.obligatoire ?? false}
+          codesSecoursRestants={statutMfa?.codesSecoursRestants ?? 0}
+        />
       </Card>
 
       <Card

@@ -65,6 +65,7 @@ model User {
   codesVerificationEmail CodeVerificationEmail[]
   codesReinitialisationMotDePasse CodeReinitialisationMotDePasse[]
   sessionsActives SessionActive[]
+  codesSecoursMfa CodeSecoursMfa[]
   revuesAccesUrgence RevueAccesUrgence[]
   alertesRevues HealthAlertReview[]
   traitementsDemandesPersonnes TraitementDemandePersonne[]
@@ -1432,6 +1433,21 @@ model SessionActive {
   derniereActivite DateTime @default(now())
 
   @@index([userId])
+  @@schema("public")
+}
+
+// F-AUTH-06 (RG-AUTH-51) : codes de secours de la double authentification, dix par
+// compte, a usage unique. Seule l'empreinte HMAC est stockee, jamais le code.
+// utiliseLe est renseigne a la premiere utilisation (mise a jour conditionnelle).
+model CodeSecoursMfa {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  empreinte String
+  utiliseLe DateTime?
+  creeLe    DateTime  @default(now())
+
+  @@index([userId, empreinte])
   @@schema("public")
 }
 

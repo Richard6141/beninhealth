@@ -26,7 +26,7 @@ import { createSession, getSession, destroySession } from "@/lib/session";
 import { codeAfficheALEcran } from "@/lib/demo";
 import { getEnv } from "@/lib/env";
 import { televerserImageCloudinary } from "@/lib/cloudinary";
-import { verifierCodeMfaPourConnexion } from "@/modules/identity/mfa-totp";
+import { verifierSecondFacteur } from "@/modules/identity/mfa-totp";
 import {
   MESSAGE_TROP_DE_TENTATIVES,
   adresseDeLaRequete,
@@ -745,11 +745,16 @@ export async function verifierMfaEtConnecterAction(
     return { error: MESSAGE_TROP_DE_TENTATIVES };
   }
 
-  const codeValide = await verifierCodeMfaPourConnexion(userId, code);
+  const moyenSecondFacteur = await verifierSecondFacteur(userId, code);
 
-  if (!codeValide) {
+  if (!moyenSecondFacteur) {
     enregistrerEchecMfa(userId);
-    await journaliserEchecAuthentification(userId, "mfa_echec", await adresseDeLaRequete(), "Code TOTP incorrect.");
+    await journaliserEchecAuthentification(
+      userId,
+      "mfa_echec",
+      await adresseDeLaRequete(),
+      "Code de double authentification incorrect."
+    );
     return { error: MESSAGE_ERREUR_GENERIQUE };
   }
 
@@ -766,7 +771,13 @@ export async function verifierMfaEtConnecterAction(
     }
 
     roles = utilisateur.roles.map((role) => role.nom as NomRole);
-    await finaliserConnexion(userId, roles, "Connexion reussie (double authentification validee)");
+    await finaliserConnexion(
+      userId,
+      roles,
+      moyenSecondFacteur === "secours"
+        ? "Connexion reussie (code de secours de la double authentification utilise)"
+        : "Connexion reussie (double authentification validee)"
+    );
   } catch (erreur) {
     console.error("Erreur lors de la validation MFA :", erreur);
     return { error: MESSAGE_ERREUR_GENERIQUE };

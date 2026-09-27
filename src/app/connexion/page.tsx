@@ -27,7 +27,7 @@ function EtapeCodeMfa({ preAuthToken }: { preAuthToken: string }) {
   return (
     <Card
       title="Double authentification"
-      description="Saisissez le code a 6 chiffres genere par votre application d'authentification."
+      description="Saisissez le code à 6 chiffres de votre application d'authentification, ou un de vos codes de secours."
     >
       <form action={formAction} aria-busy={pending} className="flex flex-col gap-4">
         {state.error ? (
@@ -39,12 +39,11 @@ function EtapeCodeMfa({ preAuthToken }: { preAuthToken: string }) {
         <input type="hidden" name="preAuthToken" value={preAuthToken} />
 
         <TextField
-          label="Code de verification"
+          label="Code de vérification ou code de secours"
           name="code"
           type="text"
-          inputMode="numeric"
           autoComplete="one-time-code"
-          maxLength={6}
+          maxLength={11}
           required
           autoFocus
         />

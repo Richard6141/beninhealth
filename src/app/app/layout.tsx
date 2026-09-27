@@ -28,7 +28,7 @@ import {
   UserX,
 } from "lucide-react";
 import { redirect } from "next/navigation";
-import { getSession } from "@/lib/session";
+import { getSession, getSessionPourActivationMfa } from "@/lib/session";
 import { getMonProfil, logoutAction } from "@/modules/identity/actions";
 import { getNombreNotificationsNonLues } from "@/modules/notification/actions";
 import { estFonctionnaliteActive } from "@/modules/administration/parametres";
@@ -356,7 +356,10 @@ export default async function EspaceAuthentifieLayout({
   const session = await getSession();
 
   if (!session) {
-    redirect("/connexion");
+    // F-AUTH-06 (CA-1) : un compte dont le second facteur est obligatoire et
+    // pas encore active n'a acces a rien d'autre qu'a son activation.
+    const restreinte = await getSessionPourActivationMfa();
+    redirect(restreinte?.activationMfaRequise ? "/activation-mfa" : "/connexion");
   }
 
   // F-ADM-07 : etat des modules metier et du bandeau de demonstration, relu en base a chaque rendu (RG-ADM-50).

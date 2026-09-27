@@ -14,15 +14,17 @@ vi.mock("@/lib/prisma", () => ({
   prisma: {
     sessionActive: { findUnique: vi.fn(), update: vi.fn(), create: vi.fn(), delete: vi.fn() },
     user: { findUnique: vi.fn() },
+    fonctionnaliteActivable: { findUnique: vi.fn() },
   },
 }));
 
 import { prisma } from "@/lib/prisma";
-import { getSession } from "@/lib/session";
+import { getSession, getSessionPourActivationMfa } from "@/lib/session";
 
 const p = prisma as unknown as {
   sessionActive: { findUnique: Mock; update: Mock };
   user: { findUnique: Mock };
+  fonctionnaliteActivable: { findUnique: Mock };
 };
 
 async function jeton(charge: Record<string, unknown>): Promise<string> {
@@ -33,12 +35,12 @@ async function jeton(charge: Record<string, unknown>): Promise<string> {
     .sign(new TextEncoder().encode(process.env.NEXTAUTH_SECRET));
 }
 
-function sessionEnBase(statut: string, surcharges: Record<string, unknown> = {}) {
+function sessionEnBase(statut: string, surcharges: Record<string, unknown> = {}, mfaActif = true) {
   return {
     id: "sess-1",
     userId: "u-1",
     derniereActivite: new Date(),
-    user: { statut },
+    user: { statut, mfaActif },
     ...surcharges,
   };
 }
@@ -81,10 +83,10 @@ describe("getSession : le JWT ne suffit jamais, l'etat du compte compte", () => 
   it("un ancien JWT sans sessionId est aussi soumis a l'etat du compte", async () => {
     magasinCookies.get.mockReturnValue({ value: await jeton({ userId: "u-1", roles: ["patient"] }) });
 
-    p.user.findUnique.mockResolvedValue({ statut: "actif" });
+    p.user.findUnique.mockResolvedValue({ statut: "actif", mfaActif: false });
     expect(await getSession()).toEqual({ userId: "u-1", roles: ["patient"], sessionId: "" });
 
-    p.user.findUnique.mockResolvedValue({ statut: "suspendu" });
+    p.user.findUnique.mockResolvedValue({ statut: "suspendu", mfaActif: false });
     expect(await getSession()).toBeNull();
 
     p.user.findUnique.mockResolvedValue(null);
@@ -112,5 +114,64 @@ describe("getSession : le JWT ne suffit jamais, l'etat du compte compte", () => 
     p.sessionActive.findUnique.mockResolvedValue(sessionEnBase("actif", { derniereActivite: new Date(Date.now() - 10 * 60 * 1000) }));
     await getSession();
     expect(p.sessionActive.update).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("second facteur obligatoire (F-AUTH-06, CA-1)", () => {
+  async function ouvrirSession(roles: string[], mfaActif: boolean) {
+    magasinCookies.get.mockReturnValue({ value: await jeton({ userId: "u-1", roles, sessionId: "sess-1" }) });
+    p.sessionActive.findUnique.mockResolvedValue(sessionEnBase("actif", {}, mfaActif));
+  }
+
+  it("un medecin sans second facteur, drapeau actif : getSession refuse, l'activation reste possible", async () => {
+    await ouvrirSession(["medecin"], false);
+    p.fonctionnaliteActivable.findUnique.mockResolvedValue({ actif: true });
+
+    expect(await getSession()).toBeNull();
+    expect(await getSessionPourActivationMfa()).toEqual({
+      userId: "u-1",
+      roles: ["medecin"],
+      sessionId: "sess-1",
+      activationMfaRequise: true,
+    });
+  });
+
+  it("le meme medecin, drapeau inactif ou absent : session normale", async () => {
+    await ouvrirSession(["medecin"], false);
+    p.fonctionnaliteActivable.findUnique.mockResolvedValue({ actif: false });
+    expect(await getSession()).toEqual({ userId: "u-1", roles: ["medecin"], sessionId: "sess-1" });
+
+    p.fonctionnaliteActivable.findUnique.mockResolvedValue(null);
+    expect(await getSession()).toEqual({ userId: "u-1", roles: ["medecin"], sessionId: "sess-1" });
+  });
+
+  it("un medecin avec second facteur actif : session normale, le drapeau n'est meme pas lu", async () => {
+    await ouvrirSession(["medecin"], true);
+
+    expect(await getSession()).not.toBeNull();
+    expect(p.fonctionnaliteActivable.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("un patient n'est jamais concerne, drapeau actif ou non", async () => {
+    await ouvrirSession(["patient"], false);
+    p.fonctionnaliteActivable.findUnique.mockResolvedValue({ actif: true });
+
+    expect(await getSession()).toEqual({ userId: "u-1", roles: ["patient"], sessionId: "sess-1" });
+    expect(p.fonctionnaliteActivable.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("un compte patient et medecin est concerne (un role non patient suffit)", async () => {
+    await ouvrirSession(["patient", "medecin"], false);
+    p.fonctionnaliteActivable.findUnique.mockResolvedValue({ actif: true });
+
+    expect(await getSession()).toBeNull();
+  });
+
+  it("un compte suspendu reste refuse par les deux lectures", async () => {
+    magasinCookies.get.mockReturnValue({ value: await jeton({ userId: "u-1", roles: ["medecin"], sessionId: "sess-1" }) });
+    p.sessionActive.findUnique.mockResolvedValue(sessionEnBase("suspendu", {}, false));
+
+    expect(await getSession()).toBeNull();
+    expect(await getSessionPourActivationMfa()).toBeNull();
   });
 });

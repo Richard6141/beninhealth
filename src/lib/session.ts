@@ -40,6 +40,14 @@ export interface SessionPayload {
   sessionId: string;
 }
 
+/** Session ouverte mais restreinte a l'activation du second facteur (F-AUTH-06, CA-1) : getSession() renvoie null tant qu'il n'est pas active. */
+export interface SessionActivationMfa extends SessionPayload {
+  activationMfaRequise: boolean;
+}
+
+/** Cle du drapeau qui rend le second facteur obligatoire pour tous les roles sauf patient (F-AUTH-06). */
+const CLE_DRAPEAU_MFA_OBLIGATOIRE = "securite.mfa_obligatoire";
+
 const NOM_COOKIE_SESSION = "session";
 const DUREE_SESSION = "7d";
 const DUREE_SESSION_EN_SECONDES = 60 * 60 * 24 * 7;
@@ -131,13 +139,14 @@ export async function createSession(payload: { userId: string; roles: NomRole[] 
 }
 
 /**
- * Lit et verifie le cookie "session". Retourne le payload s'il est present
- * et valide ET que la SessionActive correspondante existe toujours (pas
- * fermee a distance), sinon null. Ne leve jamais d'exception. Memoise pour
- * la duree d'une requete (React cache) : plusieurs composants serveur
- * peuvent l'appeler sans multiplier les lectures en base.
+ * Lit et verifie le cookie "session". Retourne la session s'il est present et
+ * valide ET que la SessionActive correspondante existe toujours (pas fermee a
+ * distance), sinon null, avec un indicateur d'activation obligatoire du second
+ * facteur. Ne leve jamais d'exception. Memoise pour la duree d'une requete
+ * (React cache) : plusieurs composants serveur peuvent l'appeler sans
+ * multiplier les lectures en base.
  */
-export const getSession = cache(async (): Promise<SessionPayload | null> => {
+const lireSessionComplete = cache(async (): Promise<SessionActivationMfa | null> => {
   const magasinCookies = await cookies();
   const jeton = magasinCookies.get(NOM_COOKIE_SESSION)?.value;
 
@@ -159,35 +168,72 @@ export const getSession = cache(async (): Promise<SessionPayload | null> => {
     // fusionne) perd son acces a la requete suivante, sans attendre
     // l'expiration du JWT : la signature seule ne dit rien de l'etat du compte.
     let statutCompte: string | undefined;
+    let mfaActif = false;
 
     if (sessionId) {
       const sessionActive = await prisma.sessionActive.findUnique({
         where: { id: sessionId },
-        include: { user: { select: { statut: true } } },
+        include: { user: { select: { statut: true, mfaActif: true } } },
       });
       if (!sessionActive || sessionActive.userId !== payload.userId) {
         return null;
       }
       statutCompte = sessionActive.user.statut;
+      mfaActif = sessionActive.user.mfaActif;
       if (Date.now() - sessionActive.derniereActivite.getTime() > INTERVALLE_MISE_A_JOUR_ACTIVITE_MS) {
         await prisma.sessionActive
           .update({ where: { id: sessionId }, data: { derniereActivite: new Date() } })
           .catch(() => {});
       }
     } else {
-      const utilisateur = await prisma.user.findUnique({ where: { id: payload.userId }, select: { statut: true } });
+      const utilisateur = await prisma.user.findUnique({
+        where: { id: payload.userId },
+        select: { statut: true, mfaActif: true },
+      });
       statutCompte = utilisateur?.statut;
+      mfaActif = utilisateur?.mfaActif ?? false;
     }
 
     if (statutCompte !== "actif") {
       return null;
     }
 
-    return { userId: payload.userId, roles, sessionId };
+    // F-AUTH-06 (CA-1) : un compte non patient sans second facteur ne peut rien
+    // faire d'autre que l'activer, quand le drapeau est actif. La lecture du
+    // drapeau n'a lieu que pour ces comptes.
+    let activationMfaRequise = false;
+
+    if (!mfaActif && roles.some((role) => role !== "patient")) {
+      const drapeau = await prisma.fonctionnaliteActivable.findUnique({
+        where: { cle: CLE_DRAPEAU_MFA_OBLIGATOIRE },
+        select: { actif: true },
+      });
+      activationMfaRequise = drapeau?.actif === true;
+    }
+
+    return { userId: payload.userId, roles, sessionId, activationMfaRequise };
   } catch {
     return null;
   }
 });
+
+/** Session complete : null si absente, invalide, ou restreinte a l'activation du second facteur. */
+export const getSession = cache(async (): Promise<SessionPayload | null> => {
+  const session = await lireSessionComplete();
+
+  if (!session || session.activationMfaRequise) {
+    return null;
+  }
+
+  return { userId: session.userId, roles: session.roles, sessionId: session.sessionId };
+});
+
+/**
+ * Session valide, y compris celle qui ne peut qu'activer son second facteur.
+ * Reservee a l'ecran et aux actions d'activation (F-AUTH-06) : tout le reste
+ * de l'application passe par getSession().
+ */
+export const getSessionPourActivationMfa = lireSessionComplete;
 
 /** Supprime le cookie "session" (deconnexion) et la SessionActive correspondante. */
 export async function destroySession(): Promise<void> {

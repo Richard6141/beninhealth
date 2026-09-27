@@ -37,6 +37,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
 import { journaliser } from "@/modules/audit/journaliser";
+import { supprimerCodesSecours } from "@/modules/identity/codes-secours-mfa";
 import { creerNotification } from "@/modules/notification/creer";
 import { normaliserNumeroOrdre } from "@/modules/identity/identite-professionnelle";
 import {
@@ -382,6 +383,7 @@ async function executerAction(
       data: { mfaSecret: null, mfaActif: false },
     });
     if (modifies.count !== 1) throw new ErreurMetier("Ce compte n'a plus de second facteur actif.");
+    await supprimerCodesSecours(tx, cibleUserId);
     await tx.sessionActive.deleteMany({ where: { userId: cibleUserId } });
     await journaliser(
       {
