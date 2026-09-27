@@ -10,6 +10,7 @@ import type { BadgeTone } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { cn } from "@/lib/cn";
 import { Modal, type ModalHandle } from "@/components/ui/Modal";
+import { BoutonLibererExamen } from "./BoutonLibererExamen";
 import { FormulairePrelevement } from "./FormulairePrelevement";
 import { FormulaireResultat } from "./FormulaireResultat";
 import { SectionCorrectionValide } from "./FormulaireCorrectionValide";
@@ -294,6 +295,7 @@ function LigneExamen({
         <div className="flex flex-wrap justify-end gap-2">
           <FormulairePrelevement examen={examen} />
           {peutSaisir ? <FormulaireResultat examen={examen} /> : null}
+          <BoutonLibererExamen examen={examen} />
         </div>
 
         <Modal ref={detailsModalRef} icon={ClipboardList} title="Détails de l'examen">

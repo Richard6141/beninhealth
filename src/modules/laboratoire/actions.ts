@@ -87,6 +87,9 @@ export interface ExamenResume {
   // F-LAB-01 : numero de demande LB-XXXX-XXXX, null pour un examen cree avant
   // l'introduction de cette colonne.
   numero: string | null;
+  // F-CIT-03 : consultation d'origine, pour relier "analyses demandees" au
+  // detail de la consultation cote patient (null si demande hors consultation).
+  consultationId: string | null;
   typeExamen: string;
   date: string; // ISO
   statut: string;
@@ -220,6 +223,12 @@ const schemaAnnulationExamen = z.object({
     .min(5, "Le motif d'annulation est obligatoire (5 caracteres minimum).")
     .max(300, "Le motif ne peut pas depasser 300 caracteres."),
 });
+
+// F-LAB-06 : "liberer" une demande prise par erreur, avant tout prelevement
+// (jamais "en_cours", a la difference de l'annulation par le medecin
+// demandeur ci-dessus). Meme forme que schemaAnnulationExamen (examenId +
+// motif, memes bornes) : reutilisee telle quelle, pas de duplication.
+const schemaLiberationExamen = schemaAnnulationExamen;
 
 const schemaValidationResultat = z.object({
   examenId: z.string().trim().min(1, "L'examen est obligatoire."),
@@ -362,6 +371,7 @@ function versExamenResume(
   examen: {
     id: string;
     numero: string | null;
+    consultationId: string | null;
     typeExamen: string;
     date: Date;
     statut: string;
@@ -396,6 +406,7 @@ function versExamenResume(
   return {
     id: examen.id,
     numero: examen.numero,
+    consultationId: examen.consultationId,
     typeExamen: examen.typeExamen,
     date: examen.date.toISOString(),
     statut: examen.statut,
@@ -753,6 +764,126 @@ export async function annulerExamenAction(
     console.error("Erreur lors de l'annulation de l'examen :", erreur);
     return {
       error: "Une erreur est survenue lors de l'annulation de l'examen. Veuillez reessayer.",
+      success: false,
+    };
+  }
+}
+
+/**
+ * F-LAB-06 du pack, second volet : "Un laboratoire peut liberer une demande
+ * 'au choix du patient' qu'il a prise par erreur (motif) avant prelevement."
+ *
+ * Limite assumee : ce depot n'a pas de demande non assignee "au choix du
+ * patient" que plusieurs laboratoires pourraient voir et prendre -
+ * ExamenMedical.laboratoireId est obligatoire et fixe par le medecin
+ * demandeur a la creation (demanderExamenAction), aucun mecanisme de
+ * reassignation a un autre laboratoire. La liberation devient donc : le
+ * laboratoire assigne refuse la demande avant tout prelevement (motif
+ * obligatoire), ce qui notifie le patient ET le medecin demandeur (qui doit
+ * refaire la demande avec un autre laboratoire) - a la difference de
+ * annulerExamenAction ci-dessus, ou seul le laboratoire (deja informe par
+ * l'annulation elle-meme) a besoin d'etre notifie en plus du patient.
+ *
+ * Reutilise le statut "annule" existant (deja exclu de tous les tableaux de
+ * bord actifs cote medecin/laboratoire/patient) plutot qu'une nouvelle
+ * valeur : distingue par le nom de l'action du JournalAudit et le texte des
+ * notifications, pas par une colonne ou une migration supplementaire.
+ *
+ * Reserve au laboratoire auquel la demande est assignee (Zero Trust : jamais
+ * confiance en l'id transmis sans verification de rattachement, meme
+ * principe que enregistrerPrelevementAction) ; refuse des que le
+ * prelevement a eu lieu (statut different de "demande"), pour ne jamais
+ * annuler un echantillon deja recu.
+ */
+export async function libererExamenAction(
+  prevState: LaboratoireActionState,
+  formData: FormData
+): Promise<LaboratoireActionState> {
+  const session = await getSession();
+
+  if (!session) {
+    return { error: "Session expiree. Veuillez vous reconnecter.", success: false };
+  }
+
+  if (!session.roles.some((role) => can(role, "update", "examen_medical"))) {
+    return { error: "Action reservee au role laboratoire.", success: false };
+  }
+
+  const validation = schemaLiberationExamen.safeParse({
+    examenId: texte(formData, "examenId"),
+    motif: texte(formData, "motif"),
+  });
+
+  if (!validation.success) {
+    return {
+      error: premierMessageErreur(validation.error, "Examen invalide."),
+      success: false,
+    };
+  }
+
+  const { examenId, motif } = validation.data;
+
+  try {
+    const professionnel = await prisma.professionnelSante.findUnique({
+      where: { userId: session.userId },
+    });
+
+    if (!professionnel) {
+      return { error: "Aucun profil professionnel associe a ce compte.", success: false };
+    }
+
+    const examen = await prisma.examenMedical.findUnique({
+      where: { id: examenId },
+      include: { patient: { select: { userId: true } }, demandeur: { select: { userId: true } } },
+    });
+
+    if (!examen || examen.laboratoireId !== professionnel.etablissementId) {
+      return { error: "Cet examen est introuvable.", success: false };
+    }
+
+    if (examen.statut !== "demande") {
+      return {
+        error: "Cette demande a deja ete prelevee, elle ne peut plus etre liberee.",
+        success: false,
+      };
+    }
+
+    const adresseTechnique = await adresseTechniqueCourante();
+
+    await prisma.$transaction([
+      prisma.examenMedical.update({ where: { id: examen.id }, data: { statut: "annule" } }),
+      journaliser({
+        utilisateurId: session.userId,
+        action: "liberation_examen_laboratoire",
+        donneeConcernee: `examen_medical:${examen.id}`,
+        adresseTechnique,
+        justification: `Demande liberee par le laboratoire avant prelevement. Motif : ${motif}`,
+      }),
+    ]);
+
+    // Notifications hors transaction (une notification manquee ne doit pas
+    // defaire la liberation), jamais le type d'examen en clair (RG-LAB-42).
+    await Promise.all([
+      creerNotification(
+        examen.patient.userId,
+        "examen_annule",
+        "Une demande d'examen vous concernant a ete liberee par le laboratoire. Veuillez la refaire avec un autre laboratoire.",
+        "/app/patient/examens",
+        { codeCatalogue: "N-LAB-CANCELLED" }
+      ),
+      creerNotification(
+        examen.demandeur.userId,
+        "examen_annule",
+        `Une demande d'examen a ete liberee par le laboratoire avant prelevement. Motif : ${motif}`,
+        "/app/medecin/examens"
+      ),
+    ]);
+
+    return { error: null, success: true };
+  } catch (erreur) {
+    console.error("Erreur lors de la liberation de l'examen :", erreur);
+    return {
+      error: "Une erreur est survenue lors de la liberation de l'examen. Veuillez reessayer.",
       success: false,
     };
   }
