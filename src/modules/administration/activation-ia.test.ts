@@ -103,6 +103,15 @@ describe("activation du resume IA subordonnee au jeu d'evaluation (RG-IA-20)", (
     expect(p.fonctionnaliteActivable.update).not.toHaveBeenCalled();
   });
 
+  it("l'analyse assistee s'active avec son propre jeu d'evaluation", async () => {
+    p.fonctionnaliteActivable.findUniqueOrThrow.mockResolvedValue({ cle: "ai.analytics", actif: false });
+
+    const resultat = await basculerFonctionnaliteAction(etatInitial, formulaire("ai.analytics"));
+
+    expect(resultat).toEqual({ error: null, success: true });
+    expect(p.fonctionnaliteActivable.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ actif: true }) }));
+  });
+
   it("les autres fonctionnalites ne passent jamais par le jeu d'evaluation", async () => {
     process.env.IA_FOURNISSEUR = "desactive";
     p.fonctionnaliteActivable.findUniqueOrThrow.mockResolvedValue({ cle: "demo.banner", actif: false });

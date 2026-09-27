@@ -16,16 +16,17 @@ import { nomFournisseurConfigure } from "./configuration";
 import { evaluerToutesLesFonctionnalitesIa } from "./evaluation";
 import { FICHES_IA, type FicheIa } from "./fiches";
 import type { EchecEvaluation } from "./jeu-evaluation";
-import { FONCTIONNALITE_ASSISTANT, FONCTIONNALITE_RESUME, statistiquesAppelsIa, type StatistiquesIa } from "./journal";
+import { FONCTIONNALITE_ANALYSE, FONCTIONNALITE_ASSISTANT, FONCTIONNALITE_RESUME, statistiquesAppelsIa, type StatistiquesIa } from "./journal";
 import { VERSION_CONSIGNE_RESUME } from "./regles";
 import { VERSION_BASE_ASSISTANT } from "./assistant";
 
 const JOURS_SUIVI = 30;
 const ACTION_EVALUATION = "evaluation_ia_rejouee";
-const CLES_IA = ["ai.summary", "ai.citizen_assistant"] as const;
+const CLES_IA = ["ai.summary", "ai.citizen_assistant", "ai.analytics"] as const;
 const DESCRIPTIONS_IA: Record<(typeof CLES_IA)[number], string> = {
   "ai.summary": "Resume automatique par IA d'un dossier ou d'une consultation.",
   "ai.citizen_assistant": "Assistant conversationnel IA pour le citoyen.",
+  "ai.analytics": "Analyse assistee des tendances et des valeurs atypiques sur les agregats de pilotage (F-IA-04), signaux statistiques a verifier.",
 };
 
 export interface FonctionnaliteIaVue {
@@ -39,6 +40,7 @@ export interface GouvernanceIa {
   fiches: FicheIa[];
   statistiques: StatistiquesIa;
   statistiquesAssistant: StatistiquesIa;
+  statistiquesAnalyse: StatistiquesIa;
   joursSuivi: number;
   derniereEvaluation: { date: string; conformes: number; total: number } | null;
 }
@@ -63,10 +65,11 @@ export async function getGouvernanceIa(): Promise<GouvernanceIa | null> {
   if (!(await obtenirSessionGouvernance("read"))) return null;
 
   const depuis = new Date(Date.now() - JOURS_SUIVI * 24 * 60 * 60 * 1000);
-  const [lignes, statistiques, statistiquesAssistant, derniere] = await Promise.all([
+  const [lignes, statistiques, statistiquesAssistant, statistiquesAnalyse, derniere] = await Promise.all([
     prisma.fonctionnaliteActivable.findMany({ where: { cle: { in: [...CLES_IA] } }, select: { cle: true, actif: true } }),
     statistiquesAppelsIa(FONCTIONNALITE_RESUME, depuis),
     statistiquesAppelsIa(FONCTIONNALITE_ASSISTANT, depuis),
+    statistiquesAppelsIa(FONCTIONNALITE_ANALYSE, depuis),
     prisma.journalAudit.findFirst({ where: { action: ACTION_EVALUATION }, orderBy: { date: "desc" }, select: { date: true, justification: true } }),
   ]);
 
@@ -79,6 +82,7 @@ export async function getGouvernanceIa(): Promise<GouvernanceIa | null> {
     fiches: [...FICHES_IA],
     statistiques,
     statistiquesAssistant,
+    statistiquesAnalyse,
     joursSuivi: JOURS_SUIVI,
     derniereEvaluation:
       derniere && correspondance ? { date: derniere.date.toISOString(), conformes: Number(correspondance[1]), total: Number(correspondance[2]) } : null,
@@ -95,7 +99,7 @@ export interface EvaluationIaEtat {
 
 const ETAT_EVALUATION_VIDE: EvaluationIaEtat = { error: null, success: false, conformes: 0, total: 0, echecs: [] };
 
-/** Rejoue les jeux d'evaluation (20 dossiers fictifs du resume, questions de l'assistant) avec le fournisseur et la base actuels (RG-IA-20). */
+/** Rejoue les jeux d'evaluation (dossiers fictifs du resume, questions de l'assistant, series de l'analyse) avec le fournisseur, la base et les seuils actuels (RG-IA-20). */
 export async function rejouerJeuEvaluationAction(): Promise<EvaluationIaEtat> {
   const session = await obtenirSessionGouvernance("update");
   if (!session) return { ...ETAT_EVALUATION_VIDE, error: "Action réservée à l'administration nationale." };

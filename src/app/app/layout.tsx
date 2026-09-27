@@ -26,6 +26,7 @@ import {
   ShieldCheck,
   Stethoscope,
   Sparkles,
+  TrendingUp,
   UserCog,
   Users,
   UserX,
@@ -334,6 +335,11 @@ const navigationAdminNational: ElementNavigation[] = [
     label: "Paramètres",
     href: "/app/ministere/parametres",
     icon: <Settings size={tailleIconeNav} aria-hidden="true" />,
+  },
+  {
+    label: "Analyses assistées",
+    href: "/app/ministere/analyses",
+    icon: <TrendingUp size={tailleIconeNav} aria-hidden="true" />,
   },
   {
     label: "Gouvernance de l'IA",

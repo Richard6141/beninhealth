@@ -10,6 +10,7 @@ import { JOURS_CONSERVATION_COMMENTAIRE_RETOUR } from "./regles";
 
 export const FONCTIONNALITE_RESUME = "resume_dossier";
 export const FONCTIONNALITE_ASSISTANT = "assistant_citoyen";
+export const FONCTIONNALITE_ANALYSE = "analyse_agregats";
 
 const UNE_HEURE_MS = 60 * 60 * 1000;
 const UN_JOUR_MS = 24 * 60 * 60 * 1000;

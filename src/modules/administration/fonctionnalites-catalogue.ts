@@ -10,6 +10,7 @@
 export const CLES_FONCTIONNALITES = [
   "ai.summary",
   "ai.citizen_assistant",
+  "ai.analytics",
   "sms.real_provider",
   "pharmacy.module",
   "lab.module",
@@ -34,6 +35,7 @@ export type CleFonctionnalite = (typeof CLES_FONCTIONNALITES)[number];
 export const ACTIVE_PAR_DEFAUT: Record<CleFonctionnalite, boolean> = {
   "ai.summary": false,
   "ai.citizen_assistant": false,
+  "ai.analytics": false,
   "sms.real_provider": false,
   "pharmacy.module": true,
   "lab.module": true,
@@ -48,6 +50,7 @@ export const ACTIVE_PAR_DEFAUT: Record<CleFonctionnalite, boolean> = {
 export const DESCRIPTIONS_FONCTIONNALITES: Record<CleFonctionnalite, string> = {
   "ai.summary": "Resume automatique par IA d'un dossier ou d'une consultation.",
   "ai.citizen_assistant": "Assistant conversationnel IA pour le citoyen.",
+  "ai.analytics": "Analyse assistee des tendances et des valeurs atypiques sur les agregats de pilotage (F-IA-04), signaux statistiques a verifier.",
   "sms.real_provider": "Envoi de SMS reels (passerelle operateur), au lieu du canal de notification interne uniquement.",
   "pharmacy.module": "Module pharmacie (delivrance des prescriptions).",
   "lab.module": "Module laboratoire (examens medicaux).",

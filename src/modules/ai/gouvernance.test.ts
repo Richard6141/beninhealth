@@ -72,11 +72,13 @@ describe("getGouvernanceIa", () => {
     expect(gouvernance?.fonctionnalites).toEqual([
       { cle: "ai.summary", actif: false },
       { cle: "ai.citizen_assistant", actif: false },
+      { cle: "ai.analytics", actif: false },
     ]);
     expect(gouvernance?.fournisseur).toBe("regles_locales");
     expect(gouvernance?.fiches.length).toBeGreaterThan(0);
     expect(gouvernance?.statistiques.appels).toBe(0);
     expect(gouvernance?.statistiquesAssistant.appels).toBe(0);
+    expect(gouvernance?.statistiquesAnalyse.appels).toBe(0);
     expect(gouvernance?.derniereEvaluation).toBeNull();
   });
 
@@ -117,16 +119,16 @@ describe("rejouerJeuEvaluationAction (RG-IA-20)", () => {
 });
 
 describe("desactiverIaAction (RG-IA-02)", () => {
-  it("force les deux fonctionnalites a desactive (jamais une bascule) et journalise", async () => {
+  it("force les trois fonctionnalites a desactive (jamais une bascule) et journalise", async () => {
     const resultat = await desactiverIaAction();
 
     expect(resultat).toEqual({ error: null, success: true });
-    expect(p.fonctionnaliteActivable.upsert).toHaveBeenCalledTimes(2);
+    expect(p.fonctionnaliteActivable.upsert).toHaveBeenCalledTimes(3);
     for (const appel of p.fonctionnaliteActivable.upsert.mock.calls) {
       expect(appel[0].update).toMatchObject({ actif: false });
       expect(appel[0].create).toMatchObject({ actif: false });
     }
-    expect(p.fonctionnaliteActivable.upsert.mock.calls.map((appel) => appel[0].where.cle).sort()).toEqual(["ai.citizen_assistant", "ai.summary"]);
+    expect(p.fonctionnaliteActivable.upsert.mock.calls.map((appel) => appel[0].where.cle).sort()).toEqual(["ai.analytics", "ai.citizen_assistant", "ai.summary"]);
     expect(journaliserMock).toHaveBeenCalledWith(expect.objectContaining({ action: "desactivation_ia", utilisateurId: "u-admin" }), expect.anything());
   });
 

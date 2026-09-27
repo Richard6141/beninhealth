@@ -37,7 +37,7 @@ export default async function GouvernanceIaPage() {
     );
   }
 
-  const { statistiques, statistiquesAssistant } = gouvernance;
+  const { statistiques, statistiquesAssistant, statistiquesAnalyse } = gouvernance;
   const iaActive = gouvernance.fonctionnalites.some((fonctionnalite) => fonctionnalite.actif);
 
   return (
@@ -134,6 +134,24 @@ export default async function GouvernanceIaPage() {
           <Card description="Sans réponse">
             <p className="text-[28px] font-bold text-encre">{statistiquesAssistant.sansReponse}</p>
             <p className="text-[13px] text-encre-secondaire">Sujets à ajouter à la base validée.</p>
+          </Card>
+        </div>
+      </section>
+
+      <section aria-labelledby="titre-suivi-analyse" className="flex flex-col gap-4">
+        <h2 id="titre-suivi-analyse" className="text-[20px] font-bold text-encre">
+          Suivi des analyses assistées ({gouvernance.joursSuivi} derniers jours)
+        </h2>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Card description="Analyses lancées">
+            <p className="text-[28px] font-bold text-encre">{statistiquesAnalyse.appels}</p>
+          </Card>
+          <Card description="Signaux produits">
+            <p className="text-[28px] font-bold text-encre">{statistiquesAnalyse.pucesLues}</p>
+            <p className="text-[13px] text-encre-secondaire">Constats statistiques à vérifier, jamais des conclusions.</p>
+          </Card>
+          <Card description="Temps de calcul moyen">
+            <p className="text-[28px] font-bold text-encre">{statistiquesAnalyse.dureeMoyenneMs === null ? "aucune donnée" : `${statistiquesAnalyse.dureeMoyenneMs} ms`}</p>
           </Card>
         </div>
       </section>

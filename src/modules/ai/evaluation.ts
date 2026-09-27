@@ -7,9 +7,10 @@
 
 import { fournisseurConfigure } from "./configuration";
 import { executerJeuEvaluation, type EchecEvaluation } from "./jeu-evaluation";
+import { executerJeuAnalyse } from "./jeu-evaluation-analyse";
 import { executerJeuAssistant } from "./jeu-evaluation-assistant";
 
-export type CleFonctionnaliteIa = "ai.summary" | "ai.citizen_assistant";
+export type CleFonctionnaliteIa = "ai.summary" | "ai.citizen_assistant" | "ai.analytics";
 
 export interface BilanEvaluation {
   conformes: number;
@@ -18,7 +19,7 @@ export interface BilanEvaluation {
 }
 
 export function estFonctionnaliteIa(cle: string): cle is CleFonctionnaliteIa {
-  return cle === "ai.summary" || cle === "ai.citizen_assistant";
+  return cle === "ai.summary" || cle === "ai.citizen_assistant" || cle === "ai.analytics";
 }
 
 async function evaluerResume(): Promise<BilanEvaluation> {
@@ -35,16 +36,27 @@ async function evaluerAssistant(): Promise<BilanEvaluation> {
   };
 }
 
-export async function evaluerFonctionnaliteIa(cle: CleFonctionnaliteIa): Promise<BilanEvaluation> {
-  return cle === "ai.summary" ? evaluerResume() : evaluerAssistant();
+async function evaluerAnalyse(): Promise<BilanEvaluation> {
+  const resultat = executerJeuAnalyse();
+  return {
+    conformes: resultat.conformes,
+    total: resultat.total,
+    echecs: resultat.echecs.map((echec) => ({ dossier: `Analyse : ${echec.cas}`, regle: "attendu" as const, detail: `${echec.regle} : ${echec.detail}` })),
+  };
 }
 
-/** Les deux jeux, additionnes (ecran de gouvernance). */
+export async function evaluerFonctionnaliteIa(cle: CleFonctionnaliteIa): Promise<BilanEvaluation> {
+  if (cle === "ai.summary") return evaluerResume();
+  if (cle === "ai.citizen_assistant") return evaluerAssistant();
+  return evaluerAnalyse();
+}
+
+/** Les trois jeux, additionnes (ecran de gouvernance). */
 export async function evaluerToutesLesFonctionnalitesIa(): Promise<BilanEvaluation> {
-  const [resume, assistant] = await Promise.all([evaluerResume(), evaluerAssistant()]);
+  const [resume, assistant, analyse] = await Promise.all([evaluerResume(), evaluerAssistant(), evaluerAnalyse()]);
   return {
-    conformes: resume.conformes + assistant.conformes,
-    total: resume.total + assistant.total,
-    echecs: [...resume.echecs, ...assistant.echecs],
+    conformes: resume.conformes + assistant.conformes + analyse.conformes,
+    total: resume.total + assistant.total + analyse.total,
+    echecs: [...resume.echecs, ...assistant.echecs, ...analyse.echecs],
   };
 }

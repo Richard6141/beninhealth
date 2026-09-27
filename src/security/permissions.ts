@@ -282,6 +282,9 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     // patient : seuls des compteurs et des taux sont lus.
     'read:gouvernance_ia',
     'update:gouvernance_ia',
+    // F-IA-04 : analyse assistee des agregats de pilotage (tendances, valeurs
+    // atypiques), voir src/modules/ai/analyse-lecture.ts. Agregats seulement.
+    'read:analyse_agregats',
   ]),
 };
 

@@ -7,6 +7,7 @@
 
 import type { CleFonctionnalite } from "@/modules/administration/fonctionnalites-catalogue";
 import { LIMITE_QUESTIONS_PAR_HEURE, VERSION_BASE_ASSISTANT } from "./assistant";
+import { EXPLICATION_METHODE, VERSION_METHODE_ANALYSE } from "./regles-analyse";
 import { CONSIGNE_SYSTEME_RESUME, LIMITE_RESUMES_PAR_HEURE, MOIS_HISTORIQUE_RESUME, NOMBRE_MAX_PUCES, VERSION_CONSIGNE_RESUME } from "./regles";
 
 export interface FicheIa {
@@ -83,6 +84,31 @@ export const FICHES_IA: readonly FicheIa[] = [
       "La détection des questions de santé est volontairement large : en cas de doute, la réponse fixe est donnée, même pour une question pratique qui cite un symptôme.",
       `Limite d'usage : ${LIMITE_QUESTIONS_PAR_HEURE} questions par heure et par utilisateur.`,
       "Les horaires, les tarifs et la disponibilité des médicaments ne figurent pas dans la base : l'assistant ne les invente pas.",
+    ],
+  },
+  {
+    id: "analyse_agregats",
+    titre: "Analyse des tendances et valeurs atypiques",
+    fiche: "F-IA-04",
+    cleFonctionnalite: "ai.analytics",
+    objectif:
+      "Aider l'administration nationale à repérer un pic, une chute ou une tendance dans les indicateurs de pilotage, avec l'explication du calcul. " +
+      "Chaque signal est un constat statistique à vérifier : il ne déclenche aucune communication et complète les alertes épidémiologiques de F-PIL-06.",
+    donneesUtilisees: [
+      "Les agrégats quotidiens de pilotage (AgregatQuotidien), sommés par département et par semaine, sur les 12 dernières semaines complètes",
+      "Les indicateurs comparables de la fiche F-PIL-04 : consultations, patients vus, paludisme, prises en charge, prescriptions signées, vaccinations",
+    ],
+    donneesExclues: [
+      "Toute donnée individuelle : ni consultation, ni dossier, ni identifiant de patient n'est lu",
+      "Toute valeur de 1 à 4, jamais affichée (RG-PIL-02) ; un score exact n'est pas donné quand une valeur de comparaison est masquée",
+    ],
+    versionConsigne: VERSION_METHODE_ANALYSE,
+    consigne: EXPLICATION_METHODE.join("\n"),
+    limites: [
+      "Statistiques simples sans modèle : elles signalent un écart par rapport aux semaines précédentes, pas une cause. Une hausse peut venir d'une meilleure saisie, une chute d'un retard de saisie.",
+      "Avec moins de 6 semaines d'historique, aucune conclusion n'est tirée : sur une base de démonstration récente, la liste peut être vide.",
+      "Seuils fixes (écart de 3, 30 % de variation, 10 unités minimum), non paramétrables à ce jour.",
+      "Un signal par série au plus pour l'écart de la dernière semaine, un pour la tendance ; la liste est limitée à 30 signaux.",
     ],
   },
 ];
