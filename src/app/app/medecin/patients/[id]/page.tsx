@@ -111,6 +111,13 @@ export default async function PatientDetailPage({ params }: PatientDetailPagePro
         </div>
       ) : null}
 
+      {resume.elementsSensiblesMasques ? (
+        <div className="flex items-center gap-2 rounded-champ border border-vigilance bg-vigilance-clair px-4 py-3 text-[14px] font-semibold text-encre">
+          <ShieldAlert size={18} aria-hidden="true" />
+          Ce résumé est incomplet : des éléments sensibles du dossier ne sont pas affichés avec cet accès.
+        </div>
+      ) : null}
+
       <header className="flex flex-col gap-6 rounded-carte border border-bordure bg-surface px-6 py-6 shadow-[var(--ombre-carte)] sm:flex-row sm:items-start sm:justify-between sm:px-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
           <Avatar name={resume.nomComplet} avatarUrl={resume.avatarUrl} size={72} />
