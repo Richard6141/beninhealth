@@ -4404,27 +4404,52 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   surtout sur une session aussi longue avec plusieurs redemarrages de contexte.
 - Zero trace "lannkin", zero tiret cadratin/demi-cadratin dans le diff pousse (scan systematique).
 
-### Point projet-gouv-46 (Claude), prise F-CIT-06, 2026-09-27
+### Point projet-gouv-bd, F-COM-03 : signes de danger et reference communautaire, 2026-09-27
 
-- Assignation recue de 89 (fiche libre du tableau). Perimetre annonce dans la ligne du tableau,
-  verifie contre le code actuel avant de commencer : PDF d'ordonnance par jeton 60 s deja conforme
-  (rien a refaire) ; il manque le QR d'ordonnance a l'ecran, le resultat d'examen affiche en texte
-  seul (pas de valeur/unite/normes/indicateur ni la mention "Discutez..."), et un ecran documents
-  avec une URL de 60 s a usage unique (RG-CIT-50).
-- Je prends dans cet ordre : (1) resultat structure cote patient (app/patient/examens/page.tsx),
-  qui s'appuie sur resultatsParametres deja rempli par le laboratoire (F-LAB-03, code/libelle/
-  unite/valeur/indicateur) et sur referentiel-parametres-examens.ts (deja en place) pour la plage
-  normale a afficher, jamais recalcule cote client ; (2) ecran documents + jeton 60 s, meme patron
-  que prescription/jetons-telechargement.ts. Le QR a l'ecran (3) reste pour une session suivante
-  si le temps manque : deja documente comme manquant, aucune regression a craindre a le laisser tel quel.
-- Trouve en cours de lecture, hors de la liste ci-dessus mais touchant directement RG-CIT-20 (fuite
-  potentielle a corriger dans le meme lot) : getMesExamens() masque deja resultat/dateResultat quand
-  l'examen n'est pas termine ou est sensible non annonce, mais PAS resultatsParametres, qui reste
-  rempli dans l'objet retourne. Sans consequence tant que l'ecran ne lisait que resultat (texte),
-  mais deviendrait une fuite reelle au moment ou l'ecran lit resultatsParametres. Corrige dans le
-  meme commit que l'affichage structure, jamais separement (le gain n'existerait pas sans le risque).
-- Fichiers que je vais toucher : src/modules/laboratoire/{actions.ts,referentiel-parametres-examens.ts},
-  src/app/app/patient/examens/page.tsx, puis un nouveau module documents patient (chemin exact a
-  confirmer selon l'existant) et sa route de telechargement. Coordonnees avant de coder sur des
-  fichiers deja vus modifies par un pair ce soir : verifie, aucun des fichiers ci-dessus n'apparait
-  dans les chantiers actifs signales par 8c/bd/89 a cette heure.
+- Assigne par 89 (file precedente vide). F-COM-02 : doublon garde volontairement par egalite
+  exacte (decision deja assumee dans le depot, F-CLI-03/F-ADM-06, coherente avec l'absence
+  d'infrastructure hors ligne, F-COM-01/08 non tentes ce soir comme convenu). Village/quartier
+  reste en texte libre (aucun referentiel geographique a cette granularite).
+- F-COM-03 : 5 types de visite du pack ajoutes (suivi general, enfant moins de 5 ans, femme
+  enceinte, suivi apres sortie, sensibilisation), vaccination/depistage/autre/suivi_grossesse
+  conserves (compatibilite F-COM-04 et visites deja enregistrees). Signes de danger structures en
+  referentiel versionne (RG-COM-10, `SigneDangerCommunautaire`, depart repris des exemples du
+  pack). Un signe coche cree une `ReferenceCommunautaire` (RG-COM-11 : jamais de diagnostic ni de
+  traitement), affiche "Referer immediatement au centre de sante", visible et marquable "vue" par
+  le medecin/infirmier/admin_etablissement du meme etablissement (nouvel ecran
+  `/app/medecin/communautaire/references`).
+- Migration `20260927180000_reference_communautaire` appliquee, client Prisma regenere (DLL
+  renommee), serveur de dev partage redemarre (accord de 89 obtenu avant coupure).
+- Incident evite avant qu'il ne se produise : mon commit precedent (prise de tache) a failli
+  regresser F-PRE-04 dans reste-a-faire.md (index perime relu sans le reverifier juste avant de
+  committer) ; repere immediatement au diff post-commit, corrige par un commit correctif separe
+  (`fix(docs): restaure la ligne F-PRE-04...`) avant de continuer. Lecon deja notee par d'autres
+  plus haut dans ce fichier, reconfirmee : toujours relire `git diff --cached --name-only` ET le
+  contenu du diff juste avant de committer, jamais seulement juste avant de commencer a coder.
+- Bug reel trouve et corrige en marge : un `<select required>` (choix du beneficiaire, premiere
+  option intentionnellement de valeur vide "Saisir un nom") bloquait silencieusement toute
+  soumission native du formulaire des que celui-ci est repasse en soumission manuelle (voir le
+  commentaire ci-dessous) : un select required avec une valeur vide selectionnee est invalide au
+  sens HTML5, le navigateur bloque l'evenement submit avant meme que React ne le voie. Retire
+  (validation deja assuree cote serveur).
+- Meme constat que pour F-CIT-04 (contact d'urgence de l'assistant de premiere utilisation) sur le
+  formulaire de visite : un champ controle (la case a cocher du premier signe de danger) n'arrivait
+  pas de facon fiable dans le FormData construit automatiquement par un `<form action={...}>`.
+  Corrige de la meme facon : `action` retiree du formulaire, `formAction` appelee manuellement
+  (FormData construit a la main, complete depuis l'etat React, dans une `startTransition`).
+  Deuxieme occurrence independante ce soir : ce n'est probablement pas qu'un artefact du Fast
+  Refresh du serveur partage, plutot un vrai comportement de ce Next.js (voir
+  node_modules/next/dist/docs/01-app/02-guides/interactive-apps.md deja cite pour F-CIT-04) ; a
+  garder en tete pour tout futur formulaire multi-champs de ce depot melangeant champs controles et
+  `<form action={...}>`.
+- 30 tests (`communautaire/actions.test.ts`), tsc 0, eslint 0, tirets 0. Verifie en direct de bout
+  en bout : agent communautaire enregistre une visite avec signe de danger coche, alerte "Referer
+  immediatement" affichee avant et apres soumission, medecin du meme etablissement voit la
+  reference et la marque vue.
+- Fichiers prets pour commit : `prisma/schema.prisma` (modeles `SigneDangerCommunautaire` et
+  `ReferenceCommunautaire`, isole du reste du fichier partage), migration
+  `20260927180000_reference_communautaire/`, `src/modules/communautaire/{actions.ts,
+  communautaire-catalogue.ts,actions.test.ts}`, `src/types/domain-communautaire.ts`,
+  `src/security/permissions.ts`, `src/app/app/medecin/communautaire/{FormulaireSuiviCommunautaire.tsx,
+  page.tsx,references/{page.tsx,BoutonMarquerVue.tsx}}`, `docs/reste-a-faire.md` (F-COM-02 et
+  F-COM-03, isole du reste du fichier partage).

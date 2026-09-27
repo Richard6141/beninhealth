@@ -4,32 +4,30 @@ import { getSession } from "@/lib/session";
 import {
   getMesSuivisCommunautaires,
   getPersonnesEnregistrees,
+  getSignesDangerParType,
   type SuiviCommunautaireResume,
 } from "@/modules/communautaire/actions";
+import { LIBELLES_TYPE_VISITE } from "@/modules/communautaire/communautaire-catalogue";
 import { Badge, type BadgeTone } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { estFonctionnaliteActive } from "@/modules/administration/parametres";
 import { ModuleDesactive } from "@/components/ModuleDesactive";
 import { FormulaireSuiviCommunautaire } from "./FormulaireSuiviCommunautaire";
 
-const libellesTypeVisite: Record<string, string> = {
-  vaccination: "Vaccination",
-  depistage: "Dépistage",
-  suivi_grossesse: "Suivi de grossesse",
-  sensibilisation: "Sensibilisation",
-  autre: "Autre",
-};
-
 const tonesTypeVisite: Record<string, BadgeTone> = {
+  suivi_general: "neutral",
+  enfant_moins_5_ans: "good",
+  femme_enceinte: "accent",
+  suivi_apres_sortie: "info",
+  sensibilisation: "warning",
   vaccination: "good",
   depistage: "info",
-  suivi_grossesse: "accent",
-  sensibilisation: "warning",
   autre: "neutral",
+  suivi_grossesse: "accent",
 };
 
 function libelleTypeVisite(type: string): string {
-  return libellesTypeVisite[type] ?? type;
+  return LIBELLES_TYPE_VISITE[type as keyof typeof LIBELLES_TYPE_VISITE] ?? type;
 }
 
 function formaterDateHeure(date: string): string {
@@ -93,9 +91,10 @@ export default async function CommunautairePage() {
     return <ModuleDesactive cle="community.module" />;
   }
 
-  const [visites, personnes] = await Promise.all([
+  const [visites, personnes, signesDangerParType] = await Promise.all([
     getMesSuivisCommunautaires(),
     getPersonnesEnregistrees(),
+    getSignesDangerParType(),
   ]);
 
   return (
@@ -111,7 +110,7 @@ export default async function CommunautairePage() {
         </p>
       </header>
 
-      <FormulaireSuiviCommunautaire personnes={personnes} />
+      <FormulaireSuiviCommunautaire personnes={personnes} signesDangerParType={signesDangerParType} />
 
       <section aria-labelledby="titre-historique" className="flex flex-col gap-4">
         <h2 id="titre-historique" className="text-[20px] font-bold text-encre">

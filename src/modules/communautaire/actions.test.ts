@@ -6,6 +6,8 @@ vi.mock("@/lib/prisma", () => {
     professionnelSante: { findUnique: vi.fn() },
     personneCommunautaire: { findUnique: vi.fn(), findMany: vi.fn(), create: vi.fn() },
     suiviCommunautaire: { findMany: vi.fn(), create: vi.fn() },
+    signeDangerCommunautaire: { count: vi.fn(), createMany: vi.fn(), findMany: vi.fn() },
+    referenceCommunautaire: { create: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
     $transaction: vi.fn(),
   };
   prisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(prisma));
@@ -26,12 +28,17 @@ import {
   enregistrerPersonneAction,
   getMesSuivisCommunautaires,
   getPersonnesEnregistrees,
+  getReferencesCommunautairesEtablissement,
+  getSignesDangerParType,
+  marquerReferenceCommunautaireVueAction,
 } from "@/modules/communautaire/actions";
 
 const p = prisma as unknown as {
   professionnelSante: { findUnique: Mock };
   personneCommunautaire: { findUnique: Mock; findMany: Mock; create: Mock };
   suiviCommunautaire: { findMany: Mock; create: Mock };
+  signeDangerCommunautaire: { count: Mock; createMany: Mock; findMany: Mock };
+  referenceCommunautaire: { create: Mock; findMany: Mock; findUnique: Mock; update: Mock };
 };
 const getSessionMock = getSession as unknown as Mock;
 const journaliserMock = journaliser as unknown as Mock;
@@ -42,6 +49,15 @@ const etatPersonne = { error: null, success: false };
 function formulaire(champs: Record<string, string>): FormData {
   const donnees = new FormData();
   for (const [cle, valeur] of Object.entries(champs)) donnees.set(cle, valeur);
+  return donnees;
+}
+
+/** Meme helper que formulaire(), avec un champ pouvant porter plusieurs valeurs (cases a cocher, ex. signesDanger). */
+function formulaireAvecListe(champs: Record<string, string>, listes: Record<string, string[]>): FormData {
+  const donnees = formulaire(champs);
+  for (const [cle, valeurs] of Object.entries(listes)) {
+    for (const valeur of valeurs) donnees.append(cle, valeur);
+  }
   return donnees;
 }
 
@@ -58,6 +74,10 @@ beforeEach(() => {
     dateNaissanceApproximative: false,
     ...data,
   }));
+  p.signeDangerCommunautaire.count.mockResolvedValue(1);
+  p.signeDangerCommunautaire.findMany.mockResolvedValue([]);
+  p.referenceCommunautaire.create.mockResolvedValue({ id: "ref-1" });
+  p.referenceCommunautaire.findMany.mockResolvedValue([]);
 });
 
 describe("creerSuiviCommunautaireAction : visite de terrain (F-COM)", () => {
@@ -237,6 +257,130 @@ describe("lectures limitees a l'agent et a son etablissement", () => {
     expect(await getMesSuivisCommunautaires()).toEqual([]);
     expect(p.personneCommunautaire.findMany).not.toHaveBeenCalled();
     expect(p.suiviCommunautaire.findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("signes de danger et reference communautaire (F-COM-03, RG-COM-10)", () => {
+  it("cree une reference communautaire quand au moins un signe de danger est coche", async () => {
+    const resultat = await creerSuiviCommunautaireAction(
+      etatSuivi,
+      formulaireAvecListe(
+        { beneficiaireNom: "Adjovi Kouassi", typeVisite: "enfant_moins_5_ans" },
+        { signesDanger: ["Convulsions", "Vomit tout ce qu'il consomme"] }
+      )
+    );
+
+    expect(resultat.success).toBe(true);
+    expect(resultat.referenceCreee).toBe(true);
+    expect(p.suiviCommunautaire.create.mock.calls[0][0].data.signesDangerCoches).toBe(
+      JSON.stringify(["Convulsions", "Vomit tout ce qu'il consomme"])
+    );
+    expect(p.referenceCommunautaire.create.mock.calls[0][0].data).toMatchObject({
+      agentId: "agent-1",
+      etablissementId: "etab-1",
+      beneficiaireNom: "Adjovi Kouassi",
+      suiviId: "suivi-1",
+      motif: "Convulsions, Vomit tout ce qu'il consomme",
+    });
+    expect(journaliserMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("ne cree aucune reference quand aucun signe de danger n'est coche", async () => {
+    const resultat = await creerSuiviCommunautaireAction(
+      etatSuivi,
+      formulaire({ beneficiaireNom: "X", typeVisite: "suivi_general" })
+    );
+
+    expect(resultat.referenceCreee).toBe(false);
+    expect(p.referenceCommunautaire.create).not.toHaveBeenCalled();
+  });
+
+  it("getSignesDangerParType groupe les signes actifs par type de visite, tries par ordre", async () => {
+    p.signeDangerCommunautaire.count.mockResolvedValue(4);
+    p.signeDangerCommunautaire.findMany.mockResolvedValue([
+      { id: "s1", typeVisite: "enfant_moins_5_ans", libelle: "Convulsions" },
+      { id: "s2", typeVisite: "enfant_moins_5_ans", libelle: "Léthargie ou inconscience" },
+      { id: "s3", typeVisite: "femme_enceinte", libelle: "Saignement" },
+    ]);
+
+    const groupes = await getSignesDangerParType();
+
+    expect(p.signeDangerCommunautaire.findMany.mock.calls[0][0]).toMatchObject({
+      where: { actif: true },
+      orderBy: { ordre: "asc" },
+    });
+    expect(groupes).toEqual({
+      enfant_moins_5_ans: [{ id: "s1", libelle: "Convulsions" }, { id: "s2", libelle: "Léthargie ou inconscience" }],
+      femme_enceinte: [{ id: "s3", libelle: "Saignement" }],
+    });
+    expect(p.signeDangerCommunautaire.createMany).not.toHaveBeenCalled();
+  });
+
+  it("seme le referentiel une seule fois si la table est vide, jamais si elle contient deja des lignes", async () => {
+    p.signeDangerCommunautaire.count.mockResolvedValue(0);
+
+    await getSignesDangerParType();
+
+    expect(p.signeDangerCommunautaire.createMany).toHaveBeenCalledTimes(1);
+
+    p.signeDangerCommunautaire.count.mockResolvedValue(8);
+    await getSignesDangerParType();
+
+    expect(p.signeDangerCommunautaire.createMany).toHaveBeenCalledTimes(1);
+  });
+
+  it("getSignesDangerParType renvoie un objet vide sans session", async () => {
+    getSessionMock.mockResolvedValue(null);
+
+    expect(await getSignesDangerParType()).toEqual({});
+    expect(p.signeDangerCommunautaire.findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("references communautaires : lecture et prise en compte par l'etablissement", () => {
+  it("getReferencesCommunautairesEtablissement lit les references de l'etablissement du professionnel connecte", async () => {
+    getSessionMock.mockResolvedValue({ userId: "user-medecin", roles: ["medecin"] });
+    p.referenceCommunautaire.findMany.mockResolvedValue([
+      {
+        id: "ref-1",
+        beneficiaireNom: "Adjovi Kouassi",
+        motif: "Convulsions",
+        statut: "en_attente",
+        dateCreation: new Date("2026-09-27"),
+        agent: { user: { prenom: "Awa", nom: "Toure" } },
+      },
+    ]);
+
+    const references = await getReferencesCommunautairesEtablissement();
+
+    expect(p.referenceCommunautaire.findMany.mock.calls[0][0].where).toEqual({ etablissementId: "etab-1" });
+    expect(references).toEqual([
+      expect.objectContaining({ id: "ref-1", beneficiaireNom: "Adjovi Kouassi", agentNomComplet: "Awa Toure" }),
+    ]);
+  });
+
+  it("refuse un role sans droit read:reference_communautaire", async () => {
+    getSessionMock.mockResolvedValue({ userId: "user-agent", roles: ["agent_communautaire"] });
+
+    expect(await getReferencesCommunautairesEtablissement()).toEqual([]);
+    expect(p.referenceCommunautaire.findMany).not.toHaveBeenCalled();
+  });
+
+  it("marquerReferenceCommunautaireVueAction verifie l'etablissement avant de marquer vue (jamais confiance dans le seul id transmis)", async () => {
+    getSessionMock.mockResolvedValue({ userId: "user-medecin", roles: ["medecin"] });
+    p.referenceCommunautaire.findUnique.mockResolvedValue({ id: "ref-1", etablissementId: "autre-etab" });
+
+    const refuse = await marquerReferenceCommunautaireVueAction(etatSuivi, formulaire({ id: "ref-1" }));
+    expect(refuse.error).toBe("Reference introuvable.");
+    expect(p.referenceCommunautaire.update).not.toHaveBeenCalled();
+
+    p.referenceCommunautaire.findUnique.mockResolvedValue({ id: "ref-1", etablissementId: "etab-1" });
+    const accepte = await marquerReferenceCommunautaireVueAction(etatSuivi, formulaire({ id: "ref-1" }));
+    expect(accepte.success).toBe(true);
+    expect(p.referenceCommunautaire.update.mock.calls[0][0]).toMatchObject({
+      where: { id: "ref-1" },
+      data: { statut: "vue", vueParId: "agent-1" },
+    });
   });
 });
 

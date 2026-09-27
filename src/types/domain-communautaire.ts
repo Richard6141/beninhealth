@@ -8,13 +8,26 @@
  * terrain.
  */
 
-/** Nature d'une visite de suivi communautaire. */
+/**
+ * Nature d'une visite de suivi communautaire. Les 5 premiers reprennent
+ * exactement le pack (F-COM-03) ; vaccination/depistage/autre restent des
+ * ajouts assumes anterieurs, conserves pour ne jamais casser les visites deja
+ * enregistrees avec ces valeurs (voir communautaire-catalogue.ts, source de
+ * verite partagee avec actions.ts).
+ */
 export type TypeVisiteCommunautaire =
+  | 'suivi_general'
+  | 'enfant_moins_5_ans'
+  | 'femme_enceinte'
+  | 'suivi_apres_sortie'
+  | 'sensibilisation'
   | 'vaccination'
   | 'depistage'
-  | 'suivi_grossesse'
-  | 'sensibilisation'
-  | 'autre';
+  | 'autre'
+  // Ancienne valeur (avant ce chantier), conservee pour les visites deja
+  // enregistrees : jamais proposee dans un nouveau formulaire, mais toujours
+  // lisible (voir LIBELLES_TYPE_VISITE, communautaire-catalogue.ts).
+  | 'suivi_grossesse';
 
 /** Visite de terrain menée par un agent communautaire. */
 export interface SuiviCommunautaire {

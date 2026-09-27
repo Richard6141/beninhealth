@@ -21,6 +21,7 @@ import { can } from "@/security/permissions";
 import { estFonctionnaliteActive } from "@/modules/administration/parametres";
 import { MESSAGE_MODULE_INACTIF } from "@/modules/administration/modules-actifs";
 import type { TypeVisiteCommunautaire } from "@/types";
+import { SIGNES_DANGER_DEPART, TYPES_VISITE_COMMUNAUTAIRE } from "./communautaire-catalogue";
 
 /** Etat renvoye par chaque Server Action de ce module, consomme via useActionState. */
 export interface SuiviCommunautaireActionState {
@@ -31,6 +32,27 @@ export interface SuiviCommunautaireActionState {
   // purement informatif, la visite est tout de meme creee (avertissement,
   // jamais un blocage).
   avertissementDoublonBeneficiaire?: string | null;
+  // F-COM-03/RG-COM-10 : au moins un signe de danger etait coche, une
+  // ReferenceCommunautaire vient d'etre creee. L'ecran affiche alors
+  // "Referer immediatement au centre de sante" (jamais un diagnostic ni un
+  // traitement, RG-COM-11).
+  referenceCreee?: boolean;
+}
+
+/** Un signe de danger actif (F-COM-03, RG-COM-10), pret a afficher en case a cocher. */
+export interface SigneDangerResume {
+  id: string;
+  libelle: string;
+}
+
+/** Reference communautaire (F-COM-03), prete a afficher au personnel soignant de l'etablissement. */
+export interface ReferenceCommunautaireResume {
+  id: string;
+  beneficiaireNom: string;
+  motif: string;
+  statut: "en_attente" | "vue";
+  dateCreation: string; // ISO
+  agentNomComplet: string;
 }
 
 /** Une personne enregistree (F-COM-02), prete a afficher dans le selecteur du formulaire de visite. */
@@ -69,18 +91,10 @@ export interface SuiviCommunautaireResume {
   notes: string;
 }
 
-const TYPES_VISITE = [
-  "vaccination",
-  "depistage",
-  "suivi_grossesse",
-  "sensibilisation",
-  "autre",
-] as const;
-
 const schemaSuivi = z.object({
   personneId: z.string().trim().optional().default(""),
   beneficiaireNom: z.string().trim().optional().default(""),
-  typeVisite: z.enum(TYPES_VISITE, {
+  typeVisite: z.enum(TYPES_VISITE_COMMUNAUTAIRE, {
     message: "Le type de visite est invalide.",
   }),
   localisation: z.string().trim().optional().default(""),
@@ -144,6 +158,56 @@ async function professionnelDeLaSessionCourante() {
 }
 
 /**
+ * Semis paresseux (RG-COM-10) : si la table SigneDangerCommunautaire est
+ * vide, la peuple une seule fois avec le depart assume de
+ * communautaire-catalogue.ts. Jamais reexecute si des lignes existent deja
+ * (meme principe que semerSiNecessaire, src/modules/patient/informations-declarees.ts) :
+ * la liste devient ensuite modifiable independamment du code (a construire,
+ * non fait ce soir).
+ */
+async function semerSignesDangerSiNecessaire(): Promise<void> {
+  const compte = await prisma.signeDangerCommunautaire.count();
+  if (compte > 0) return;
+
+  await prisma.signeDangerCommunautaire.createMany({
+    data: SIGNES_DANGER_DEPART.map((signe) => ({
+      typeVisite: signe.typeVisite,
+      libelle: signe.libelle,
+      ordre: signe.ordre,
+    })),
+  });
+}
+
+/**
+ * Tous les signes de danger actifs, groupes par type de visite (F-COM-03,
+ * RG-COM-10) : le formulaire de visite affiche la bonne liste selon le type
+ * choisi, sans aller-retour serveur supplementaire a chaque changement de
+ * selection (le referentiel entier est de toute facon minuscule). Reserve a
+ * un utilisateur connecte (n'importe quel role, purement informatif, jamais
+ * de donnee de patient), la page qui l'utilise etant elle-meme reservee a
+ * agent_communautaire.
+ */
+export async function getSignesDangerParType(): Promise<Record<string, SigneDangerResume[]>> {
+  const session = await getSession();
+  if (!session) return {};
+
+  await semerSignesDangerSiNecessaire();
+
+  const signes = await prisma.signeDangerCommunautaire.findMany({
+    where: { actif: true },
+    orderBy: { ordre: "asc" },
+  });
+
+  const groupes: Record<string, SigneDangerResume[]> = {};
+  for (const signe of signes) {
+    const liste = groupes[signe.typeVisite] ?? [];
+    liste.push({ id: signe.id, libelle: signe.libelle });
+    groupes[signe.typeVisite] = liste;
+  }
+  return groupes;
+}
+
+/**
  * Enregistre une visite de suivi communautaire a l'initiative de l'agent
  * connecte (derive de getSession(), jamais d'un id transmis par le client).
  * Reserve au role agent_communautaire (create:suivi_communautaire, voir
@@ -193,6 +257,15 @@ export async function creerSuiviCommunautaireAction(
 
   const { personneId, typeVisite, localisation, notes } = validation.data;
   let beneficiaireNom = validation.data.beneficiaireNom;
+
+  // F-COM-03/RG-COM-10 : libelles des signes de danger coches (une case a
+  // cocher par signe, meme nom de champ repete). Le libelle est envoye tel
+  // quel (jamais un identifiant seul), voir le commentaire du champ
+  // signesDangerCoches dans prisma/schema.prisma.
+  const signesDangerCoches = formData
+    .getAll("signesDanger")
+    .filter((valeur): valeur is string => typeof valeur === "string" && valeur.trim().length > 0)
+    .map((valeur) => valeur.trim());
 
   if (!personneId && beneficiaireNom.length === 0) {
     return { error: "Le nom du beneficiaire est obligatoire.", success: false };
@@ -246,6 +319,7 @@ export async function creerSuiviCommunautaireAction(
           typeVisite,
           localisation,
           notes,
+          signesDangerCoches: JSON.stringify(signesDangerCoches),
         },
       });
 
@@ -260,6 +334,33 @@ export async function creerSuiviCommunautaireAction(
         tx
       );
 
+      // F-COM-03/RG-COM-10 : un signe de danger coche cree systematiquement
+      // une reference (jamais un diagnostic ni un traitement, RG-COM-11),
+      // visible par le personnel soignant de l'etablissement de l'agent.
+      if (signesDangerCoches.length > 0) {
+        await tx.referenceCommunautaire.create({
+          data: {
+            agentId: agent.id,
+            etablissementId: agent.etablissementId,
+            personneId: personneVerifieeId,
+            beneficiaireNom,
+            suiviId: cree.id,
+            motif: signesDangerCoches.join(", "),
+          },
+        });
+
+        await journaliser(
+          {
+            utilisateurId: session.userId,
+            action: "creation",
+            donneeConcernee: `suivi_communautaire:${cree.id}`,
+            adresseTechnique,
+            justification: `Reference communautaire creee pour ${beneficiaireNom} (signe(s) de danger : ${signesDangerCoches.join(", ")})`,
+          },
+          tx
+        );
+      }
+
       return cree;
     });
 
@@ -269,6 +370,7 @@ export async function creerSuiviCommunautaireAction(
       avertissementDoublonBeneficiaire: doublonProbable
         ? `Une visite au nom de "${beneficiaireNom}" existe déjà dans votre historique. Vérifiez qu'il ne s'agit pas de la même personne.`
         : null,
+      referenceCreee: signesDangerCoches.length > 0,
     };
   } catch (erreur) {
     console.error("Erreur lors de l'enregistrement de la visite communautaire :", erreur);
@@ -493,4 +595,85 @@ export async function getPersonnesEnregistrees(): Promise<PersonneCommunautaireR
     villageQuartier: personne.villageQuartier,
     chefMenage: personne.chefMenage,
   }));
+}
+
+/**
+ * References communautaires (F-COM-03, RG-COM-10) de l'etablissement du
+ * professionnel connecte (medecin, infirmier ou admin_etablissement,
+ * read:reference_communautaire), en attente d'abord puis dejà vues, les plus
+ * recentes d'abord dans chaque groupe. Jamais de dossier Patient : seuls
+ * beneficiaireNom et le motif (libelles des signes de danger) sont exposes.
+ */
+export async function getReferencesCommunautairesEtablissement(): Promise<ReferenceCommunautaireResume[]> {
+  const session = await getSession();
+  if (!session) return [];
+
+  if (!session.roles.some((role) => can(role, "read", "reference_communautaire"))) {
+    return [];
+  }
+
+  const professionnel = await professionnelDeLaSessionCourante();
+  if (!professionnel) return [];
+
+  const references = await prisma.referenceCommunautaire.findMany({
+    where: { etablissementId: professionnel.etablissementId },
+    include: { agent: { include: { user: true } } },
+    orderBy: [{ statut: "asc" }, { dateCreation: "desc" }],
+  });
+
+  return references.map((reference) => ({
+    id: reference.id,
+    beneficiaireNom: reference.beneficiaireNom,
+    motif: reference.motif,
+    statut: reference.statut as "en_attente" | "vue",
+    dateCreation: reference.dateCreation.toISOString(),
+    agentNomComplet: `${reference.agent.user.prenom} ${reference.agent.user.nom}`,
+  }));
+}
+
+/**
+ * Marque une reference communautaire comme vue (F-COM-03) : jamais un
+ * statut clinique (RG-COM-11), uniquement "prise en compte par le
+ * personnel". Reserve au meme etablissement que la reference (jamais
+ * confiance dans le seul id transmis).
+ */
+export async function marquerReferenceCommunautaireVueAction(
+  prevState: SuiviCommunautaireActionState,
+  formData: FormData
+): Promise<SuiviCommunautaireActionState> {
+  const session = await getSession();
+  if (!session) {
+    return { error: "Session expiree. Veuillez vous reconnecter.", success: false };
+  }
+
+  if (!session.roles.some((role) => can(role, "update", "reference_communautaire"))) {
+    return { error: "Action reservee au personnel de l'etablissement.", success: false };
+  }
+
+  const id = texte(formData, "id");
+  if (!id) {
+    return { error: "Reference introuvable.", success: false };
+  }
+
+  try {
+    const professionnel = await professionnelDeLaSessionCourante();
+    if (!professionnel) {
+      return { error: "Aucun profil professionnel associe a ce compte.", success: false };
+    }
+
+    const reference = await prisma.referenceCommunautaire.findUnique({ where: { id } });
+    if (!reference || reference.etablissementId !== professionnel.etablissementId) {
+      return { error: "Reference introuvable.", success: false };
+    }
+
+    await prisma.referenceCommunautaire.update({
+      where: { id },
+      data: { statut: "vue", dateVue: new Date(), vueParId: professionnel.id },
+    });
+
+    return { error: null, success: true };
+  } catch (erreur) {
+    console.error("Erreur lors du marquage de la reference communautaire :", erreur);
+    return { error: "Une erreur est survenue. Veuillez reessayer.", success: false };
+  }
 }

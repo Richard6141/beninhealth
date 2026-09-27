@@ -110,6 +110,11 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     // donne aucun droit de lecture supplementaire sur le dossier.
     'create:resume_ia',
     'update:resume_ia',
+    // F-COM-03 : reference communautaire creee par un agent communautaire de
+    // son etablissement (signe de danger coche pendant une visite de
+    // terrain), jamais un dossier Patient complet.
+    'read:reference_communautaire',
+    'update:reference_communautaire',
   ]),
 
   infirmier: new Set<Permission>([
@@ -129,6 +134,9 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     'update:code_partage',
     'create:demande_acces_dossier',
     'update:demande_acces_dossier',
+    // F-COM-03 : voir le commentaire equivalent chez medecin ci-dessus.
+    'read:reference_communautaire',
+    'update:reference_communautaire',
   ]),
 
   agent_communautaire: new Set<Permission>([
@@ -182,6 +190,10 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     // F-RDV-06 : rendez-vous pris au guichet, confirme directement (meme
     // routage de role, voir src/modules/facility/rendez-vous-guichet.ts).
     'create:rendez_vous',
+    // F-COM-03 : references communautaires de son etablissement (role
+    // RECEPTIONIST absent de ce depot, meme routage que ci-dessus).
+    'read:reference_communautaire',
+    'update:reference_communautaire',
   ]),
 
   admin_national: new Set<Permission>([

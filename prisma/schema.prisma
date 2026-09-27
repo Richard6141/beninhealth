@@ -194,6 +194,10 @@ model EtablissementSanitaire {
   examensMedicaux ExamenMedical[]
   suivisCommunautaires SuiviCommunautaire[]
   personnesCommunautaires PersonneCommunautaire[]
+  // F-COM-03 : references creees par un agent communautaire de cet
+  // etablissement, visibles par le personnel soignant de ce meme
+  // etablissement (voir ReferenceCommunautaire ci-dessous).
+  referencesCommunautaires ReferenceCommunautaire[]
   vaccinations Vaccination[]
   prisesEnChargeInfirmieres PriseEnChargeInfirmiere[]
   delivrances Delivrance[]
@@ -259,6 +263,7 @@ model ProfessionnelSante {
   // Visites de suivi communautaire menees par ce professionnel (role agent_communautaire).
   suivisCommunautaires SuiviCommunautaire[]
   personnesEnregistrees PersonneCommunautaire[]
+  referencesCommunautairesCreees ReferenceCommunautaire[]
   vaccinations Vaccination[]
   prisesEnChargeInfirmieres PriseEnChargeInfirmiere[]
   delivrances Delivrance[]
@@ -673,11 +678,20 @@ model SuiviCommunautaire {
   personneId      String?
   personne        PersonneCommunautaire? @relation(fields: [personneId], references: [id])
   beneficiaireNom String
-  // vaccination | depistage | suivi_grossesse | sensibilisation | autre
+  // suivi_general | enfant_moins_5_ans | femme_enceinte | suivi_apres_sortie |
+  // sensibilisation (5 types du pack F-COM-03) ; vaccination | depistage |
+  // autre restent des ajouts assumes anterieurs (vaccination reste cable a
+  // FormulaireVaccinationCommunautaire.tsx, F-COM-04).
   typeVisite      String
   dateVisite      DateTime  @default(now())
   localisation    String    @default("")
   notes           String    @default("")
+  // F-COM-03/RG-COM-10 : libelles des signes de danger coches pendant cette
+  // visite (JSON, tableau de chaines), jamais un identifiant seul : le
+  // referentiel SigneDangerCommunautaire peut evoluer, le libelle exact vu
+  // par l'agent au moment de la visite reste trace tel quel.
+  signesDangerCoches String @default("[]")
+  reference       ReferenceCommunautaire?
   dateCreation    DateTime  @default(now())
   @@schema("public")
 }
@@ -712,6 +726,64 @@ model PersonneCommunautaire {
   visites         SuiviCommunautaire[]
   // F-COM-04 : vaccinations administrees en campagne, voir Vaccination ci-dessous.
   vaccinations    Vaccination[]
+  references      ReferenceCommunautaire[]
+  @@schema("public")
+}
+
+// F-COM-03 du pack ("Visite a domicile"), RG-COM-10 : liste des signes de
+// danger, DONNEE DE REFERENTIEL versionnee (jamais du code), pour pouvoir
+// etre validee par les autorites sanitaires sans toucher au code. Contenu de
+// depart repris des exemples cites explicitement par le pack lui-meme
+// (enfant : incapable de boire/teter, vomit tout, convulsions, lethargie ;
+// femme enceinte : saignement, maux de tete severes avec vision trouble,
+// convulsions, fievre elevee), le pack precisant lui-meme que le "contenu
+// clinique exact [est] a valider par le programme national de sante
+// communautaire" : depart assume, pas une liste definitive. Desactivation
+// seule (RG-ADM-20, meme principe que les autres referentiels de ce depot),
+// jamais de suppression physique.
+model SigneDangerCommunautaire {
+  id           String   @id @default(cuid())
+  // enfant_moins_5_ans | femme_enceinte | suivi_general | suivi_apres_sortie
+  // | sensibilisation : categorie de visite a laquelle ce signe s'applique.
+  typeVisite   String
+  libelle      String
+  ordre        Int      @default(0)
+  actif        Boolean  @default(true)
+  dateCreation DateTime @default(now())
+  @@index([typeVisite])
+  @@schema("public")
+}
+
+// F-COM-03 du pack : cree automatiquement quand un signe de danger est
+// coche pendant une visite (jamais saisie manuellement par l'agent). Visible
+// par le personnel soignant de l'etablissement de l'agent (RG-COM-10 :
+// "le centre de sante verra [la reference] a la synchronisation" - ici, sans
+// mode hors ligne, visible immediatement des sa creation, en ligne).
+model ReferenceCommunautaire {
+  id              String    @id @default(cuid())
+  agentId         String
+  agent           ProfessionnelSante @relation(fields: [agentId], references: [id])
+  etablissementId String
+  etablissement   EtablissementSanitaire @relation(fields: [etablissementId], references: [id])
+  personneId      String?
+  personne        PersonneCommunautaire? @relation(fields: [personneId], references: [id])
+  beneficiaireNom String
+  suiviId         String    @unique
+  suivi           SuiviCommunautaire @relation(fields: [suiviId], references: [id], onDelete: Cascade)
+  // Signes de danger coches, joints pour lecture humaine (ex. "Convulsions, Vomit tout").
+  motif           String
+  // Toujours vraie dans ce depot (RG-COM-10 : un signe de danger coche
+  // declenche systematiquement "Referer immediatement"), champ conserve
+  // distinct du statut pour rester fidele au vocabulaire du pack.
+  urgence         Boolean   @default(true)
+  // en_attente | vue : le personnel soignant marque une reference vue une
+  // fois prise en compte, jamais un statut clinique (RG-COM-11 : ce depot ne
+  // propose ni diagnostic ni traitement).
+  statut          String    @default("en_attente")
+  dateVue         DateTime?
+  vueParId        String?
+  dateCreation    DateTime  @default(now())
+  @@index([etablissementId, statut])
   @@schema("public")
 }
 
