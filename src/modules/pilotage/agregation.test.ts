@@ -138,6 +138,33 @@ describe("recalculerJourEtablissement", () => {
     expect(operations).toHaveLength(2);
   });
 
+  it("F-CLI-06 : le diagnostic principal codifie CIM-10 prime sur la classification par mots-cles de la conclusion", async () => {
+    prismaMock.consultation.findMany.mockResolvedValue([
+      {
+        id: "c1",
+        patientId: "pA",
+        // Conclusion trompeuse (mentionne "paludisme" en texte libre) : le
+        // code CIM-10 (tuberculose, A15) doit l'emporter, pas le mot-cle.
+        conclusion: "Suspicion de paludisme, a confirmer",
+        diagnosticPrincipalCode: "A15",
+        date: new Date("2026-01-15T08:00:00.000Z"),
+        patient: PATIENT_A,
+      },
+    ]);
+
+    await recalculerJourEtablissement(prisma, JOUR, "etab1");
+
+    const ligneDeBase = { date: DEBUT_JOUR, etablissementId: "etab1" };
+    const lignesIND03 = prismaMock.agregatQuotidien.createMany.mock.calls[0][0].data.filter(
+      (ligne: { indicateur: string }) => ligne.indicateur === "IND-03"
+    );
+    expect(lignesIND03).toEqual([
+      { ...ligneDeBase, indicateur: "IND-03", sexe: "F", trancheAge: "25-49 ans", dimensionLibre: "tuberculose", valeur: 1 },
+    ]);
+    // Aucune ligne IND-04 (paludisme) : le code CIM-10 a correctement ecarte le mot-cle trompeur.
+    expect(prismaMock.agregatQuotidien.createMany.mock.calls[0][0].data.some((l: { indicateur: string }) => l.indicateur === "IND-04")).toBe(false);
+  });
+
   it("RG-PIL-61 : sans consultation valide restante (retrait), supprime les lignes existantes sans en reinserer", async () => {
     // Le retrait exclut deja la consultation de la requete source
     // (saisieParErreur: false dans le where), donc le mock la simule ici en
@@ -249,12 +276,14 @@ describe("recalculerJourEtablissement", () => {
         numeroDose: 1,
         dateAdministration: new Date("2026-01-15T08:00:00.000Z"),
         patient: { dateNaissance: new Date("2026-01-01T00:00:00.000Z") }, // 0 mois -> "0-11 mois"
+        personneCommunautaire: null,
       },
       {
         vaccin: "BCG",
         numeroDose: 1,
         dateAdministration: new Date("2026-01-15T09:00:00.000Z"),
         patient: { dateNaissance: new Date("2026-01-01T00:00:00.000Z") },
+        personneCommunautaire: null,
       },
     ]);
 
@@ -267,6 +296,48 @@ describe("recalculerJourEtablissement", () => {
         { ...ligneDeBase, indicateur: "IND-10", trancheAge: "0-11 mois", dimensionLibre: "BCG:dose1", valeur: 2 },
       ])
     );
+  });
+
+  it("IND-10 compte aussi une vaccination communautaire (F-COM-04, personneCommunautaire sans patient)", async () => {
+    prismaMock.consultation.findMany.mockResolvedValue([]);
+    prismaMock.vaccination.findMany.mockResolvedValue([
+      {
+        vaccin: "Rougeole",
+        numeroDose: 1,
+        dateAdministration: new Date("2026-01-15T08:00:00.000Z"),
+        patient: null,
+        personneCommunautaire: { dateNaissance: new Date("2025-01-01T00:00:00.000Z") }, // 12 mois -> "1-4 ans"
+      },
+    ]);
+
+    await recalculerJourEtablissement(prisma, JOUR, "etab1");
+
+    const ligneDeBase = { date: DEBUT_JOUR, etablissementId: "etab1", sexe: null };
+    const appelCreateMany = prismaMock.agregatQuotidien.createMany.mock.calls[0][0];
+    expect(appelCreateMany.data).toEqual(
+      expect.arrayContaining([
+        { ...ligneDeBase, indicateur: "IND-10", trancheAge: "1-4 ans", dimensionLibre: "Rougeole:dose1", valeur: 1 },
+      ])
+    );
+  });
+
+  it("IND-10 ignore une ligne sans aucune date de naissance connue plutot que d'echouer (garde defensive)", async () => {
+    prismaMock.consultation.findMany.mockResolvedValue([]);
+    prismaMock.vaccination.findMany.mockResolvedValue([
+      {
+        vaccin: "BCG",
+        numeroDose: 1,
+        dateAdministration: new Date("2026-01-15T08:00:00.000Z"),
+        patient: null,
+        personneCommunautaire: null,
+      },
+    ]);
+
+    await expect(recalculerJourEtablissement(prisma, JOUR, "etab1")).resolves.not.toThrow();
+
+    // Aucune autre donnee mockee dans ce test : la ligne ignoree est la seule
+    // candidate, createMany n'est meme pas appele (voir "lignes.length > 0" plus haut).
+    expect(prismaMock.agregatQuotidien.createMany).not.toHaveBeenCalled();
   });
 });
 

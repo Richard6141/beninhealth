@@ -127,6 +127,18 @@ export function groupeEstSensible(groupe: GroupeCim10): boolean {
   return GROUPES_SENSIBLES.includes(groupe);
 }
 
+/**
+ * Vrai si le code appartient au chapitre XVIII (symptomes, signes et
+ * resultats anormaux d'examens, R00 a R99). RG-CLI-52 du pack : un
+ * diagnostic principal pas encore etabli peut etre un code de ce chapitre
+ * (ex. R50.9 Fievre, sans precision), mais alors la certitude est toujours
+ * SUSPECTED, jamais CONFIRMED, quel que soit le choix saisi a l'ecran.
+ */
+export function estChapitreSymptome(codeBrut: string): boolean {
+  const code = normaliserCodeCim10(codeBrut);
+  return FORMAT_CODE_CIM10.test(code) && dans(code, "R00", "R99");
+}
+
 const CHAPITRES: { debut: string; fin: string; libelle: string }[] = [
   { debut: "A00", fin: "B99", libelle: "I. Maladies infectieuses et parasitaires" },
   { debut: "C00", fin: "D48", libelle: "II. Tumeurs" },

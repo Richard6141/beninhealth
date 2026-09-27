@@ -25,6 +25,7 @@ vi.mock("@/lib/prisma", () => {
     rendezVous: { findUnique: vi.fn(), updateMany: vi.fn() },
     consultation: { findUnique: vi.fn(), findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
     priseEnChargeInfirmiere: { updateMany: vi.fn() },
+    diagnosticCim10: { findUnique: vi.fn() },
     $transaction: vi.fn(),
   };
   prisma.$transaction.mockImplementation(async (rappel: (tx: unknown) => unknown) => rappel(prisma));
@@ -45,6 +46,7 @@ const prismaMock = prisma as unknown as {
   rendezVous: { findUnique: Mock; updateMany: Mock };
   consultation: { findUnique: Mock; findFirst: Mock; create: Mock; update: Mock };
   priseEnChargeInfirmiere: { updateMany: Mock };
+  diagnosticCim10: { findUnique: Mock };
 };
 const getSessionMock = getSession as unknown as Mock;
 const journaliserMock = journaliser as unknown as Mock;
@@ -61,6 +63,10 @@ function formulaire(surcharges: Record<string, string> = {}): FormData {
     conclusion: "Paludisme simple",
     symptomes: "fievre\nmaux de tete",
     temperatureCelsius: "37.2",
+    // RG-CLI-52 : exige pour valider. Par defaut un code du referentiel de
+    // test (voir prismaMock.diagnosticCim10.findUnique dans beforeEach),
+    // ecrasable au cas par cas par les tests qui verifient son absence.
+    diagnosticPrincipalCode: "B54",
     ...surcharges,
   };
   const formData = new FormData();
@@ -84,6 +90,9 @@ beforeEach(() => {
   prismaMock.consultation.update.mockResolvedValue({});
   prismaMock.rendezVous.updateMany.mockResolvedValue({ count: 1 });
   prismaMock.priseEnChargeInfirmiere.updateMany.mockResolvedValue({ count: 1 });
+  prismaMock.diagnosticCim10.findUnique.mockImplementation(async ({ where }: { where: { code: string } }) =>
+    where.code === "B54" ? { code: "B54", libelle: "Paludisme, sans precision", sensible: false, actif: true } : null
+  );
 });
 
 describe("qui peut enregistrer une consultation", () => {
@@ -274,15 +283,78 @@ describe("mise a jour d'un brouillon identifie par le formulaire (Zero Trust)", 
 describe("validation (CA-1, RG-CLI-61)", () => {
   it("exige un motif et une conclusion", async () => {
     const sansConclusion = await enregistrerConsultationAction(ETAT, formulaire({ ...valider, conclusion: "" }));
-    expect(sansConclusion.error).toBe("Impossible de valider : renseignez conclusion (diagnostic).");
+    expect(sansConclusion.error).toBe("Impossible de valider : renseignez conclusion.");
 
     const sansMotif = await enregistrerConsultationAction(ETAT, formulaire({ ...valider, motif: "  " }));
     expect(sansMotif.error).toBe("Impossible de valider : renseignez motif.");
 
     const sansRien = await enregistrerConsultationAction(ETAT, formulaire({ ...valider, motif: "", conclusion: "" }));
-    expect(sansRien.error).toBe("Impossible de valider : renseignez motif et conclusion (diagnostic).");
+    expect(sansRien.error).toBe("Impossible de valider : renseignez motif, conclusion.");
 
     expect(prismaMock.consultation.create).not.toHaveBeenCalled();
+  });
+
+  it("RG-CLI-52, CA-1 du pack : sans diagnostic principal, la validation est refusee avec la liste des champs manquants", async () => {
+    const resultat = await enregistrerConsultationAction(ETAT, formulaire({ ...valider, diagnosticPrincipalCode: "" }));
+
+    expect(resultat.error).toBe("Impossible de valider : renseignez diagnostic principal (CIM-10).");
+    expect(prismaMock.consultation.create).not.toHaveBeenCalled();
+  });
+
+  it("refuse un code de diagnostic introuvable ou desactive, meme pour un simple brouillon", async () => {
+    const resultat = await enregistrerConsultationAction(ETAT, formulaire({ diagnosticPrincipalCode: "Z99.9" }));
+
+    expect(resultat.success).toBe(false);
+    expect(resultat.error).toContain("introuvable");
+    expect(prismaMock.consultation.create).not.toHaveBeenCalled();
+  });
+
+  it("RG-CLI-52 : un code du chapitre symptomes (R00-R99) force la certitude 'suspecte', quel que soit le choix saisi", async () => {
+    prismaMock.diagnosticCim10.findUnique.mockResolvedValue({ code: "R50.9", libelle: "Fievre, sans precision", sensible: false, actif: true });
+
+    await enregistrerConsultationAction(
+      ETAT,
+      formulaire({ ...valider, diagnosticPrincipalCode: "R50.9", diagnosticPrincipalCertitude: "confirme" })
+    );
+
+    expect(prismaMock.consultation.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ diagnosticPrincipalCertitude: "suspecte" }) })
+    );
+  });
+
+  it("RG-CLI-53 : un diagnostic principal d'un groupe sensible marque la consultation sensible", async () => {
+    prismaMock.diagnosticCim10.findUnique.mockResolvedValue({ code: "B20", libelle: "Maladie due au VIH", sensible: true, actif: true });
+
+    await enregistrerConsultationAction(ETAT, formulaire({ diagnosticPrincipalCode: "B20" }));
+
+    expect(prismaMock.consultation.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ sensible: true, diagnosticPrincipalLibelle: "Maladie due au VIH" }) })
+    );
+  });
+
+  it("5 diagnostics secondaires au maximum, chacun revalide aupres du referentiel", async () => {
+    prismaMock.diagnosticCim10.findUnique.mockImplementation(async ({ where }: { where: { code: string } }) =>
+      where.code === "B54" ? { code: "B54", libelle: "Paludisme, sans precision", sensible: false, actif: true } : null
+    );
+
+    const troisSecondaires = await enregistrerConsultationAction(
+      ETAT,
+      formulaire({ diagnosticsSecondaires: JSON.stringify(["B54", "B54", "B54"]) })
+    );
+    expect(troisSecondaires.success).toBe(true);
+
+    const troisCodesInvalides = await enregistrerConsultationAction(
+      ETAT,
+      formulaire({ diagnosticsSecondaires: JSON.stringify(["Z99.9"]) })
+    );
+    expect(troisCodesInvalides.success).toBe(false);
+
+    const troisPlusDeCinq = await enregistrerConsultationAction(
+      ETAT,
+      formulaire({ diagnosticsSecondaires: JSON.stringify(["B54", "B54", "B54", "B54", "B54", "B54"]) })
+    );
+    expect(troisPlusDeCinq.success).toBe(false);
+    expect(troisPlusDeCinq.error).toContain("5 diagnostics secondaires");
   });
 
   it("verrouille : statut terminee, date de validation, empreinte SHA-256, evenement de pilotage et journal", async () => {

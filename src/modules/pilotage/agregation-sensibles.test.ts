@@ -128,7 +128,7 @@ describe("recalculerSensiblesDepartementJour", () => {
         saisieParErreur: false,
         date: { gte: JOUR, lt: new Date("2026-01-16T00:00:00.000Z") },
       },
-      select: { conclusion: true },
+      select: { conclusion: true, diagnosticPrincipalCode: true },
     });
 
     // RG-PIL-60 : suppression puis reinsertion, dans la meme transaction.

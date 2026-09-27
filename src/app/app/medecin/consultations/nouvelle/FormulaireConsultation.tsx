@@ -8,6 +8,9 @@ import {
   type BrouillonConsultation,
   type ClinicalActionState,
 } from "@/modules/clinical/actions";
+import { SelecteurDiagnosticCim10 } from "./SelecteurDiagnosticCim10";
+import type { DiagnosticCim10Propose } from "@/modules/administration/referentiel-cim10";
+import { Badge } from "@/components/ui/Badge";
 import type { PriseEnChargeInfirmiereResume } from "@/modules/soins/actions";
 import {
   ageAnnees,
@@ -258,6 +261,26 @@ export function FormulaireConsultation({
   const [symptomes, setSymptomes] = useState(brouillon ? brouillon.symptomes.join("\n") : "");
   const [observations, setObservations] = useState(brouillon?.observations ?? "");
   const [conclusion, setConclusion] = useState(brouillon?.conclusion ?? "");
+  // F-CLI-06/RG-CLI-52 : diagnostic principal codifie CIM-10, sa certitude,
+  // et 0 a 5 diagnostics secondaires. Reconstruit depuis le brouillon repris
+  // a partir de son code/libelle deja valides cote serveur ("sensible" reste
+  // celui du brouillon, recalcule par le serveur a chaque enregistrement).
+  const [diagnosticPrincipal, setDiagnosticPrincipal] = useState<DiagnosticCim10Propose | null>(() =>
+    brouillon?.diagnosticPrincipalCode
+      ? {
+          code: brouillon.diagnosticPrincipalCode,
+          libelle: brouillon.diagnosticPrincipalLibelle ?? brouillon.diagnosticPrincipalCode,
+          groupeMaladie: "",
+          sensible: brouillon.sensible,
+        }
+      : null
+  );
+  const [certitude, setCertitude] = useState<"confirme" | "suspecte">(
+    brouillon?.diagnosticPrincipalCertitude === "suspecte" ? "suspecte" : "confirme"
+  );
+  const [diagnosticsSecondaires, setDiagnosticsSecondaires] = useState<{ code: string; libelle: string }[]>(
+    brouillon?.diagnosticsSecondaires ?? []
+  );
 
   // L'action renvoie l'id de la consultation enregistree (creation ou mise a
   // jour) : sert a la fois de valeur pour le champ cache consultationId des
@@ -332,7 +355,14 @@ export function FormulaireConsultation({
     consultationIdActuel !== null &&
     motif.trim().length > 0 &&
     conclusion.trim().length > 0 &&
+    diagnosticPrincipal !== null &&
     !blocageConstantesNonResolu;
+
+  // RG-CLI-52 : un code du chapitre symptomes (R00-R99) impose la certitude
+  // "suspecte" a l'ecran aussi, coherent avec ce que le serveur imposerait de
+  // toute facon (voir estChapitreSymptome dans clinical/actions.ts).
+  const estChapitreSymptomeAffiche = diagnosticPrincipal ? /^R\d{2}/.test(diagnosticPrincipal.code) : false;
+  const certitudeAffichee = estChapitreSymptomeAffiche ? "suspecte" : certitude;
 
   if (consultationValidee) {
     return (
@@ -378,6 +408,13 @@ export function FormulaireConsultation({
           type="hidden"
           name="priseEnChargeId"
           value={!brouillon && priseEnCharge ? priseEnCharge.id : ""}
+        />
+        <input type="hidden" name="diagnosticPrincipalCode" value={diagnosticPrincipal?.code ?? ""} />
+        <input type="hidden" name="diagnosticPrincipalCertitude" value={diagnosticPrincipal ? certitudeAffichee : ""} />
+        <input
+          type="hidden"
+          name="diagnosticsSecondaires"
+          value={JSON.stringify(diagnosticsSecondaires.map((diagnostic) => diagnostic.code))}
         />
 
         <BandeauAllergies allergies={patientAllergies} />
@@ -554,6 +591,109 @@ export function FormulaireConsultation({
           onChange={setObservations}
         />
 
+        <div className="flex flex-col gap-2">
+          <p className="flex flex-wrap items-baseline gap-1.5 text-[18px] font-semibold text-encre">
+            Diagnostic principal (CIM-10)
+            <span className="text-critique" aria-hidden="true">
+              *
+            </span>
+          </p>
+          <p className="text-[13px] text-encre-secondaire">
+            Obligatoire pour valider. S&apos;il n&apos;est pas encore etabli, choisissez un code de symptome
+            (ex. R50.9 Fievre, sans precision) : la certitude passe alors automatiquement a &laquo; suspecte &raquo;.
+          </p>
+
+          {diagnosticPrincipal ? (
+            <div className="flex flex-col gap-3 rounded-champ border border-bordure-forte bg-surface px-3 py-2">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-col gap-0.5">
+                  <p className="text-[15px] font-semibold text-encre">
+                    <span className="chiffres">{diagnosticPrincipal.code}</span> : {diagnosticPrincipal.libelle}
+                  </p>
+                  {diagnosticPrincipal.sensible ? (
+                    <p className="text-[12px] font-semibold text-vigilance">
+                      Cette consultation sera protegee (confidentialite renforcee).
+                    </p>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDiagnosticPrincipal(null)}
+                  className="text-[13px] font-semibold text-accent hover:underline"
+                >
+                  Changer de diagnostic
+                </button>
+              </div>
+
+              <fieldset className="flex flex-wrap items-center gap-4">
+                <legend className="text-[13px] font-semibold text-encre-secondaire">Certitude</legend>
+                {(["confirme", "suspecte"] as const).map((valeur) => (
+                  <label key={valeur} className="flex items-center gap-1.5 text-[13px] text-encre">
+                    <input
+                      type="radio"
+                      name="certitude-affichage"
+                      checked={certitudeAffichee === valeur}
+                      disabled={estChapitreSymptomeAffiche}
+                      onChange={() => setCertitude(valeur)}
+                    />
+                    {valeur === "confirme" ? "Confirme" : "Suspecte"}
+                  </label>
+                ))}
+                {estChapitreSymptomeAffiche ? (
+                  <span className="text-[12px] text-encre-attenuee">Impose par le code de symptome choisi.</span>
+                ) : null}
+              </fieldset>
+            </div>
+          ) : (
+            <SelecteurDiagnosticCim10
+              codesExclus={diagnosticsSecondaires.map((diagnostic) => diagnostic.code)}
+              onChoisir={setDiagnosticPrincipal}
+            />
+          )}
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <p className="text-[15px] font-semibold text-encre">
+            Diagnostics secondaires
+            <span className="ml-1.5 text-[13px] font-normal text-encre-attenuee">(facultatif, 5 au maximum)</span>
+          </p>
+
+          {diagnosticsSecondaires.length > 0 ? (
+            <ul className="flex flex-wrap gap-2">
+              {diagnosticsSecondaires.map((diagnostic) => (
+                <li key={diagnostic.code}>
+                  <Badge tone="neutral">
+                    <span className="chiffres">{diagnostic.code}</span> : {diagnostic.libelle}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setDiagnosticsSecondaires((liste) => liste.filter((item) => item.code !== diagnostic.code))
+                      }
+                      aria-label={`Retirer le diagnostic secondaire ${diagnostic.libelle}`}
+                      className="ml-1.5 font-bold"
+                    >
+                      x
+                    </button>
+                  </Badge>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+
+          {diagnosticsSecondaires.length < 5 ? (
+            <SelecteurDiagnosticCim10
+              codesExclus={[
+                ...(diagnosticPrincipal ? [diagnosticPrincipal.code] : []),
+                ...diagnosticsSecondaires.map((diagnostic) => diagnostic.code),
+              ]}
+              onChoisir={(diagnostic) =>
+                setDiagnosticsSecondaires((liste) => [...liste, { code: diagnostic.code, libelle: diagnostic.libelle }])
+              }
+              placeholder="Ajouter un diagnostic secondaire"
+            />
+          ) : null}
+        </div>
+
         <ChampTexteMultiligne
           label="Conclusion"
           name="conclusion"
@@ -585,7 +725,7 @@ export function FormulaireConsultation({
           </Button>
           {!peutValider && consultationIdActuel ? (
             <span className="text-[13px] text-encre-attenuee">
-              Motif et conclusion sont nécessaires pour valider.
+              Motif, diagnostic principal et conclusion sont nécessaires pour valider.
             </span>
           ) : null}
         </div>

@@ -1,7 +1,26 @@
 import type { PrismaClient } from "@prisma/client";
-import { classifierGroupeMaladie } from "./referentiel-groupes-maladies";
+import { classifierGroupeMaladie, GROUPES_MALADIES, type GroupeMaladie } from "./referentiel-groupes-maladies";
+import { groupeCim10PourCode } from "@/modules/administration/cim10-groupes";
 import { classifierTrancheAge, classifierTrancheAgePaludisme } from "./tranches-age";
 import { listerJoursEtablissementsATraiter, marquerTachesTraitees } from "./file-taches";
+
+/**
+ * Groupe de maladies d'une consultation (IND-03/04, RG-PIL-05) : prefere le
+ * diagnostic principal codifie CIM-10 (F-CLI-06, plus fiable, un code ne
+ * s'echappe jamais a une classification) quand il est renseigne ; retombe
+ * sur la classification par mots-cles de `conclusion` (referentiel-groupes-maladies.ts)
+ * pour les consultations validees avant le codage CIM-10 (RG-CLI-52) ou sans
+ * diagnostic principal codifie. Les deux referentiels partagent
+ * volontairement les memes codes de groupe (voir administration/cim10-groupes.ts).
+ */
+function groupeDeLaConsultation(diagnosticPrincipalCode: string | null, conclusion: string): GroupeMaladie | null {
+  if (diagnosticPrincipalCode) {
+    const groupeCim10 = groupeCim10PourCode(diagnosticPrincipalCode);
+    const groupe = GROUPES_MALADIES.find((g) => g.code === groupeCim10);
+    if (groupe) return groupe;
+  }
+  return conclusion ? classifierGroupeMaladie(conclusion) : null;
+}
 
 /**
  * Moteur de calcul des agregats (F-PIL-07 du pack, chapitre 14). Recalcule
@@ -65,14 +84,13 @@ import { listerJoursEtablissementsATraiter, marquerTachesTraitees } from "./file
  * fausse impression de precision sur un decoupage qui n'est pas encore le
  * vrai decoupage officiel.
  *
- * Limite assumee sur IND-10 : seules les vaccinations administrees en
- * etablissement (modele Vaccination, EtablissementSanitaire.id obligatoire)
- * sont comptees. Le pack distingue un lieu "terrain" (vaccination hors
- * etablissement, typiquement lors d'une visite de suivi communautaire) :
- * SuiviCommunautaire.typeVisite peut valoir "vaccination" mais ce depot n'y
- * enregistre ni le vaccin ni le numero de dose administres (juste des notes
- * en texte libre), donc rien de fiable a agreger pour ce lieu pour
- * l'instant.
+ * IND-10 (corrige le 2026-09-27, F-COM-04) : compte desormais aussi les
+ * vaccinations en campagne / strategie avancee (agent communautaire,
+ * Vaccination.personneCommunautaireId), en plus de celles en etablissement
+ * (Vaccination.patientId) : les deux portent le meme modele structure
+ * (vaccin, numero de dose) depuis que Vaccination accepte une fiche
+ * PersonneCommunautaire a la place d'un dossier Patient. La tranche d'age
+ * est calculee depuis la date de naissance de l'une ou l'autre cible.
  *
  * Limite assumee sur IND-12 : seule la part de consultations validees
  * tardivement (> 48h entre Consultation.date et dateValidation) est
@@ -154,6 +172,7 @@ export async function recalculerJourEtablissement(
       id: true,
       patientId: true,
       conclusion: true,
+      diagnosticPrincipalCode: true,
       date: true,
       dateValidation: true,
       patient: { select: { sexe: true, dateNaissance: true } },
@@ -178,8 +197,8 @@ export async function recalculerJourEtablissement(
     if (!patientsInd02.has(cleSexeTranche)) patientsInd02.set(cleSexeTranche, new Set());
     patientsInd02.get(cleSexeTranche)!.add(consultation.patientId);
 
-    if (consultation.conclusion) {
-      const groupe = classifierGroupeMaladie(consultation.conclusion);
+    {
+      const groupe = groupeDeLaConsultation(consultation.diagnosticPrincipalCode, consultation.conclusion);
       if (groupe) {
         // RG-PIL-05 : un groupe SENSITIVE n'est JAMAIS compte par etablissement.
         // Il est compte au niveau departement par recalculerSensiblesDepartementJour.
@@ -306,16 +325,28 @@ export async function recalculerJourEtablissement(
     lignes.push({ indicateur: "IND-09", sexe: null, trancheAge: null, dimensionLibre: dci, valeur });
   }
 
-  // IND-10 : doses de vaccination administrees en etablissement ce jour,
-  // par vaccin et numero de dose (voir limite assumee documentee en tete de
-  // fichier sur le lieu "terrain").
+  // IND-10 : doses de vaccination administrees ce jour par des professionnels
+  // de cet etablissement, par vaccin et numero de dose (F-COM-04 : couvre
+  // aussi bien le patient d'un dossier que la personne communautaire d'une
+  // campagne, voir la limite assumee documentee en tete de fichier).
   const vaccinationsDuJour = await prisma.vaccination.findMany({
     where: { etablissementId, saisieParErreur: false, dateAdministration: { gte: debut, lt: fin } },
-    select: { vaccin: true, numeroDose: true, dateAdministration: true, patient: { select: { dateNaissance: true } } },
+    select: {
+      vaccin: true,
+      numeroDose: true,
+      dateAdministration: true,
+      patient: { select: { dateNaissance: true } },
+      personneCommunautaire: { select: { dateNaissance: true } },
+    },
   });
   const compteursInd10 = new Map<string, number>();
   for (const vaccination of vaccinationsDuJour) {
-    const trancheAge = classifierTrancheAge(vaccination.patient.dateNaissance, vaccination.dateAdministration);
+    const dateNaissance = vaccination.patient?.dateNaissance ?? vaccination.personneCommunautaire?.dateNaissance;
+    // Ne devrait jamais arriver (contrainte SQL : patientId XOR personneCommunautaireId), mais un indicateur
+    // sanitaire ne doit jamais planter sur une ligne inattendue : ignoree plutot que de faire echouer tout le calcul.
+    if (!dateNaissance) continue;
+
+    const trancheAge = classifierTrancheAge(dateNaissance, vaccination.dateAdministration);
     const cle = `${vaccination.vaccin}:dose${vaccination.numeroDose}|${trancheAge}`;
     compteursInd10.set(cle, (compteursInd10.get(cle) ?? 0) + 1);
   }
@@ -394,12 +425,11 @@ export async function recalculerSensiblesDepartementJour(
         saisieParErreur: false,
         date: { gte: debut, lt: fin },
       },
-      select: { conclusion: true },
+      select: { conclusion: true, diagnosticPrincipalCode: true },
     });
 
     for (const consultation of consultations) {
-      if (!consultation.conclusion) continue;
-      const groupe = classifierGroupeMaladie(consultation.conclusion);
+      const groupe = groupeDeLaConsultation(consultation.diagnosticPrincipalCode, consultation.conclusion);
       if (groupe?.sensible) {
         compteurs.set(groupe.code, (compteurs.get(groupe.code) ?? 0) + 1);
       }

@@ -24,6 +24,7 @@ import { journaliser } from "@/modules/audit/journaliser";
 import { publierEvenementPilotage } from "@/modules/pilotage/file-taches";
 import { transitionnerRendezVous } from "@/modules/facility/rendez-vous-etats";
 import { MESSAGE_ORDRE_NON_VERIFIE, professionnelValide } from "@/modules/administration/validation-professionnels-controle";
+import { FORMAT_CODE_CIM10, estChapitreSymptome, normaliserCodeCim10 } from "@/modules/administration/cim10-groupes";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
 import {
@@ -86,6 +87,16 @@ export interface ConsultationResume {
   glycemieGL: number | null;
   observations: string;
   conclusion: string;
+  // F-CLI-06/07 du pack (RG-CLI-52/53) : diagnostic principal codifie
+  // CIM-10, sa certitude, et 0 a 5 diagnostics secondaires. Null/vide pour
+  // toute consultation validee avant ce champ.
+  diagnosticPrincipalCode: string | null;
+  diagnosticPrincipalLibelle: string | null;
+  diagnosticPrincipalCertitude: string | null;
+  diagnosticsSecondaires: { code: string; libelle: string }[];
+  // Vrai si le diagnostic principal appartient a un groupe sensible
+  // (VIH, IST, sante mentale...) : confidentialite renforcee, RG-CLI-53.
+  sensible: boolean;
   statut: string;
   professionnelNomComplet: string | null; // rempli cote patient
   patientNomComplet: string | null; // rempli cote professionnel
@@ -173,6 +184,17 @@ const schemaEnregistrementBrouillon = z.object({
   confirmerAlerteConstantes: z.coerce.boolean().optional().default(false),
   observations: z.string().trim().optional().default(""),
   conclusion: z.string().trim().optional().default(""),
+  // F-CLI-06 / RG-CLI-52/53 du pack : diagnostic principal codifie CIM-10,
+  // branche sur administration/referentiel-cim10.ts. Le code est revalide
+  // aupres du referentiel avant tout enregistrement (Zero Trust : jamais le
+  // libelle ni le caractere sensible transmis par le client). Facultatif
+  // pour un simple brouillon, exige pour valider (voir plus bas).
+  diagnosticPrincipalCode: z.string().trim().optional().default(""),
+  // confirme | suspecte ; ignore (toujours "suspecte") pour un code du
+  // chapitre symptomes (R00-R99).
+  diagnosticPrincipalCertitude: z.string().trim().optional().default(""),
+  // JSON d'un tableau de codes CIM-10 (0 a 5), revalides un par un.
+  diagnosticsSecondaires: z.string().trim().optional().default("[]"),
 });
 
 /**
@@ -195,9 +217,59 @@ function calculerEmpreinteConsultation(champs: {
   glycemieGL: number | null;
   observations: string;
   conclusion: string;
+  diagnosticPrincipalCode: string | null;
+  diagnosticPrincipalCertitude: string | null;
+  diagnosticsSecondaires: string;
 }): string {
   const contenuCanonique = JSON.stringify(champs, Object.keys(champs).sort());
   return createHash("sha256").update(contenuCanonique).digest("hex");
+}
+
+const CERTITUDES_DIAGNOSTIC = ["confirme", "suspecte"] as const;
+const MAXIMUM_DIAGNOSTICS_SECONDAIRES = 5;
+
+interface DiagnosticCim10Valide {
+  code: string;
+  libelle: string;
+  sensible: boolean;
+}
+
+/**
+ * Revalide un code CIM-10 aupres du referentiel (Zero Trust : jamais le
+ * libelle ni le caractere sensible transmis par le client, toujours relus en
+ * base). Renvoie null si le code est mal forme, introuvable ou desactive
+ * (F-ADM-04, RG-ADM-20 : une entree desactivee ne doit plus etre choisie
+ * pour une nouvelle consultation, meme si d'anciennes consultations la
+ * portent encore).
+ */
+async function diagnosticCim10Valide(codeBrut: string): Promise<DiagnosticCim10Valide | null> {
+  const code = normaliserCodeCim10(codeBrut);
+
+  if (!FORMAT_CODE_CIM10.test(code)) {
+    return null;
+  }
+
+  const diagnostic = await prisma.diagnosticCim10.findUnique({ where: { code } });
+
+  if (!diagnostic || !diagnostic.actif) {
+    return null;
+  }
+
+  return { code: diagnostic.code, libelle: diagnostic.libelle, sensible: diagnostic.sensible };
+}
+
+/** Diagnostics secondaires (0 a 5) tels que stockes en base : JSON de {code, libelle}. */
+function parseDiagnosticsSecondaires(valeur: string): { code: string; libelle: string }[] {
+  try {
+    const donnees: unknown = JSON.parse(valeur);
+    if (!Array.isArray(donnees)) return [];
+    return donnees.filter(
+      (item): item is { code: string; libelle: string } =>
+        typeof item === "object" && item !== null && typeof (item as { code?: unknown }).code === "string" && typeof (item as { libelle?: unknown }).libelle === "string"
+    );
+  } catch {
+    return [];
+  }
 }
 
 /** Adresse technique d'origine de la requete courante, pour le JournalAudit. */
@@ -336,6 +408,11 @@ export async function getMesConsultations(): Promise<ConsultationResume[]> {
     // afficher ConsultationResume.observations sans y penser.
     observations: "",
     conclusion: consultation.conclusion,
+    diagnosticPrincipalCode: consultation.diagnosticPrincipalCode,
+    diagnosticPrincipalLibelle: consultation.diagnosticPrincipalLibelle,
+    diagnosticPrincipalCertitude: consultation.diagnosticPrincipalCertitude,
+    diagnosticsSecondaires: parseDiagnosticsSecondaires(consultation.diagnosticsSecondaires),
+    sensible: consultation.sensible,
     statut: consultation.statut,
     professionnelNomComplet: nomCompletProfessionnel(consultation.professionnel.user),
     patientNomComplet: null,
@@ -405,6 +482,11 @@ export interface BrouillonConsultation {
   glycemieGL: number | null;
   observations: string;
   conclusion: string;
+  diagnosticPrincipalCode: string | null;
+  diagnosticPrincipalLibelle: string | null;
+  diagnosticPrincipalCertitude: string | null;
+  diagnosticsSecondaires: { code: string; libelle: string }[];
+  sensible: boolean;
 }
 
 /**
@@ -442,6 +524,11 @@ export async function getBrouillonExistant(patientId: string): Promise<Brouillon
     glycemieGL: brouillon.glycemieGL,
     observations: brouillon.observations,
     conclusion: brouillon.conclusion,
+    diagnosticPrincipalCode: brouillon.diagnosticPrincipalCode,
+    diagnosticPrincipalLibelle: brouillon.diagnosticPrincipalLibelle,
+    diagnosticPrincipalCertitude: brouillon.diagnosticPrincipalCertitude,
+    diagnosticsSecondaires: parseDiagnosticsSecondaires(brouillon.diagnosticsSecondaires),
+    sensible: brouillon.sensible,
   };
 }
 
@@ -495,6 +582,12 @@ export interface ResumePatient {
   // d'un consentement individuel), pour afficher un bandeau informatif et
   // son expiration cote ecran.
   accesReferenceExpirationLe: string | null;
+  // RG-CLI-30 : vrai quand au moins une consultation "sensible" du patient
+  // existe mais n'est pas dans derniersEvenements a cause de la restriction
+  // de cet acces (urgence ou reference, RG-CLI-91) : l'ecran doit alors dire
+  // explicitement que le resume n'est pas complet, plutot que de laisser
+  // croire a un dossier sans historique sensible.
+  elementsSensiblesMasques: boolean;
 }
 
 function parseContactsUrgenceResume(valeur: string): ContactUrgenceResume[] {
@@ -612,7 +705,9 @@ export async function getResumePatient(patientId: string): Promise<ResumePatient
     return null;
   }
 
-  const [prescriptionsActives, consultationsRecentes] = await Promise.all([
+  const accesRestreint = acces.source === "reference" || acces.typeAcces === "urgence";
+
+  const [prescriptionsActives, consultationsRecentes, elementsSensiblesMasques] = await Promise.all([
     prisma.prescription.findMany({
       where: { patientId, statut: { in: ["validee", "delivree_partiellement"] } },
       include: {
@@ -622,11 +717,23 @@ export async function getResumePatient(patientId: string): Promise<ResumePatient
       orderBy: { date: "desc" },
     }),
     prisma.consultation.findMany({
-      where: { patientId, statut: "terminee" },
+      where: {
+        patientId,
+        statut: "terminee",
+        // RG-CLI-91 : un acces d'urgence ou via reference n'ouvre jamais une
+        // consultation sensible (meme filtre que getHistoriquePatient).
+        ...(accesRestreint ? { sensible: false } : {}),
+      },
       include: { professionnel: { include: { user: true } } },
       orderBy: { date: "desc" },
       take: NOMBRE_DERNIERS_EVENEMENTS,
     }),
+    // RG-CLI-30 : le resume doit dire explicitement qu'il est incomplet plutot
+    // que de laisser croire a un dossier sans historique sensible. Un simple
+    // count, jamais le contenu des consultations exclues.
+    accesRestreint
+      ? prisma.consultation.count({ where: { patientId, statut: "terminee", sensible: true } })
+      : Promise.resolve(0),
   ]);
 
   const adresseTechnique = await adresseTechniqueCourante();
@@ -677,6 +784,7 @@ export async function getResumePatient(patientId: string): Promise<ResumePatient
         ? acces.dateFin.toISOString()
         : null,
     accesReferenceExpirationLe: acces.source === "reference" ? acces.dateFinAcces.toISOString() : null,
+    elementsSensiblesMasques: elementsSensiblesMasques > 0,
   };
 }
 
@@ -777,15 +885,17 @@ export async function getHistoriquePatient(
   ]);
 
   // RG-CLI-91 : un acces d'urgence "bris de glace" (F-CLI-10) ne donne jamais
-  // acces aux examens sensibles (ex. serologie VIH), exclus entierement de la
-  // chronologie plutot que masques partiellement. Meme restriction pour un
-  // acces via reference (F-CLI-14) : ni l'un ni l'autre n'est un consentement
-  // explicite et specifique du patient.
+  // acces aux examens ni aux consultations sensibles (ex. serologie VIH,
+  // consultation dont le diagnostic principal est dans un groupe sensible),
+  // exclus entierement de la chronologie plutot que masques partiellement.
+  // Meme restriction pour un acces via reference (F-CLI-14) : ni l'un ni
+  // l'autre n'est un consentement explicite et specifique du patient.
   const accesRestreint = acces.source === "reference" || acces.typeAcces === "urgence";
   const examensAccessibles = accesRestreint ? examens.filter((e) => !e.sensible) : examens;
+  const consultationsAccessibles = accesRestreint ? consultations.filter((c) => !c.sensible) : consultations;
 
   const tousLesEvenements: EvenementHistorique[] = [
-    ...consultations.map((c): EvenementHistorique => ({
+    ...consultationsAccessibles.map((c): EvenementHistorique => ({
       id: c.id,
       type: "consultation",
       date: c.date.toISOString(),
@@ -1003,6 +1113,11 @@ export async function getConsultationsDuProfessionnel(): Promise<ConsultationRes
     glycemieGL: consultation.glycemieGL,
     observations: consultation.observations,
     conclusion: consultation.conclusion,
+    diagnosticPrincipalCode: consultation.diagnosticPrincipalCode,
+    diagnosticPrincipalLibelle: consultation.diagnosticPrincipalLibelle,
+    diagnosticPrincipalCertitude: consultation.diagnosticPrincipalCertitude,
+    diagnosticsSecondaires: parseDiagnosticsSecondaires(consultation.diagnosticsSecondaires),
+    sensible: consultation.sensible,
     statut: consultation.statut,
     professionnelNomComplet: null,
     patientNomComplet: nomComplet(consultation.patient.user),
@@ -1081,6 +1196,11 @@ export async function getConsultationsDeLEtablissement(): Promise<ConsultationRe
     // Notes reservees du medecin : jamais renvoyees dans cette liste transversale.
     observations: "",
     conclusion: consultation.conclusion,
+    diagnosticPrincipalCode: consultation.diagnosticPrincipalCode,
+    diagnosticPrincipalLibelle: consultation.diagnosticPrincipalLibelle,
+    diagnosticPrincipalCertitude: consultation.diagnosticPrincipalCertitude,
+    diagnosticsSecondaires: parseDiagnosticsSecondaires(consultation.diagnosticsSecondaires),
+    sensible: consultation.sensible,
     statut: consultation.statut,
     professionnelNomComplet: nomCompletProfessionnel(consultation.professionnel.user),
     patientNomComplet: nomComplet(consultation.patient.user),
@@ -1104,9 +1224,16 @@ export async function getConsultationsDeLEtablissement(): Promise<ConsultationRe
  * par patient - si consultationId est vide et qu'un brouillon existe deja
  * pour (patientId, medecin connecte), il est repris plutot que d'en creer un
  * second. Le motif et la conclusion restent facultatifs pour un simple
- * enregistrement (RG-CLI-41) mais deviennent obligatoires pour valider
- * (CA-1 du pack, tient lieu de "diagnostic principal" - ce depot n'ayant pas
- * de codage CIM-10). La validation calcule l'empreinte SHA-256 du contenu
+ * enregistrement (RG-CLI-41) mais deviennent obligatoires pour valider, de
+ * meme que le diagnostic principal codifie CIM-10 (RG-CLI-52, CA-1 du pack) :
+ * un code fourni est toujours revalide aupres du referentiel
+ * (administration/referentiel-cim10.ts), jamais son libelle ni son
+ * caractere sensible ne sont crus sur parole du client. Un code du chapitre
+ * symptomes (R00-R99) force la certitude "suspecte" (RG-CLI-52). Un
+ * diagnostic principal dans un groupe sensible (VIH, IST, sante mentale...)
+ * marque la consultation `sensible` (RG-CLI-53), fige au moment de
+ * l'enregistrement du brouillon (jamais recalcule apres validation,
+ * RG-CLI-00). La validation calcule l'empreinte SHA-256 du contenu
  * canonique et horodate separement de la date de demarrage (RG-CLI-61) ;
  * apres validation, seul un addendum pourra completer la consultation
  * (RG-CLI-00, voir ajouterAddendumConsultationAction).
@@ -1148,6 +1275,9 @@ export async function enregistrerConsultationAction(
     confirmerAlerteConstantes: texte(formData, "confirmerAlerteConstantes"),
     observations: texte(formData, "observations"),
     conclusion: texte(formData, "conclusion"),
+    diagnosticPrincipalCode: texte(formData, "diagnosticPrincipalCode"),
+    diagnosticPrincipalCertitude: texte(formData, "diagnosticPrincipalCertitude"),
+    diagnosticsSecondaires: texte(formData, "diagnosticsSecondaires"),
   });
 
   if (!validation.success) {
@@ -1178,18 +1308,75 @@ export async function enregistrerConsultationAction(
     confirmerAlerteConstantes,
     observations,
     conclusion,
+    diagnosticPrincipalCode,
+    diagnosticPrincipalCertitude,
+    diagnosticsSecondaires,
   } = validation.data;
 
-  if (valider && (motif.trim().length === 0 || conclusion.trim().length === 0)) {
+  // RG-CLI-52/53 : le diagnostic principal est revalide aupres du referentiel
+  // avant toute ecriture, brouillon ou validation - jamais un code fantaisiste
+  // enregistre tel quel. Un code fourni mais introuvable/desactive est
+  // toujours refuse (pas seulement a la validation) : mieux vaut le signaler
+  // tout de suite que de laisser un brouillon reposer sur un code invalide.
+  const diagnosticPrincipalCodeNettoye = diagnosticPrincipalCode.trim();
+  let diagnosticPrincipal: DiagnosticCim10Valide | null = null;
+
+  if (diagnosticPrincipalCodeNettoye.length > 0) {
+    diagnosticPrincipal = await diagnosticCim10Valide(diagnosticPrincipalCodeNettoye);
+    if (!diagnosticPrincipal) {
+      return {
+        error: "Ce diagnostic est introuvable ou desactive dans le referentiel. Choisissez-le depuis la recherche.",
+        success: false,
+      };
+    }
+  }
+
+  const diagnosticPrincipalCertitudeFinale: "confirme" | "suspecte" | null = diagnosticPrincipal
+    ? estChapitreSymptome(diagnosticPrincipal.code)
+      ? "suspecte"
+      : (CERTITUDES_DIAGNOSTIC as readonly string[]).includes(diagnosticPrincipalCertitude)
+        ? (diagnosticPrincipalCertitude as "confirme" | "suspecte")
+        : "confirme"
+    : null;
+
+  const codesSecondairesBruts = (() => {
+    try {
+      const donnees: unknown = JSON.parse(diagnosticsSecondaires);
+      return Array.isArray(donnees) ? donnees.filter((c): c is string => typeof c === "string") : [];
+    } catch {
+      return [];
+    }
+  })();
+
+  if (codesSecondairesBruts.length > MAXIMUM_DIAGNOSTICS_SECONDAIRES) {
+    return { error: `${MAXIMUM_DIAGNOSTICS_SECONDAIRES} diagnostics secondaires au maximum.`, success: false };
+  }
+
+  const diagnosticsSecondairesValides: DiagnosticCim10Valide[] = [];
+  for (const codeSecondaireBrut of codesSecondairesBruts) {
+    const valide = await diagnosticCim10Valide(codeSecondaireBrut);
+    if (!valide) {
+      return {
+        error: "Un des diagnostics secondaires est introuvable ou desactive dans le referentiel.",
+        success: false,
+      };
+    }
+    diagnosticsSecondairesValides.push(valide);
+  }
+
+  if (valider) {
     const champsManquants = [
       motif.trim().length === 0 ? "motif" : null,
-      conclusion.trim().length === 0 ? "conclusion (diagnostic)" : null,
+      conclusion.trim().length === 0 ? "conclusion" : null,
+      diagnosticPrincipal === null ? "diagnostic principal (CIM-10)" : null,
     ].filter((champ): champ is string => champ !== null);
 
-    return {
-      error: `Impossible de valider : renseignez ${champsManquants.join(" et ")}.`,
-      success: false,
-    };
+    if (champsManquants.length > 0) {
+      return {
+        error: `Impossible de valider : renseignez ${champsManquants.join(", ")}.`,
+        success: false,
+      };
+    }
   }
 
   // F-ADM-03 : si l'interrupteur est actif, seul un numero d'Ordre verifie valide (le brouillon reste libre).
@@ -1307,6 +1494,16 @@ export async function enregistrerConsultationAction(
       glycemieGL: glycemieGL ?? null,
       observations,
       conclusion,
+      diagnosticPrincipalCode: diagnosticPrincipal?.code ?? null,
+      diagnosticPrincipalLibelle: diagnosticPrincipal?.libelle ?? null,
+      diagnosticPrincipalCertitude: diagnosticPrincipalCertitudeFinale,
+      diagnosticsSecondaires: JSON.stringify(
+        diagnosticsSecondairesValides.map((diagnostic) => ({ code: diagnostic.code, libelle: diagnostic.libelle }))
+      ),
+      // RG-CLI-53 : fige a chaque enregistrement de brouillon sur l'etat
+      // ACTUEL du diagnostic principal ; une consultation validee (RG-CLI-00)
+      // n'est plus jamais reecrite, donc jamais recalculee ensuite.
+      sensible: diagnosticPrincipal?.sensible ?? false,
     };
 
     const adresseTechnique = await adresseTechniqueCourante();

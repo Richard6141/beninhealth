@@ -19,7 +19,7 @@ vi.mock("@/lib/prisma", () => ({
     referencePatient: { findFirst: vi.fn() },
     patient: { findUnique: vi.fn() },
     prescription: { findMany: vi.fn() },
-    consultation: { findMany: vi.fn() },
+    consultation: { findMany: vi.fn(), count: vi.fn() },
     examenMedical: { findMany: vi.fn() },
     suiviCommunautaire: { findMany: vi.fn() },
   },
@@ -36,7 +36,7 @@ const prismaMock = prisma as unknown as {
   referencePatient: { findFirst: Mock };
   patient: { findUnique: Mock };
   prescription: { findMany: Mock };
-  consultation: { findMany: Mock };
+  consultation: { findMany: Mock; count: Mock };
   examenMedical: { findMany: Mock };
   suiviCommunautaire: { findMany: Mock };
 };
@@ -92,6 +92,7 @@ beforeEach(() => {
   prismaMock.patient.findUnique.mockResolvedValue(PATIENT);
   prismaMock.prescription.findMany.mockResolvedValue([]);
   prismaMock.consultation.findMany.mockResolvedValue([]);
+  prismaMock.consultation.count.mockResolvedValue(0);
   prismaMock.examenMedical.findMany.mockResolvedValue([]);
   prismaMock.suiviCommunautaire.findMany.mockResolvedValue([]);
 });
@@ -226,6 +227,54 @@ describe("resume du patient", () => {
       expect.objectContaining({ where: { patientId: "pat-1", statut: "terminee" } })
     );
   });
+
+  it("RG-CLI-91 : un acces d'urgence n'ecarte que les consultations sensibles de la requete, un consentement normal ne filtre rien", async () => {
+    prismaMock.consentement.findUnique.mockResolvedValue(consentement("urgence"));
+
+    await getResumePatient("pat-1");
+
+    expect(prismaMock.consultation.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { patientId: "pat-1", statut: "terminee", sensible: false } })
+    );
+  });
+
+  it("RG-CLI-30 : un consentement normal ne compte jamais les sensibles masquees (rien n'est masque)", async () => {
+    const resume = await getResumePatient("pat-1");
+
+    expect(prismaMock.consultation.count).not.toHaveBeenCalled();
+    expect(resume?.elementsSensiblesMasques).toBe(false);
+  });
+
+  it("RG-CLI-30 : un acces d'urgence avec au moins une consultation sensible existante signale le resume incomplet", async () => {
+    prismaMock.consentement.findUnique.mockResolvedValue(consentement("urgence"));
+    prismaMock.consultation.count.mockResolvedValue(2);
+
+    const resume = await getResumePatient("pat-1");
+
+    expect(prismaMock.consultation.count).toHaveBeenCalledWith({
+      where: { patientId: "pat-1", statut: "terminee", sensible: true },
+    });
+    expect(resume?.elementsSensiblesMasques).toBe(true);
+  });
+
+  it("RG-CLI-30 : un acces d'urgence sans aucune consultation sensible ne signale rien", async () => {
+    prismaMock.consentement.findUnique.mockResolvedValue(consentement("urgence"));
+    prismaMock.consultation.count.mockResolvedValue(0);
+
+    const resume = await getResumePatient("pat-1");
+
+    expect(resume?.elementsSensiblesMasques).toBe(false);
+  });
+
+  it("RG-CLI-30 : un acces par reference compte aussi les sensibles masquees", async () => {
+    prismaMock.consentement.findUnique.mockResolvedValue(null);
+    prismaMock.referencePatient.findFirst.mockResolvedValue({ id: "ref-1", dateFinAcces: dans(HEURE) });
+    prismaMock.consultation.count.mockResolvedValue(1);
+
+    const resume = await getResumePatient("pat-1");
+
+    expect(resume?.elementsSensiblesMasques).toBe(true);
+  });
 });
 
 describe("historique du patient", () => {
@@ -253,6 +302,28 @@ describe("historique du patient", () => {
     const historique = await getHistoriquePatient("pat-1");
 
     expect(historique?.evenements.map((e) => e.id)).toEqual(["ex-normal"]);
+  });
+
+  it("RG-CLI-91/RG-CLI-53 : un acces d'urgence n'expose aucune consultation sensible (diagnostic principal d'un groupe sensible)", async () => {
+    prismaMock.consultation.findMany.mockResolvedValue([
+      { id: "c-normale", date: dans(-HEURE), motif: "Fievre", conclusion: "Paludisme", saisieParErreur: false, motifRetrait: null, etablissementId: "etab-1", etablissement: { nom: "CS Akpakpa" }, professionnel: medecin, sensible: false },
+      { id: "c-sensible", date: dans(-2 * HEURE), motif: "Suivi", conclusion: "VIH", saisieParErreur: false, motifRetrait: null, etablissementId: "etab-1", etablissement: { nom: "CS Akpakpa" }, professionnel: medecin, sensible: true },
+    ]);
+    prismaMock.consentement.findUnique.mockResolvedValue(consentement("urgence"));
+
+    const historique = await getHistoriquePatient("pat-1");
+
+    expect(historique?.evenements.map((e) => e.id)).toEqual(["c-normale"]);
+  });
+
+  it("un consentement dossier_complet voit aussi les consultations sensibles", async () => {
+    prismaMock.consultation.findMany.mockResolvedValue([
+      { id: "c-sensible", date: dans(-HEURE), motif: "Suivi", conclusion: "VIH", saisieParErreur: false, motifRetrait: null, etablissementId: "etab-1", etablissement: { nom: "CS Akpakpa" }, professionnel: medecin, sensible: true },
+    ]);
+
+    const historique = await getHistoriquePatient("pat-1");
+
+    expect(historique?.evenements.map((e) => e.id)).toEqual(["c-sensible"]);
   });
 
   it("un consentement dossier_complet voit les examens sensibles", async () => {

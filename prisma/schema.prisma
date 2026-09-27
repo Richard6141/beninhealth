@@ -423,6 +423,29 @@ model Consultation {
   glycemieGL            Float?
   observations    String    @default("")
   conclusion      String    @default("")
+  // Diagnostic principal codifie CIM-10 (F-CLI-06, RG-CLI-52), branche sur le
+  // referentiel administration/referentiel-cim10.ts. Facultatif : une
+  // consultation deja validee AVANT ce champ (ou un brouillon en cours) n'en
+  // a pas ; RG-CLI-52 l'exige seulement au moment de VALIDER (verifie par le
+  // code applicatif, pas par une contrainte de schema, meme principe que
+  // motif/conclusion). diagnosticPrincipalLibelle est denormalise (le
+  // libelle au moment de la saisie) : le referentiel peut evoluer sans
+  // changer le contenu d'une consultation deja validee.
+  diagnosticPrincipalCode      String?
+  diagnosticPrincipalLibelle   String?
+  // confirme | suspecte (RG-CLI-52 : un code du chapitre R, symptome, est
+  // toujours "suspecte").
+  diagnosticPrincipalCertitude String?
+  // 0 a 5 diagnostics secondaires, JSON [{code, libelle}] (meme forme que
+  // DiagnosticCim10Propose, sans le champ "sensible" : la sensibilite de la
+  // consultation ne depend que du diagnostic PRINCIPAL, section 18.6 du pack).
+  diagnosticsSecondaires String @default("[]")
+  // RG-CLI-53 : vrai si diagnosticPrincipalCode appartient a un groupe
+  // sensible (groupeEstSensible). Deduit et fige a l'enregistrement du
+  // brouillon, jamais recalcule apres validation (RG-CLI-00, immuabilite) :
+  // si le referentiel reclasse un code plus tard, les consultations deja
+  // enregistrees gardent la protection qu'elles avaient.
+  sensible Boolean @default(false)
   // F-CLI-05/07 du pack : cycle de vie brouillon -> valide (RG-CLI-40 : un
   // seul brouillon ouvert par patient et par medecin). "terminee" designe la
   // consultation validee (verrouillee, immuable hors addendum), jamais un
