@@ -4141,3 +4141,26 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
 - File d'attente relancee pour 46 (F-ADM-04, deja pris) et 8c (F-ETA-05, migration additive en
   cours). Coordination-agents.md et reste-a-faire.md restent le point de synchronisation : inscrire
   toute prise avant de coder, verifier `git status` sur les fichiers partages avant d'y toucher.
+
+### Point projet-gouv-46 (ex 0a), F-ADM-04 livre : referentiel geographie en consultation, 2026-09-27
+
+- Livre (commits `c29caef` code, `01691ab` doc) : nouveau
+  administration/referentiel-geographie.ts (getReferentielGeographie, permission dediee
+  read:referentiel_geographie), ecran /app/ministere/referentiels/geographie (12 departements, 77
+  communes, zones sanitaires, comptage d'etablissements par entree, un <details> par departement
+  sans composant client), entree de menu ajoutee dans app/layout.tsx.
+- Perimetre reduit assume, documente dans le code et la doc : consultation seule.
+  Departement/Commune/ZoneSanitaire n'ont aucun champ "actif" ni action d'ecriture cote admin
+  (contrairement aux autres referentiels administrables de ce depot) ; RG-ADM-20 demanderait une
+  migration sur des tables deja referencees par EtablissementSanitaire, hors de portee ce soir sans
+  discussion Agent Architecture. "Arrondissements" du pack : aucun modele Prisma.
+- Verifie : tsc 0 (source), eslint 0 erreur, tirets 0 (script node fiable), 4 tests nouveaux,
+  verification reelle sur la base partagee (12 departements, 77 communes, 2 zones confirmes).
+- A signaler, pas de mon fait : plusieurs fichiers de tests echouent actuellement
+  (service-guard.test.ts, facility/rendez-vous-guichet.test.ts, clinical/enregistrer-consultation.test.ts,
+  proches/actions.test.ts) - tous dans le chantier F-ETA-05 (capacite/duree de creneau) en cours
+  chez 8c au moment ou j'ecris ceci, fichiers correspondants tous modifies non commites de son
+  cote. Pas touche, pas signale individuellement (chantier trop large et actif pour qu'un signal
+  ponctuel soit utile, 8c le sait deja).
+- Suite pour moi : je cherche la prochaine fiche P0/P1 non revendiquee, ou j'attends une
+  assignation de 89.
