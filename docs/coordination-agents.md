@@ -4269,3 +4269,31 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
 - Suite pour moi : je cherche la prochaine fiche P0/P1 non revendiquee, ou j'attends une
   assignation de 89. F-PRE-01 (DRAFT, posologie etendue, quantite calculee) reste disponible dans
   le meme domaine si personne d'autre ne le prend avant.
+
+### Prise de projet-gouv-46 (ex 0a), F-PRE-01 : posologie enrichie et quantite calculee, 2026-09-27
+
+- Assigne par 89. Fichiers verifies clean : prescription/{actions.ts,posologie.ts}, medecin/prescriptions/nouvelle/{FormulairePrescription,SelecteurMedicament}.tsx.
+- Perimetre de la fiche relu dans le pack (section 11.1/11.2) : la fiche complete couvre un etat
+  DRAFT distinct d'ACTIVE (creation puis signature separees, statut ABANDONED), une posologie a 11
+  unites/12 voies/frequence "X fois par jour, toutes les X heures, ou si besoin", des "moments"
+  (matin/midi/soir/coucher), une duree "1 a 90 jours OU traitement de fond", une quantite CALCULEE
+  (modifiable), des raccourcis d'instructions, jusqu'a 10 lignes reordonnables.
+- Perimetre que je prends ce soir, sans migration (LignePrescription.posologie reste une simple
+  String composee, comme deja assume dans posologie.ts) : les 11 unites et 12 voies du pack, la
+  frequence restructuree en 3 modes (fois par jour / toutes les X heures / si besoin), les moments,
+  la quantite calculee (dose x prises/jour x jours, arrondie au superieur, modifiable), les
+  raccourcis d'instructions.
+- Delibérément hors de portee ce soir, decision assumee a documenter dans le code (pas une
+  invention, deja le principe de ce depot pour ce module, voir l'en-tete de prescription/actions.ts) :
+  - Etat DRAFT/ACTIVE/ABANDONED : changerait le cycle de vie de toute prescription (creation puis
+    signature separees), avec des repercussions sur la pharmacie (F-PHA, domaine de 3f/8c) et
+    RG-PRE-00 (immutabilite). Trop risque a entamer maintenant sans discussion prealable.
+  - "Traitement de fond" (duree indefinie) : LignePrescription.dureeTraitementJours est un Int non
+    nullable obligatoire ; le representer honnetement demanderait un champ nullable ou un
+    sentinel, une decision de modelisation plutot qu'une correction simple.
+  - Instructions par ligne (raccourcis "avant/pendant/apres le repas", "a jeun") : le champ actuel
+    est au niveau de l'ordonnance entiere, pas de la ligne (LignePrescription n'a pas de colonne
+    instructions). Ajoute plutot les raccourcis au champ existant (niveau ordonnance), pas une
+    vraie implementation par ligne.
+- Je code maintenant, je documenterai chaque limite precisement dans posologie.ts et
+  prescription/actions.ts comme d'habitude dans ce depot.
