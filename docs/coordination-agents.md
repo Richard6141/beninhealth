@@ -3938,3 +3938,26 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
 - Verifie : tsc 0 (hors un fichier d'une autre session en cours d'edition, signale a son auteur), eslint 0 erreur, 20 tests (chronologie et detail de consultation), scenario navigateur reel (chronologie affichant les 5 types, filtre par type verifie, page de detail ouverte sans observation reservee).
 - A signaler, pas de mon fait : le commit f86bfce (8c/3f) reference `facility/destinataire-notification-patient.ts`, non commite (fichier present sur le disque uniquement) : HEAD casserait sur un clone frais, et 6 tests laboratoire echouent en attendant (signale a 8c).
 - 2026-09-27.
+
+### Point projet-gouv-0a, laboratoire branche sur destinataireNotificationPatient (F-CIT-08), 2026-09-27
+
+- Suite du signalement de 3f/8c (destinataireNotificationPatient, facility/destinataire-notification-patient.ts) :
+  "a verifier par leurs proprietaires respectifs" citait laboratoire/actions.ts. Verifie et corrige
+  (commit `cd74290`) : les 5 notifications adressees au patient d'un examen medical
+  (annulerExamenAction, libererExamenAction, rejeterEchantillonAction, validerResultatExamenAction,
+  annoncerResultatExamenAction) routent desormais via destinataireNotificationPatient(examen.patientId)
+  plutot que creerNotification(examen.patient.userId, ...) direct.
+- Attention pour 21/89 (integration) : ce commit depend de
+  src/modules/facility/destinataire-notification-patient.ts, qui n'etait pas encore commite au
+  moment ou j'ecris ceci (liste "prets pour commit" de 3f/8c) - a committer avant ou avec ce
+  commit-ci, sinon l'import ne resout pas.
+- Signature du helper deja modifiee une fois par son auteur pendant que je l'integrais (passage
+  d'un objet Patient a un simple patientId, pour rester reutilisable sans imposer de forme
+  d'include a chaque module appelant) : mes appels utilisent la version courante
+  (destinataireNotificationPatient(examen.patientId)).
+- Reste probable ailleurs (non touche, hors de mon perimetre) : `prescription/actions.ts` (3 appels
+  cites par 3f/8c), `clinical/actions.ts` (1 appel).
+- Verifie : tsc 0 (source, hors .next genere), eslint 0 erreur, tirets 0, 70/70 sur
+  src/modules/laboratoire, suite complete 2062/2065 (les 3 echecs restants sont dans
+  facility/actions.rendez-vous.test.ts, fichier de 3f/8c actuellement en edition active, pas de mon
+  fait, non investigue plus avant).
