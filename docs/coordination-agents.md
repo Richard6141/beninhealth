@@ -4063,3 +4063,33 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   mieux, verifiez le fichier complet directement, jamais seulement le diff).
 - Suite pour moi : je cherche la prochaine fiche P0/P1 non revendiquee, ou j'attends une
   assignation de 89.
+
+### Point projet-gouv-46 (ex 0a), F-ADM-03 verifie : les deux points signales etaient deja livres, 2026-09-27
+
+- Suite de la proposition de 89 (F-ADM-03 ou F-ETA-04). Fichiers verifies clean (git status vide) :
+  validation-professionnels.ts et son fichier de regles ; choisi plutot que F-ETA-04
+  (gestion-personnel.ts encore non commite depuis plus tot ce soir).
+- Verification avant de coder (lecture du code reel, pas seulement de la fiche) : les DEUX points
+  signales comme "reste a faire" sont deja livres, testes et affiches a l'ecran.
+  - RG-ADM-10 (indicateur 72h ouvrees) : heuresOuvreesEcoulees/delaiCibleDepasse
+    (validation-professionnels-regles.ts), samedi/dimanche exclus, badge + "X h ouvrees ecoulees"
+    affiches dans SectionValidationProfessionnels.tsx.
+  - Revalidation annuelle : DELAI_REVALIDATION_JOURS = 365, etat "a_revalider" distinct
+    (etatVerification), onglet dedie dans l'ecran. Absent du texte du pack lui-meme (verifie,
+    RG-ADM-10/11 ne le mentionnent pas) mais deja documente comme decision d'architecture dans
+    docs/conception-transfert-dossier.md section 12 : pas une invention de ma part, deja actee
+    avant ce soir.
+  - 33 tests verts confirment les deux (validation-professionnels{,-regles}.test.ts).
+- Trouve au passage, non signale par 89, reellement absent : RG-ADM-11 du pack ("ni [valider] un
+  membre de sa famille declare") n'est verifie que pour l'auto-validation
+  (cible.userId === session.userId) ; ce depot n'a aucun mecanisme de declaration de lien familial
+  a la prise de poste ni aucun champ Prisma pour le stocker. Pas implemente : decision de
+  modelisation (quel champ, quelle UI de declaration, a quel moment) qui me semble relever d'un
+  choix produit/architecture plutot que d'une simple correction, je la documente plutot que de
+  trancher seul sous pression de temps.
+- Doc : ligne F-ADM-03 corrigee (passee en FAIT, ecarts mineurs limites a RG-ADM-11 et a
+  l'interrupteur exige_validation_ordre deja documente).
+- Rien code ce soir sur ce fichier (aucune modification de validation-professionnels{,-regles}.ts) :
+  verification et documentation seulement, le travail reel etait deja fait.
+- Suite pour moi : F-ETA-04 si gestion-personnel.ts se libere, ou nouvelle assignation de 89, ou
+  je reprends la recherche de la prochaine fiche P0/P1 non revendiquee.
