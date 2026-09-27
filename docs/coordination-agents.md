@@ -4094,6 +4094,17 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
 - Suite pour moi : F-ETA-04 si gestion-personnel.ts se libere, ou nouvelle assignation de 89, ou
   je reprends la recherche de la prochaine fiche P0/P1 non revendiquee.
 
+### Prise de projet-gouv-8c (ex 3f/3d/89 non, ex 3f), F-ETA-05 : duree et capacite de creneau, 2026-09-27
+
+- Reprise de mes propres notes precedentes (voir plus haut, "Etat final de mon perimetre") : seul P0 de mon perimetre encore reellement PARTIEL. git status verifie propre sur tous les fichiers cibles avant de commencer (aucun autre chantier en cours dessus ce soir), sauf `prisma/schema.prisma` deja modifie par un autre chantier en cours (F-CIT-04, informations declarees, non lie) : j'ajoute mon modele en fin de fichier, sans toucher aux lignes deja modifiees par cet autre chantier.
+- Perimetre de ce lot, choisi pour rester strictement additif et ne JAMAIS toucher a l'index unique partiel qui garantit RG-RDV-03 (aucune modification de cette garantie, seulement des tentatives supplementaires qui s'appuient dessus) :
+  - `CreneauDisponibilite.capacite` (defaut 1, compat totale avec l'existant) : plusieurs patients peuvent desormais reserver le meme creneau nominal. Applique par une boucle de tentatives bornee (`creerAvecCapacite`, nouveau dans `rendez-vous-etats.ts`) qui decale l'instant candidat de quelques secondes a chaque tentative (l'affichage reste HH:MM, seul l'instant exact stocke differe), aux 4 points de creation/deplacement de rendez-vous (`facility/actions.ts` x2, `proches/actions.ts`, `rendez-vous-guichet.ts`).
+  - `CreneauDisponibilite.dureeCreneauMinutes` (defaut 30) : ajoute et affiche, mais PAS encore applique cote serveur (documente explicitement dans le schema et dans le code) - la prise de rendez-vous citoyenne saisit toujours un horaire en texte libre, aucun selecteur visuel de creneaux n'existe encore (deja documente comme chantier separe pour F-RDV-01) ; imposer une grille stricte sans ecran pour la montrer casserait des saisies legitimes sans aucun repere pour l'utilisateur. A appliquer des que ce selecteur existera.
+  - Explicitement laisse de cote, comme avant : service+praticien sur un meme modele (pas de modele Service dans ce depot), generation physique de creneaux/tache nocturne/apercu, fermetures ponctuelles par etablissement, role RECEPTIONIST.
+- Migration a venir : `prisma/migrations/20260927170000_creneau_capacite_duree/` (ADD COLUMN additif avec DEFAULT, aucune perte de donnees, aucune table existante affectee autrement).
+- Fichiers cibles : `prisma/schema.prisma`, `src/modules/facility/{creneau-disponible.ts, disponibilites.ts, actions.ts, rendez-vous-etats.ts, rendez-vous-guichet.ts}`, `src/modules/proches/actions.ts`, `src/app/app/etablissement/disponibilites/[userId]/FormulaireCreneaux.tsx`, tests associes, `docs/reste-a-faire.md`.
+- Je committe rien moi-meme : prets pour 21/89 une fois verifies (tsc, eslint, vitest, tirets).
+
 ### Prise de projet-gouv-46 (ex 0a), F-ADM-04 : referentiel geographie, 2026-09-27
 
 - Suite proposee par 89 (F-ADM-04 ou F-CLI-13). Choisi F-ADM-04, dans mon perimetre. Fichiers
@@ -4164,3 +4175,58 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   ponctuel soit utile, 8c le sait deja).
 - Suite pour moi : je cherche la prochaine fiche P0/P1 non revendiquee, ou j'attends une
   assignation de 89.
+
+### Point projet-gouv-bd, F-CIT-04 : informations declarees versionnees (declare/confirme/retire), 2026-09-27
+
+- Table dediee `InformationDeclaree` (migration `20260927160000_informations_declarees`) : allergie,
+  antecedent, maladie chronique, contact d'urgence desormais ajoutes/retires individuellement (plus
+  jamais reecrits d'un bloc), historique conserve (RG-CIT-31 : retrait = statut + date + motif,
+  jamais une suppression), retrait refuse si confirme par un professionnel (RG-CIT-30). Champs plats
+  de `Patient` gardes synchronises automatiquement (aucun changement de contrat pour les lecteurs
+  existants : consultation, controle allergie de la prescription). Plusieurs contacts d'urgence
+  desormais possibles. 18 tests, verifie en direct (ajout, retrait avec motif, historique barre).
+- Suspicion trouvee en marge (hors perimetre initial, meme fichier consommateur), PAS confirmee avec
+  certitude malgre plusieurs heures d'essais : dans l'assistant de premiere utilisation (F-CIT-01),
+  le contact d'urgence de la derniere etape semblait ne jamais s'enregistrer en verification live.
+  Chaque echec reproduit coincidait avec un `[Fast Refresh] rebuilding` en cours au moment precis de
+  la soumission (serveur de dev partage entre 4 sessions actives simultanement ce soir, cycles de
+  recompilation constates jusqu'a 10 secondes), qui reinitialise le state React local avant l'envoi -
+  aucune reproduction obtenue dans une fenetre confirmee sans recompilation en cours. Corrige par
+  precaution, sans certitude que ce soit necessaire en production (ou Fast Refresh n'existe pas) :
+  `formAction` appelee manuellement (FormData construit a la main puis complete depuis l'etat React
+  des 3 champs contact, dans une `startTransition`) plutot que de compter sur la construction
+  automatique de React pour un `<form action={...}>`. A revalider dans un environnement calme si le
+  doute persiste (session solo ou build de production, jamais confirme ce soir).
+- Signal transverse (pas mon code) : la base Postgres distante a ete injoignable une bonne partie de
+  ma session (TCP direct injoignable, P1001/P2028 cote Prisma) ; 89 confirme ne pas avoir d'info
+  supplementaire, ses propres verifications (DATABASE_URL factice) n'etaient pas affectees.
+- Fichiers prets pour commit : `prisma/schema.prisma` (modele `InformationDeclaree` uniquement,
+  a isoler du reste du fichier partage), migration `20260927160000_informations_declarees/`,
+  `src/modules/patient/{informations-declarees.ts,informations-declarees-catalogue.ts,
+  informations-declarees.test.ts,actions.ts,actions.test.ts}`,
+  `src/app/app/patient/dossier/{page.tsx,FormulaireDossier.tsx,SectionInformationsDeclarees.tsx}`,
+  `src/app/app/patient/bienvenue/AssistantPremiereUtilisation.tsx`, `docs/reste-a-faire.md`
+  (F-CIT-01 et F-CIT-04, isole du reste du fichier partage).
+
+### Livraison projet-gouv-8c, F-ETA-05 : duree et capacite de creneau, 2026-09-27 (suite et fin)
+
+- Suite de ma prise ci-dessus. **Livre.**
+- Migration `20260927170000_creneau_capacite_duree` appliquee (`prisma migrate deploy`, ADD COLUMN additif, defauts compatibles). `prisma generate` bloque un moment par le verrou EPERM habituel (query_engine-windows.dll.node, serveur de dev partage) : accord de 89 obtenu avant d'arreter puis relancer proprement le `next dev` partage (aucun test navigateur en cours signale). Redemarre sans incident (Ready en 11 s).
+- `prisma/schema.prisma` : `CreneauDisponibilite.dureeCreneauMinutes` (defaut 30) et `.capacite` (defaut 1), commentaire du modele mis a jour (au passage, corrige une affirmation perimee : RG-ETA-42, jours feries, EST bien applique depuis longtemps, l'ancien commentaire disait le contraire).
+- `src/modules/facility/creneau-disponible.ts` : refactore autour d'un helper interne partage `trouverCreneauCorrespondant` ; `dateDansUnCreneauDisponible` garde exactement le meme comportement externe, nouvelle `capaciteDuCreneau(professionnelId, dateUtc)` exportee.
+- `src/modules/facility/rendez-vous-etats.ts` : nouveau `fenetreCandidats(date, capacite)` et `creerAvecCapacite(date, capacite, creer)` (retente sur un instant candidat decale de quelques secondes a chaque conflit P2002, jusqu'a capacite tentatives, relance toute autre erreur immediatement). **Ne modifie jamais l'index unique partiel qui garantit seul RG-RDV-03** : uniquement des tentatives supplementaires qui s'appuient dessus.
+- 4 points de creation/deplacement de rendez-vous mis a jour de la meme facon (capacite du creneau + verification courtoise par `count` sur la fenetre de candidats, remplace l'ancien `findFirst` par instant exact ; ecriture via `creerAvecCapacite`) : `facility/actions.ts` (`creerRendezVousAction`, `deplacerRendezVousAction`), `proches/actions.ts` (`creerRendezVousPourProcheAction`), `rendez-vous-guichet.ts` (`creerRendezVousGuichetAction`). Capacite 1 (defaut) : comportement byte pour byte inchange (une seule tentative, meme requete de courtoisie qu'avant).
+- `disponibilites.ts` : nouveau `src/modules/facility/disponibilites-regles.ts` (constantes pures `DUREES_CRENEAU_MINUTES`/`CAPACITE_MIN`/`CAPACITE_MAX`) - **necessaire**, pas juste une preference : un fichier "use server" ne peut exporter que des fonctions async (contrainte Next.js), jamais une constante de valeur (merci a 89 de l'avoir signale via `service-guard.test.ts` en echec pendant que je verifiais). `ajouterCreneauAction` valide et persiste les 2 nouveaux champs, retrocompatible (defauts 30/1 si non transmis).
+- `FormulaireCreneaux.tsx` : durée (select) et capacité (input number 1-10) ajoutés au formulaire, affichés dans la liste des créneaux existants.
+- Corrigé aussi (trouvé par 89 en verifiant en clone git) : 3 echecs dans mon propre nouveau fichier `rendez-vous-guichet.test.ts` (mock `rendezVous.create` sans valeur par defaut sur les cas "chemin heureux", `rendezVous.id` undefined). Fichier de test corrige.
+- Verifie ensuite, tout propre : `npx tsc --noEmit -p .` 0 erreur (repo entier, apres deux faux positifs transitoires de `.next/dev/types/validator.ts` corrompu par le redemarrage du serveur, resolus en le regenerant) ; `npx eslint src` 0 erreur (8 avertissements preexistants, non lies) ; `npx vitest run` **2136/2136** tests sur **163 fichiers** (repo entier) ; verification ciblee du garde-fou des tirets (`tirets-interdits.test.ts`) verte apres correction d'un tiret cadratin que j'avais moi-meme laisse filer dans un commentaire de `disponibilites-regles.ts` (attrape par ce garde-fou automatique, pas par relecture manuelle - la legon deja notee plus haut dans ce fichier sur la fiabilite d'une verification manuelle des tirets reste valable, celle-ci automatisee a bien fonctionne).
+- Verification navigateur reelle NON concluante (pas un signal d'echec du code : le flux de connexion avec code de verification d'appareil, deja documente comme fragile sous Playwright plus haut dans ce fichier, n'a pas abouti dans le temps imparti) : je m'appuie sur tsc/eslint/vitest (dont 3 nouveaux fichiers de test qui exercent directement cette logique : `disponibilites.test.ts`, `rendez-vous-etats.test.ts`, `rendez-vous-guichet.test.ts` - ce dernier n'existait pas du tout avant, `rendez-vous-guichet.ts` n'avait jamais eu de test dans ce depot).
+- `docs/reste-a-faire.md` : F-ETA-05 passe en FAIT (ecarts mineurs). Restent des limites assumees et documentees comme telles : service+praticien sur un meme modele (pas de modele Service), generation physique de creneaux/tache nocturne/apercu, fermetures ponctuelles par etablissement, role RECEPTIONIST (route vers admin_etablissement).
+- Fichiers prets pour commit : `prisma/schema.prisma`, `prisma/migrations/20260927170000_creneau_capacite_duree/`, `src/modules/facility/{creneau-disponible.ts, disponibilites.ts, disponibilites-regles.ts (nouveau), disponibilites.test.ts, rendez-vous-etats.ts, rendez-vous-etats.test.ts, actions.ts, actions.rendez-vous.test.ts, rendez-vous-guichet.ts, rendez-vous-guichet.test.ts (nouveau)}`, `src/modules/proches/{actions.ts, actions.test.ts}`, `src/app/app/etablissement/disponibilites/[userId]/FormulaireCreneaux.tsx`, `docs/reste-a-faire.md`, ce fichier. Migration deja appliquee sur la base partagee, pas seulement ecrite : rien a rejouer cote 21/89 au-dela du commit lui-meme.
+- Avec cette livraison, mon perimetre (F-PIL, F-ETA, F-CLI, F-RDV, F-AUTH-07) n'a plus aucune fiche P0 connue de moi comme PARTIEL ou non commencee. Je pars chercher la prochaine fiche P0/P1 non revendiquee dans le reste du tableau.
+
+### Note projet-gouv-8c, reconciliation disque/index avant commit, 2026-09-27
+
+- En preparant le commit de F-ETA-05 avec le CEO, remarque que le fichier de travail (disque) et l'index (git add en attente) avaient diverge sur plusieurs entrees anciennes de ce fichier et de reste-a-faire.md (F-CIT-01, F-CIT-04) : le disque portait une version plus ancienne que ce qui etait deja indexe par bd/46 sur ces memes lignes, probablement un ecrasement accidentel par un Write complet plus tot dans une session tres longue plutot qu'une edition ciblee. Aucune perte definitive (rien commite entre-temps), mais visible en diff.
+- Corrige en reprenant a chaque fois la version la plus recente disponible (index le plus frais au moment de la verification) plutot que la mienne : entree de bd (F-CIT-04) restauree ici, lignes F-CIT-01/F-CIT-04 de `docs/reste-a-faire.md` restaurees dans leur version la plus recente connue. Ligne F-CLI-05 de `reste-a-faire.md` (RG-ACC-15, correctif deja commite en code mais jamais documente ni indexe) laissee telle quelle sur le disque, non touchee : c'est la seule copie existante de cette mise a jour, a committer par qui a fait ce correctif.
+- Signale pour vigilance transverse : ce fichier et `docs/reste-a-faire.md` sont edites en concurrence par plusieurs sessions actives, parfois plus vite que le temps d'un aller-retour verification/commit. Preferer une edition ciblee (Edit, jamais un Write complet du fichier) et relire l'index juste avant de commit reste la seule parade fiable observee ce soir.
