@@ -258,7 +258,7 @@ describe("getDocumentsDuPatient", () => {
       type: "resultat",
       titre: "Analyse",
       dateDocument: MAINTENANT,
-      niveauConfidentialite: "sensible",
+      niveauConfidentialite: "normal",
       consultationId: null,
       nomFichierOriginal: "analyse.pdf",
       typeMime: "application/pdf",
@@ -301,6 +301,52 @@ describe("getDocumentsDuPatient", () => {
       action: "consultation_liste_documents_medicaux",
       donneeConcernee: "patient:pat-1",
     });
+  });
+});
+
+describe("getDocumentsDuPatient, confidentialite sensible (F-CLI-13)", () => {
+  function documentSensible(id: string, auteurId: string) {
+    return {
+      id,
+      type: "resultat",
+      titre: "Resultat sensible",
+      dateDocument: MAINTENANT,
+      niveauConfidentialite: "sensible",
+      consultationId: null,
+      nomFichierOriginal: "r.pdf",
+      typeMime: "application/pdf",
+      tailleOctets: 10,
+      auteur: { nom: "Ahouansou", prenom: "Julien" },
+      auteurId,
+      dateCreation: MAINTENANT,
+      retirePourErreur: false,
+      motifRetrait: null,
+      cheminFichier: "documents/interne",
+    };
+  }
+
+  it("un consentement limite aux documents ne liste pas les documents sensibles des autres auteurs", async () => {
+    p.consentement.findUnique.mockResolvedValue(consentement({ typeAcces: "documents" }));
+    p.documentMedical.findMany.mockResolvedValue([documentSensible("doc-sensible", "user-autre")]);
+
+    expect(await getDocumentsDuPatient("pat-1")).toEqual([]);
+  });
+
+  it("un consentement dossier_complet liste aussi les documents sensibles", async () => {
+    p.consentement.findUnique.mockResolvedValue(consentement({ typeAcces: "dossier_complet" }));
+    p.documentMedical.findMany.mockResolvedValue([documentSensible("doc-sensible", "user-autre")]);
+
+    expect((await getDocumentsDuPatient("pat-1"))?.map((document) => document.id)).toEqual(["doc-sensible"]);
+  });
+
+  it("l'auteur retrouve son propre document sensible meme avec un consentement limite aux documents", async () => {
+    p.consentement.findUnique.mockResolvedValue(consentement({ typeAcces: "documents" }));
+    p.documentMedical.findMany.mockResolvedValue([
+      documentSensible("mien", "user-med"),
+      documentSensible("autre", "user-autre"),
+    ]);
+
+    expect((await getDocumentsDuPatient("pat-1"))?.map((document) => document.id)).toEqual(["mien"]);
   });
 });
 

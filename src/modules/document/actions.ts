@@ -40,6 +40,7 @@ import { can } from "@/security/permissions";
 import { supprimerFichierPriveCloudinary, televerserFichierPriveCloudinary } from "@/lib/cloudinary";
 import { detecterTypeReelFichier, TAILLE_MAX_DOCUMENT_OCTETS } from "./stockage-fichiers";
 import { NIVEAUX_CONFIDENTIALITE_CONNUS, TYPES_DOCUMENT_CONNUS } from "./types-documents";
+import { TYPES_ACCES_DOCUMENT, consentementPermetLeDocument } from "./acces-documents";
 
 /** Etat renvoye par chaque Server Action de ce module, consomme via useActionState. */
 export interface DocumentActionState {
@@ -65,9 +66,6 @@ export interface DocumentResume {
   /** Vrai si le professionnel connecte est l'auteur (seul habilite a retirer ce document, RG-CLI-113). */
   estAuteur: boolean;
 }
-
-/** Types d'acces de consentement autorisant un medecin a ajouter/consulter un document. */
-const TYPES_ACCES_DOCUMENT = ["dossier_complet", "documents"] as const;
 
 /** Longueur minimale du motif de retrait (RG-CLI-113 : motif requis, pas juste coche). */
 const LONGUEUR_MIN_MOTIF_RETRAIT = 10;
@@ -447,11 +445,19 @@ export async function getDocumentsDuPatient(patientId: string): Promise<Document
     return null;
   }
 
-  const documents = await prisma.documentMedical.findMany({
+  const tousLesDocuments = await prisma.documentMedical.findMany({
     where: { patientId },
     include: { auteur: true },
     orderBy: { dateCreation: "desc" },
   });
+
+  // Un document "sensible" n'est liste que pour son auteur ou un consentement
+  // dossier_complet (acces-documents.ts), jamais pour un consentement limite aux documents.
+  const documents = tousLesDocuments.filter(
+    (document) =>
+      document.auteurId === session.userId ||
+      consentementPermetLeDocument(consentement, document.niveauConfidentialite)
+  );
 
   const adresseTechnique = await adresseTechniqueCourante();
 

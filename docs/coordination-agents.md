@@ -3562,3 +3562,10 @@ session que le CEO ; l'auteur de commit est reecrit par le CEO avant le push.
 - Verifie : tsc, eslint (0 erreur), execution reelle sur la base partagee (compte relu : role pharmacien, actif, etablissement de type pharmacie, profil valide).
 - Suite : F-CLI-13 (confidentialite sensible), puis F-CIT-12 (acces invisibles), F-CIT-05/13 (carte signee, export), referentiels simples F-ADM-04.
 - 2026-09-27.
+
+### Point projet-gouv-86, confidentialite "sensible" des documents (F-CLI-13), 2026-09-27
+
+- Livre : un document marque "sensible" n'est plus listé ni telechargeable que par son auteur, le patient proprietaire ou un professionnel avec un consentement `dossier_complet` ; un consentement limite aux documents ne l'ouvre plus. Regle unique dans `document/acces-documents.ts` (sans "use server"), appliquee a `getDocumentsDuPatient` et a la route `/api/documents/[id]` (meme 404 que pour un document inexistant). 11 tests nouveaux ou adaptes (50 dans le module).
+- Effet de bord a connaitre : un professionnel qui avait un consentement `documents` ne voit plus les documents sensibles deja deposes (masques sans message). Le patient et l'auteur ne sont pas concernes.
+- Verifie : tsc, eslint (0 erreur), vitest du module document et de la route.
+- 2026-09-27.

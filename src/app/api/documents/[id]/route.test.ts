@@ -134,6 +134,34 @@ describe("GET /api/documents/[id]", () => {
     }
   });
 
+  it("refuse un document sensible a un consentement limite aux documents, meme valide", async () => {
+    p.documentMedical.findUnique.mockResolvedValue(document({ niveauConfidentialite: "sensible" }));
+    p.consentement.findUnique.mockResolvedValue(consentement({ typeAcces: "documents" }));
+
+    const reponse = await appeler();
+
+    expect(reponse.status).toBe(404);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(journaliserMock).not.toHaveBeenCalled();
+  });
+
+  it("sert un document sensible avec un consentement dossier_complet, a son auteur et au patient proprietaire", async () => {
+    p.documentMedical.findUnique.mockResolvedValue(document({ niveauConfidentialite: "sensible" }));
+
+    p.consentement.findUnique.mockResolvedValue(consentement({ typeAcces: "dossier_complet" }));
+    expect((await appeler()).status).toBe(200);
+
+    p.consentement.findUnique.mockResolvedValue(null);
+    getSessionMock.mockResolvedValue({ userId: "user-auteur", roles: ["medecin"] });
+    fetchMock.mockResolvedValue(new Response(CONTENU, { status: 200 }));
+    expect((await appeler()).status).toBe(200);
+
+    getSessionMock.mockResolvedValue({ userId: "user-pat", roles: ["patient"] });
+    p.patient.findUnique.mockResolvedValue({ id: "pat-1", userId: "user-pat" });
+    fetchMock.mockResolvedValue(new Response(CONTENU, { status: 200 }));
+    expect((await appeler()).status).toBe(200);
+  });
+
   it("sert le fichier au patient proprietaire, sans consentement", async () => {
     getSessionMock.mockResolvedValue({ userId: "user-pat", roles: ["patient"] });
     p.patient.findUnique.mockResolvedValue({ id: "pat-1", userId: "user-pat" });
