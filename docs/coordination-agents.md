@@ -4230,3 +4230,42 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
 - En preparant le commit de F-ETA-05 avec le CEO, remarque que le fichier de travail (disque) et l'index (git add en attente) avaient diverge sur plusieurs entrees anciennes de ce fichier et de reste-a-faire.md (F-CIT-01, F-CIT-04) : le disque portait une version plus ancienne que ce qui etait deja indexe par bd/46 sur ces memes lignes, probablement un ecrasement accidentel par un Write complet plus tot dans une session tres longue plutot qu'une edition ciblee. Aucune perte definitive (rien commite entre-temps), mais visible en diff.
 - Corrige en reprenant a chaque fois la version la plus recente disponible (index le plus frais au moment de la verification) plutot que la mienne : entree de bd (F-CIT-04) restauree ici, lignes F-CIT-01/F-CIT-04 de `docs/reste-a-faire.md` restaurees dans leur version la plus recente connue. Ligne F-CLI-05 de `reste-a-faire.md` (RG-ACC-15, correctif deja commite en code mais jamais documente ni indexe) laissee telle quelle sur le disque, non touchee : c'est la seule copie existante de cette mise a jour, a committer par qui a fait ce correctif.
 - Signale pour vigilance transverse : ce fichier et `docs/reste-a-faire.md` sont edites en concurrence par plusieurs sessions actives, parfois plus vite que le temps d'un aller-retour verification/commit. Preferer une edition ciblee (Edit, jamais un Write complet du fichier) et relire l'index juste avant de commit reste la seule parade fiable observee ce soir.
+
+### Point projet-gouv-46 (ex 0a), F-PRE-04 livre : re-authentification, notification, PDF, 2026-09-27
+
+- Suite proposee par 89 (F-PRE-01 ou F-PRE-04, domaine adjacent au mien, 8c ne l'avait pas touche
+  ce soir). Choisi F-PRE-04, mieux scinde en sous-taches independantes que F-PRE-01. Fichiers
+  verifies clean avant de commencer.
+- RG-PRE-30 (re-authentification) : nouveau prescription/reauthentification.ts, fenetre de grace
+  de 5 minutes (skip le mot de passe si deja re-authentifie recemment) et compteur de 3 echecs
+  deconnectant reellement la session (destroySession). Reutilise lib/limite-debit.ts, deja
+  construit ce soir pour F-PRE-06 (RG-PRE-41) : le commentaire d'origine de
+  schemaCreationPrescription disait explicitement que ce depot "n'a pas de compteur d'echecs
+  persistant" - c'etait vrai au moment ou ce commentaire a ete ecrit, plus maintenant. Applique
+  aux deux points de signature (creerPrescriptionAction, renouvelerPrescriptionAction), meme
+  compteur partage par utilisateur. UI : le champ mot de passe disparait (avec un texte explicatif)
+  quand la fenetre de grace est active, dans les deux ecrans concernes.
+- Notification patient a la signature : manquait entierement (void prescriptionCreeeId; puis return
+  directement, aucun creerNotification). Ajoutee, texte exact du pack ("Une ordonnance a ete
+  ajoutee a votre dossier"), routee vers le tuteur pour une personne a charge
+  (destinataireNotificationPatient, meme correctif que laboratoire/actions.ts plus haut).
+- PDF de l'ordonnance complete dans l'ordre du pack (route jusqu'ici jamais testee, 7 tests
+  ajoutes) : coordonnees de l'etablissement (adresse/telephone, verifie sur la base partagee :
+  souvent absents en pratique sur les donnees de demonstration, geres par un if plutot que
+  d'afficher "null"), specialite et numero d'inscription du prescripteur, age/sexe/poids du
+  patient (poids recalcule comme a la signature, uniquement sous le seuil pediatrique, requetes
+  Prisma directes dans la route pour rester isolee de prescription/actions.ts comme deja
+  documente), date de validite (dateFinValiditeOrdonnance, deja exportee de regles-ordonnance.ts,
+  aucun nouveau calcul), numero d'ordonnance et 8 premiers caracteres de l'empreinte.
+- Non fait, reste reellement absent (RG-PRE-32) : la mention "signature non qualifiee" dans les
+  conditions d'utilisation - hors du contenu du PDF lui-meme au sens strict du pack, documente
+  comme limite.
+- Verifie : tsc 0 (source), eslint 0 erreur, tirets 0 (script node fiable), 22 tests nouveaux
+  (reauthentification.test.ts 9, route telecharger/route.test.ts 7, plus 4 tests de deblocage de
+  mocks casses par mon changement dans composition-ordonnance.test.ts), suite complete du depot
+  2152/2152. Verification reelle sur la base partagee (empreinte, specialite, champs optionnels
+  vides confirmes).
+- Commits : `6867ea3` code, `80ef640` doc.
+- Suite pour moi : je cherche la prochaine fiche P0/P1 non revendiquee, ou j'attends une
+  assignation de 89. F-PRE-01 (DRAFT, posologie etendue, quantite calculee) reste disponible dans
+  le meme domaine si personne d'autre ne le prend avant.
