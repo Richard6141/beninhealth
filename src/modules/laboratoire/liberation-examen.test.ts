@@ -16,11 +16,18 @@ vi.mock("@/lib/session", () => ({ getSession: vi.fn() }));
 vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers()) }));
 vi.mock("@/modules/audit/journaliser", () => ({ journaliser: vi.fn() }));
 vi.mock("@/modules/notification/creer", () => ({ creerNotification: vi.fn() }));
+// Frontiere du module : la logique interne (routage vers le tuteur d'une
+// personne a charge) est testee dans son propre fichier
+// (facility/destinataire-notification-patient.test.ts), pas ici.
+vi.mock("@/modules/facility/destinataire-notification-patient", () => ({
+  destinataireNotificationPatient: vi.fn(),
+}));
 
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { journaliser } from "@/modules/audit/journaliser";
 import { creerNotification } from "@/modules/notification/creer";
+import { destinataireNotificationPatient } from "@/modules/facility/destinataire-notification-patient";
 import { libererExamenAction } from "@/modules/laboratoire/actions";
 
 const p = prisma as unknown as {
@@ -30,6 +37,7 @@ const p = prisma as unknown as {
 const getSessionMock = getSession as unknown as Mock;
 const creerNotificationMock = creerNotification as unknown as Mock;
 const journaliserMock = journaliser as unknown as Mock;
+const destinataireNotificationPatientMock = destinataireNotificationPatient as unknown as Mock;
 
 const etatInitial = { error: null, success: false };
 
@@ -44,7 +52,7 @@ function examen(surcharges: Record<string, unknown> = {}) {
     id: "ex-1",
     laboratoireId: "labo-etab",
     statut: "demande",
-    patient: { userId: "user-patient" },
+    patient: { id: "pat-1", userId: "user-patient", user: { statut: "actif" } },
     demandeur: { userId: "user-demandeur" },
     ...surcharges,
   };
@@ -55,6 +63,7 @@ beforeEach(() => {
   getSessionMock.mockResolvedValue({ userId: "user-labo", roles: ["laboratoire"] });
   p.professionnelSante.findUnique.mockResolvedValue({ id: "prof-labo", etablissementId: "labo-etab" });
   p.examenMedical.findUnique.mockResolvedValue(examen());
+  destinataireNotificationPatientMock.mockResolvedValue("user-patient");
 });
 
 describe("libererExamenAction : liberation par le laboratoire avant prelevement (F-LAB-06)", () => {
@@ -108,6 +117,7 @@ describe("libererExamenAction : liberation par le laboratoire avant prelevement 
 
     const destinataires = creerNotificationMock.mock.calls.map((appel) => appel[0]);
     expect(destinataires.sort()).toEqual(["user-demandeur", "user-patient"]);
+    expect(destinataireNotificationPatientMock).toHaveBeenCalledWith("pat-1");
   });
 
   it("le message au medecin demandeur contient le motif, jamais le nom de l'examen dans celui du patient", async () => {

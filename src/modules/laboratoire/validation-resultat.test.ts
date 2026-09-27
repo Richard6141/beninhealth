@@ -17,10 +17,17 @@ vi.mock("@/modules/audit/journaliser", () => ({ journaliser: vi.fn() }));
 vi.mock("@/modules/notification/creer", () => ({ creerNotification: vi.fn() }));
 vi.mock("bcryptjs", () => ({ default: { compare: vi.fn(async () => true) } }));
 vi.mock("@/modules/administration/parametres", () => ({ estFonctionnaliteActive: vi.fn(async () => true) }));
+// Frontiere du module : la logique interne (routage vers le tuteur d'une
+// personne a charge) est testee dans son propre fichier
+// (facility/destinataire-notification-patient.test.ts), pas ici.
+vi.mock("@/modules/facility/destinataire-notification-patient", () => ({
+  destinataireNotificationPatient: vi.fn(),
+}));
 
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { creerNotification } from "@/modules/notification/creer";
+import { destinataireNotificationPatient } from "@/modules/facility/destinataire-notification-patient";
 import { validerResultatExamenAction } from "@/modules/laboratoire/actions";
 
 const p = prisma as unknown as {
@@ -30,6 +37,7 @@ const p = prisma as unknown as {
 };
 const getSessionMock = getSession as unknown as Mock;
 const creerNotificationMock = creerNotification as unknown as Mock;
+const destinataireNotificationPatientMock = destinataireNotificationPatient as unknown as Mock;
 
 const etatInitial = { error: null, success: false };
 
@@ -49,7 +57,7 @@ function examenEnAttenteDeValidation(sensible: boolean) {
     saisiParId: "prof-saisie",
     resultat: "Resultat de test",
     resultatsParametres: null,
-    patient: { userId: "user-patient" },
+    patient: { id: "pat-1", userId: "user-patient", user: { statut: "actif" } },
     demandeur: { userId: "user-medecin" },
   };
 }
@@ -59,6 +67,7 @@ beforeEach(() => {
   getSessionMock.mockResolvedValue({ userId: "labo-2", roles: ["laboratoire"] });
   p.user.findUnique.mockResolvedValue({ id: "labo-2", motDePasseHash: "hash" });
   p.professionnelSante.findUnique.mockResolvedValue({ id: "prof-validation", etablissementId: "labo-etab" });
+  destinataireNotificationPatientMock.mockResolvedValue("user-patient");
 });
 
 describe("validerResultatExamenAction : notification du patient (RG-LAB-41)", () => {
@@ -71,6 +80,7 @@ describe("validerResultatExamenAction : notification du patient (RG-LAB-41)", ()
     const destinataires = creerNotificationMock.mock.calls.map((appel) => appel[0]);
     expect(destinataires).toContain("user-patient");
     expect(destinataires).toContain("user-medecin");
+    expect(destinataireNotificationPatientMock).toHaveBeenCalledWith("pat-1");
   });
 
   it("regression : un examen SENSIBLE ne previent PAS le patient a la validation, seulement le medecin", async () => {

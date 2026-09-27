@@ -56,6 +56,13 @@ import { estCollisionUnicite, genererNumeroExamen } from "./numero-examen";
 import { construireAnterieurs } from "./anterieurs";
 import { estFonctionnaliteActive } from "@/modules/administration/parametres";
 import { MESSAGE_MODULE_INACTIF } from "@/modules/administration/modules-actifs";
+// Defaut trouve et corrige par une autre session ce soir (voir
+// docs/coordination-agents.md) : creerNotification(patient.userId, ...)
+// perd silencieusement une notification quand ce patient est une personne
+// a charge (Patient.user.statut === "sans_compte", F-CIT-07/08). Applique
+// ici a chaque notification adressee au patient d'un examen medical (jamais
+// au demandeur ni au laboratoire, toujours des comptes professionnels reels).
+import { destinataireNotificationPatient } from "@/modules/facility/destinataire-notification-patient";
 
 /** Une valeur de parametre structure saisie et son indicateur calcule (F-LAB-03). Snapshot autonome, stocke tel quel dans ExamenMedical.resultatsParametres : jamais recalcule depuis le referentiel a l'affichage, pour rester stable si le referentiel change. */
 export interface ResultatParametre {
@@ -706,7 +713,7 @@ export async function annulerExamenAction(
 
     const examen = await prisma.examenMedical.findUnique({
       where: { id: examenId },
-      include: { patient: { select: { userId: true } } },
+      include: { patient: { select: { id: true, userId: true, user: { select: { statut: true } } } } },
     });
 
     if (!examen || examen.demandeurId !== professionnel.id) {
@@ -741,10 +748,12 @@ export async function annulerExamenAction(
     // transaction (une notification manquee ne doit pas defaire l'annulation).
     // Le message au patient ne nomme jamais l'examen ni le motif (un examen
     // sensible ne doit rien reveler avant annonce, RG-LAB-41) ; le laboratoire,
-    // qui connait deja la demande, recoit le motif.
+    // qui connait deja la demande, recoit le motif. destinataireNotificationPatient
+    // route vers le tuteur si le patient est une personne a charge (sans_compte).
+    const destinatairePatient = await destinataireNotificationPatient(examen.patient.id);
     await Promise.all([
       creerNotification(
-        examen.patient.userId,
+        destinatairePatient,
         "examen_annule",
         "Une demande d'examen vous concernant a ete annulee par votre medecin.",
         "/app/patient/examens",
@@ -834,7 +843,10 @@ export async function libererExamenAction(
 
     const examen = await prisma.examenMedical.findUnique({
       where: { id: examenId },
-      include: { patient: { select: { userId: true } }, demandeur: { select: { userId: true } } },
+      include: {
+        patient: { select: { id: true, userId: true, user: { select: { statut: true } } } },
+        demandeur: { select: { userId: true } },
+      },
     });
 
     if (!examen || examen.laboratoireId !== professionnel.etablissementId) {
@@ -863,9 +875,12 @@ export async function libererExamenAction(
 
     // Notifications hors transaction (une notification manquee ne doit pas
     // defaire la liberation), jamais le type d'examen en clair (RG-LAB-42).
+    // destinataireNotificationPatient route vers le tuteur si le patient est
+    // une personne a charge (sans_compte).
+    const destinatairePatient = await destinataireNotificationPatient(examen.patient.id);
     await Promise.all([
       creerNotification(
-        examen.patient.userId,
+        destinatairePatient,
         "examen_annule",
         "Une demande d'examen vous concernant a ete liberee par le laboratoire. Veuillez la refaire avec un autre laboratoire.",
         "/app/patient/examens",
@@ -1201,7 +1216,10 @@ export async function rejeterEchantillonAction(
 
     const examen = await prisma.examenMedical.findUnique({
       where: { id: examenId },
-      include: { patient: { select: { userId: true } }, demandeur: { select: { userId: true } } },
+      include: {
+        patient: { select: { id: true, userId: true, user: { select: { statut: true } } } },
+        demandeur: { select: { userId: true } },
+      },
     });
 
     if (!examen || examen.laboratoireId !== professionnel.etablissementId) {
@@ -1253,6 +1271,9 @@ export async function rejeterEchantillonAction(
     // "Serologie VIH"), exactement le risque de fuite deja corrige pour les
     // notifications de resultat (voir docs/audit-cote-laboratoire.md) mais
     // pas encore applique a ce chemin de rejet d'echantillon.
+    // destinataireNotificationPatient route vers le tuteur si le patient est
+    // une personne a charge (sans_compte).
+    const destinatairePatient = await destinataireNotificationPatient(examen.patient.id);
     await Promise.all([
       creerNotification(
         examen.demandeur.userId,
@@ -1261,7 +1282,7 @@ export async function rejeterEchantillonAction(
         "/app/medecin/examens"
       ),
       creerNotification(
-        examen.patient.userId,
+        destinatairePatient,
         "echantillon_rejete",
         "Un nouveau prelevement est necessaire pour un examen demande par votre medecin.",
         "/app/patient/examens",
@@ -1559,7 +1580,7 @@ export async function validerResultatExamenAction(
     const resultatTransaction = await prisma.$transaction(async (tx) => {
       const examen = await tx.examenMedical.findUnique({
         where: { id: examenId },
-        include: { patient: true, demandeur: true },
+        include: { patient: { include: { user: { select: { statut: true } } } }, demandeur: true },
       });
 
       if (!examen || examen.laboratoireId !== professionnel.etablissementId) {
@@ -1642,11 +1663,17 @@ export async function validerResultatExamenAction(
     // d'un examen sensible ; il ne l'est qu'a l'annonce explicite par le
     // medecin (annoncerResultatExamenAction), sinon la notification revelerait
     // qu'un resultat sensible existe avant que le medecin ne l'ait annonce.
+    // destinataireNotificationPatient route vers le tuteur si le patient est
+    // une personne a charge (sans_compte) ; jamais appelee pour un examen
+    // sensible (aucune notification patient dans ce cas, ci-dessous).
+    const destinatairePatient = examenValide.sensible
+      ? null
+      : await destinataireNotificationPatient(examenValide.patient.id);
     await Promise.all([
-      examenValide.sensible
+      examenValide.sensible || !destinatairePatient
         ? Promise.resolve()
         : creerNotification(
-            examenValide.patient.userId,
+            destinatairePatient,
             "resultat_examen_disponible",
             "Un resultat d'analyse est disponible dans votre dossier.",
             "/app/patient/examens",
@@ -1998,7 +2025,7 @@ export async function annoncerResultatExamenAction(
 
     const examen = await prisma.examenMedical.findUnique({
       where: { id: examenId },
-      include: { patient: true },
+      include: { patient: { include: { user: { select: { statut: true } } } } },
     });
 
     if (!examen || examen.demandeurId !== professionnel.id) {
@@ -2037,8 +2064,10 @@ export async function annoncerResultatExamenAction(
     });
 
     const { creerNotification } = await import("@/modules/notification/creer");
+    // destinataireNotificationPatient route vers le tuteur si le patient est
+    // une personne a charge (sans_compte).
     await creerNotification(
-      examen.patient.userId,
+      await destinataireNotificationPatient(examen.patient.id),
       "resultat_examen_disponible",
       "Un resultat d'analyse est desormais disponible dans votre dossier.",
       "/app/patient/examens",

@@ -18,11 +18,18 @@ vi.mock("@/modules/audit/journaliser", () => ({ journaliser: vi.fn() }));
 vi.mock("@/modules/notification/creer", () => ({ creerNotification: vi.fn() }));
 vi.mock("bcryptjs", () => ({ default: { compare: vi.fn(async (saisi: string) => saisi === "bon-mot-de-passe") } }));
 vi.mock("@/modules/administration/parametres", () => ({ estFonctionnaliteActive: vi.fn(async () => true) }));
+// Frontiere du module : la logique interne (routage vers le tuteur d'une
+// personne a charge) est testee dans son propre fichier
+// (facility/destinataire-notification-patient.test.ts), pas ici.
+vi.mock("@/modules/facility/destinataire-notification-patient", () => ({
+  destinataireNotificationPatient: vi.fn(),
+}));
 
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { journaliser } from "@/modules/audit/journaliser";
 import { creerNotification } from "@/modules/notification/creer";
+import { destinataireNotificationPatient } from "@/modules/facility/destinataire-notification-patient";
 import { corrigerResultatValideAction, validerResultatExamenAction } from "@/modules/laboratoire/actions";
 
 const p = prisma as unknown as {
@@ -34,6 +41,7 @@ const p = prisma as unknown as {
 const getSessionMock = getSession as unknown as Mock;
 const creerNotificationMock = creerNotification as unknown as Mock;
 const journaliserMock = journaliser as unknown as Mock;
+const destinataireNotificationPatientMock = destinataireNotificationPatient as unknown as Mock;
 
 const etatInitial = { error: null, success: false };
 const dateValidation = new Date("2026-09-20T10:00:00Z");
@@ -63,7 +71,7 @@ function examenValide(surcharges: Record<string, unknown> = {}) {
     saisiParId: "prof-saisie",
     valideParId: "prof-validation",
     dateValidation,
-    patient: { userId: "user-patient" },
+    patient: { id: "pat-1", userId: "user-patient", user: { statut: "actif" } },
     demandeur: { userId: "user-medecin" },
     ...surcharges,
   };
@@ -75,6 +83,7 @@ beforeEach(() => {
   p.user.findUnique.mockResolvedValue({ id: "labo-3", motDePasseHash: "hash" });
   p.professionnelSante.findUnique.mockResolvedValue({ id: "prof-correction", etablissementId: "labo-etab" });
   p.examenMedical.findUnique.mockResolvedValue(examenValide());
+  destinataireNotificationPatientMock.mockResolvedValue("user-patient");
 });
 
 describe("corrigerResultatValideAction : correction par nouvelle version (RG-ROL-31)", () => {
