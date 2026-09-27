@@ -1445,6 +1445,11 @@ model SessionActive {
   adresseIp        String
   dateCreation     DateTime @default(now())
   derniereActivite DateTime @default(now())
+  // F-AUTH-07 (RG-AUTH-60) : espace actif choisi par l'utilisateur, lu par
+  // getSession() cote serveur et jamais transmis par le navigateur. Nom d'un
+  // role du compte ("patient", "medecin", ...) ; null tant qu'aucun choix
+  // n'a ete fait (tous les roles du compte s'appliquent, comme avant).
+  espaceActif      String?
 
   @@index([userId])
   @@schema("public")

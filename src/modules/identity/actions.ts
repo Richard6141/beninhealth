@@ -81,6 +81,10 @@ function cleSecretePreAuth(): Uint8Array {
 
 /** Redirige vers l'espace correspondant aux roles fournis (meme logique pour loginAction et la validation MFA). */
 function redirigerSelonRoles(roles: NomRole[]): never {
+  // F-AUTH-07 : un compte qui a plusieurs espaces choisit d'abord celui dans lequel il agit.
+  if (roles.length > 1) {
+    redirect("/app/espaces");
+  }
   if (roles.includes("patient")) {
     redirect("/app/patient");
   }

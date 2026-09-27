@@ -40,6 +40,8 @@ import { filtrerNavigationParModules } from "@/modules/administration/modules-ac
 import type { NomRole } from "@/types";
 import { AvatarMenu } from "@/components/ui/AvatarMenu";
 import { ClocheNotifications } from "@/components/ui/ClocheNotifications";
+import { getMesEspaces } from "@/modules/identity/espaces";
+import { IndicateurEspace } from "./IndicateurEspace";
 import { Sidebar, type ElementNavigation } from "@/components/ui/Sidebar";
 import { VerrouillageInactivite } from "@/components/VerrouillageInactivite";
 
@@ -392,7 +394,7 @@ export default async function EspaceAuthentifieLayout({
   }
 
   // F-ADM-07 : etat des modules metier et du bandeau de demonstration, relu en base a chaque rendu (RG-ADM-50).
-  const [profil, nombreNotificationsNonLues, pharmacieActive, laboratoireActif, communautaireActif, bandeauDemo] =
+  const [profil, nombreNotificationsNonLues, pharmacieActive, laboratoireActif, communautaireActif, bandeauDemo, espaces] =
     await Promise.all([
       getMonProfil(),
       getNombreNotificationsNonLues(),
@@ -400,6 +402,7 @@ export default async function EspaceAuthentifieLayout({
       estFonctionnaliteActive("lab.module"),
       estFonctionnaliteActive("community.module"),
       estFonctionnaliteActive("demo.banner"),
+      getMesEspaces(),
     ]);
   const libelleCompte = profil
     ? `${profil.prenom} ${profil.nom}`
@@ -434,6 +437,7 @@ export default async function EspaceAuthentifieLayout({
         ) : null}
         <header className="sans-impression shrink-0 border-b border-bordure bg-marine">
           <div className="flex items-center justify-end gap-2 px-4 py-3 sm:px-6">
+            <IndicateurEspace espaces={espaces} />
             <ClocheNotifications nombreNonLues={nombreNotificationsNonLues} />
             <AvatarMenu
               nom={libelleCompte}

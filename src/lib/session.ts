@@ -30,11 +30,17 @@ import { SignJWT, jwtVerify } from "jose";
 import { cookies, headers } from "next/headers";
 import { getEnv } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
+import { rolesEffectifs } from "@/modules/identity/espaces-regles";
 import type { NomRole } from "@/types";
 
 /** Contenu utile encode dans le JWT de session. */
 export interface SessionPayload {
   userId: string;
+  /**
+   * Roles appliques a la session. F-AUTH-07 : si l'utilisateur a choisi un
+   * espace actif, c'est le seul role de ce tableau (lu en base, jamais
+   * transmis par le navigateur, RG-AUTH-60) ; sinon tous les roles du compte.
+   */
   roles: NomRole[];
   /** Id de la ligne SessionActive correspondante ; chaine vide pour un JWT emis avant F-AUTH-09 (retro-compatibilite, voir en-tete). */
   sessionId: string;
@@ -169,6 +175,7 @@ const lireSessionComplete = cache(async (): Promise<SessionActivationMfa | null>
     // l'expiration du JWT : la signature seule ne dit rien de l'etat du compte.
     let statutCompte: string | undefined;
     let mfaActif = false;
+    let espaceChoisi: string | null = null;
 
     if (sessionId) {
       const sessionActive = await prisma.sessionActive.findUnique({
@@ -180,6 +187,7 @@ const lireSessionComplete = cache(async (): Promise<SessionActivationMfa | null>
       }
       statutCompte = sessionActive.user.statut;
       mfaActif = sessionActive.user.mfaActif;
+      espaceChoisi = sessionActive.espaceActif;
       if (Date.now() - sessionActive.derniereActivite.getTime() > INTERVALLE_MISE_A_JOUR_ACTIVITE_MS) {
         await prisma.sessionActive
           .update({ where: { id: sessionId }, data: { derniereActivite: new Date() } })
@@ -211,7 +219,9 @@ const lireSessionComplete = cache(async (): Promise<SessionActivationMfa | null>
       activationMfaRequise = drapeau?.actif === true;
     }
 
-    return { userId: payload.userId, roles, sessionId, activationMfaRequise };
+    const rolesAppliques = rolesEffectifs(roles, espaceChoisi);
+
+    return { userId: payload.userId, roles: rolesAppliques, sessionId, activationMfaRequise };
   } catch {
     return null;
   }

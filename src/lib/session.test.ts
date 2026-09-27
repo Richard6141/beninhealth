@@ -175,3 +175,39 @@ describe("second facteur obligatoire (F-AUTH-06, CA-1)", () => {
     expect(await getSessionPourActivationMfa()).toBeNull();
   });
 });
+
+describe("espace actif (F-AUTH-07, RG-AUTH-60)", () => {
+  async function ouvrir(roles: string[], espaceActif: string | null) {
+    magasinCookies.get.mockReturnValue({ value: await jeton({ userId: "u-1", roles, sessionId: "sess-1" }) });
+    p.sessionActive.findUnique.mockResolvedValue(sessionEnBase("actif", { espaceActif }));
+  }
+
+  it("sans choix, tous les roles du compte s'appliquent comme avant", async () => {
+    await ouvrir(["patient", "medecin"], null);
+    expect((await getSession())?.roles).toEqual(["patient", "medecin"]);
+  });
+
+  it("un espace choisi en base devient le seul role de la session", async () => {
+    await ouvrir(["patient", "medecin"], "medecin");
+    expect((await getSession())?.roles).toEqual(["medecin"]);
+
+    await ouvrir(["patient", "medecin"], "patient");
+    expect((await getSession())?.roles).toEqual(["patient"]);
+  });
+
+  it("un espace que le jeton signe ne contient pas est ignore : jamais un role de plus qu'a la connexion", async () => {
+    await ouvrir(["patient"], "admin_national");
+    expect((await getSession())?.roles).toEqual(["patient"]);
+
+    await ouvrir(["patient", "medecin"], "n_importe_quoi");
+    expect((await getSession())?.roles).toEqual(["patient", "medecin"]);
+  });
+
+  it("le second facteur reste juge sur tous les roles du compte, pas sur l'espace choisi", async () => {
+    magasinCookies.get.mockReturnValue({ value: await jeton({ userId: "u-1", roles: ["patient", "medecin"], sessionId: "sess-1" }) });
+    p.sessionActive.findUnique.mockResolvedValue(sessionEnBase("actif", { espaceActif: "patient" }, false));
+    p.fonctionnaliteActivable.findUnique.mockResolvedValue({ actif: true });
+
+    expect(await getSession()).toBeNull();
+  });
+});
