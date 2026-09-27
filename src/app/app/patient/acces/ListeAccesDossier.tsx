@@ -231,10 +231,31 @@ function BoutonSignalement({ entreeIds }: { entreeIds: string[] }) {
   );
 }
 
-/** Liste interactive de l'historique des accès (F-CIT-12) : filtre par type, regroupement, signalement. */
+const TAILLE_PAGE = 10;
+
+/** Liste interactive de l'historique des accès (F-CIT-12) : filtre par type et par période, pagination, signalement. */
 export function ListeAccesDossier({ acces }: { acces: AccesDossier[] }) {
-  const groupes = useMemo(() => regrouperParActeurEtJour(acces), [acces]);
   const [filtreType, setFiltreType] = useState("tous");
+  // Filtre de periode (RG-CIT-100, ecart documente dans reste-a-faire.md) :
+  // bornes en dates civiles (input type="date"), inclusives des deux cotes.
+  // Applique sur les entrees BRUTES, avant regroupement par jour, pour ne
+  // jamais laisser un groupe partiellement hors periode (chaque groupe est
+  // deja un seul jour civil, voir regrouperParActeurEtJour).
+  const [periodeDebut, setPeriodeDebut] = useState("");
+  const [periodeFin, setPeriodeFin] = useState("");
+  const [page, setPage] = useState(0);
+
+  const accesDansLaPeriode = useMemo(() => {
+    if (!periodeDebut && !periodeFin) return acces;
+    return acces.filter((entree) => {
+      const jour = entree.date.slice(0, 10);
+      if (periodeDebut && jour < periodeDebut) return false;
+      if (periodeFin && jour > periodeFin) return false;
+      return true;
+    });
+  }, [acces, periodeDebut, periodeFin]);
+
+  const groupes = useMemo(() => regrouperParActeurEtJour(accesDansLaPeriode), [accesDansLaPeriode]);
 
   const typesDisponibles = useMemo(() => {
     const ensemble = new Map<string, string>();
@@ -253,15 +274,75 @@ export function ListeAccesDossier({ acces }: { acces: AccesDossier[] }) {
           groupe.typesAcces.some(({ cible, action }) => `${cible}:${action}` === filtreType)
         );
 
+  // Pagination cote client (meme simplification assumee et documentee
+  // qu'ailleurs dans ce depot pour un historique, voir F-CLI-09/RG-ACC-05) :
+  // getMesAccesDossier() charge deja tout l'historique du patient (aucune
+  // perte de donnees), seul l'affichage est decoupe en pages pour rester
+  // lisible sur un historique long. La page revient a 0 a chaque changement
+  // de filtre (type ou periode), sinon une page devenue vide resterait affichee.
+  const nombrePages = Math.max(1, Math.ceil(groupesFiltres.length / TAILLE_PAGE));
+  const pageActuelle = Math.min(page, nombrePages - 1);
+  const groupesPage = groupesFiltres.slice(pageActuelle * TAILLE_PAGE, (pageActuelle + 1) * TAILLE_PAGE);
+
+  function reinitialiserPage() {
+    setPage(0);
+  }
+
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-[20px] font-bold text-encre">Historique des accès</h2>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-1.5">
+            <label htmlFor="periode-debut" className="text-[12.5px] text-encre-secondaire">
+              Du
+            </label>
+            <input
+              id="periode-debut"
+              type="date"
+              value={periodeDebut}
+              max={periodeFin || undefined}
+              onChange={(event) => {
+                setPeriodeDebut(event.target.value);
+                reinitialiserPage();
+              }}
+              className="h-9 rounded-champ border border-bordure-forte bg-surface px-2.5 text-[13px] text-encre transition-colors motion-reduce:transition-none focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+            />
+            <label htmlFor="periode-fin" className="text-[12.5px] text-encre-secondaire">
+              au
+            </label>
+            <input
+              id="periode-fin"
+              type="date"
+              value={periodeFin}
+              min={periodeDebut || undefined}
+              onChange={(event) => {
+                setPeriodeFin(event.target.value);
+                reinitialiserPage();
+              }}
+              className="h-9 rounded-champ border border-bordure-forte bg-surface px-2.5 text-[13px] text-encre transition-colors motion-reduce:transition-none focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+            />
+            {periodeDebut || periodeFin ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setPeriodeDebut("");
+                  setPeriodeFin("");
+                  reinitialiserPage();
+                }}
+                className="text-[12.5px] font-semibold text-accent hover:underline"
+              >
+                Réinitialiser
+              </button>
+            ) : null}
+          </div>
           {typesDisponibles.length > 1 ? (
             <select
               value={filtreType}
-              onChange={(event) => setFiltreType(event.target.value)}
+              onChange={(event) => {
+                setFiltreType(event.target.value);
+                reinitialiserPage();
+              }}
               aria-label="Filtrer par type d'accès"
               className="h-9 rounded-champ border border-bordure-forte bg-surface px-2.5 text-[13px] text-encre transition-colors motion-reduce:transition-none focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
             >
@@ -290,12 +371,12 @@ export function ListeAccesDossier({ acces }: { acces: AccesDossier[] }) {
           <p className="max-w-[36ch] text-[13px] text-encre-attenuee">
             {groupes.length === 0
               ? "Dès qu'un professionnel autorisé consultera votre dossier, l'accès apparaîtra ici."
-              : "Essayez un autre type d'accès."}
+              : "Essayez un autre type d'accès ou une autre période."}
           </p>
         </div>
       ) : (
         <div className="flex flex-col gap-3">
-          {groupesFiltres.map((groupe) => (
+          {groupesPage.map((groupe) => (
             <Card
               key={groupe.cle}
               className={groupe.estUrgence ? "border-critique bg-critique-clair" : undefined}
@@ -334,6 +415,32 @@ export function ListeAccesDossier({ acces }: { acces: AccesDossier[] }) {
               </div>
             </Card>
           ))}
+
+          {nombrePages > 1 ? (
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={pageActuelle === 0}
+                onClick={() => setPage(pageActuelle - 1)}
+              >
+                Page précédente
+              </Button>
+              <span className="text-[12.5px] font-semibold text-encre-secondaire">
+                Page {pageActuelle + 1} sur {nombrePages}
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={pageActuelle >= nombrePages - 1}
+                onClick={() => setPage(pageActuelle + 1)}
+              >
+                Page suivante
+              </Button>
+            </div>
+          ) : null}
         </div>
       )}
     </div>

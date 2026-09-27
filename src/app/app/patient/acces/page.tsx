@@ -10,10 +10,10 @@ import { ListeAccesDossier } from "./ListeAccesDossier";
  * dossier du patient connecté, regroupés par personne et par jour, avec
  * filtre par type d'accès et signalement d'un accès non reconnu. N'inclut
  * jamais les propres consultations du patient sur son dossier (RG-CIT-21).
- *
- * Limite assumée : aucun mécanisme de "bris de glace" (accès d'urgence)
- * n'existe dans ce dépôt, donc aucune ligne n'est mise en évidence comme
- * telle (voir docs/audit-cote-medecin.md, F-CLI-09 à 14).
+ * Un accès d'urgence ("bris de glace", F-CLI-10) est mis en évidence en
+ * rouge avec sa justification (CA-2), voir ListeAccesDossier.tsx : ce
+ * mécanisme existe désormais dans ce dépôt (affirmation ci-dessus périmée
+ * corrigée le 2026-09-28, écrite avant F-CLI-10).
  */
 export default async function AccesPage() {
   const acces = await getMesAccesDossier();
