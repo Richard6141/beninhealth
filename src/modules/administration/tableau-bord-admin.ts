@@ -85,6 +85,10 @@ export interface FilesAttenteAdmin {
   smsDifferesEnAttente: number;
   /** SMS deposes dans la boite d'envoi simulee sur les dernieres 24 h. */
   smsDeposes24h: number;
+  /** RG-NOT-03 : SMS dont la livraison a echoue et qui attendent une reprise (1, 5 puis 30 minutes). */
+  smsEnAttenteDeReprise: number;
+  /** RG-NOT-03 : SMS en echec definitif sur les dernieres 24 h (reprises epuisees), a examiner. */
+  smsEnEchec24h: number;
   /** Executions de taches planifiees en erreur sur les dernieres 24 h. */
   erreursTaches24h: number;
   executionsTaches: ExecutionTacheResume[];
@@ -103,6 +107,8 @@ const ACCES_REFUSE: FilesAttenteAdmin = {
   reinitialisations2faEnAttente: 0,
   smsDifferesEnAttente: 0,
   smsDeposes24h: 0,
+  smsEnAttenteDeReprise: 0,
+  smsEnEchec24h: 0,
   erreursTaches24h: 0,
   executionsTaches: [],
   comptesParRole: [],
@@ -168,6 +174,8 @@ export async function getFilesAttenteAdmin(): Promise<FilesAttenteAdmin> {
     reinitialisations2faEnAttente,
     smsDifferesEnAttente,
     smsDeposes24h,
+    smsEnAttenteDeReprise,
+    smsEnEchec24h,
     erreursTaches24h,
     executionsTaches,
     comptesParRole,
@@ -186,6 +194,8 @@ export async function getFilesAttenteAdmin(): Promise<FilesAttenteAdmin> {
     prisma.actionAdministrateurEnAttente.count({ where: { statut: "en_attente", type: "reinitialisation_2fa", expireLe: { gt: new Date() } } }),
     prisma.envoiSms.count({ where: { statut: "differe" } }),
     prisma.envoiSms.count({ where: { statut: "simule", dateEnvoi: { gte: il24h } } }),
+    prisma.envoiSms.count({ where: { statut: "en_attente", tentatives: { gt: 0 } } }),
+    prisma.envoiSms.count({ where: { statut: "echec", dateEnvoi: { gte: il24h } } }),
     prisma.executionTache.count({ where: { statut: "erreur", date: { gte: il24h } } }),
     lireExecutionsTaches(),
     lireComptesParRole(),
@@ -203,6 +213,8 @@ export async function getFilesAttenteAdmin(): Promise<FilesAttenteAdmin> {
     reinitialisations2faEnAttente,
     smsDifferesEnAttente,
     smsDeposes24h,
+    smsEnAttenteDeReprise,
+    smsEnEchec24h,
     erreursTaches24h,
     executionsTaches,
     comptesParRole,

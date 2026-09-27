@@ -1,13 +1,15 @@
 import { prisma } from "@/lib/prisma";
 import { suivreExecution } from "@/modules/administration/executions-taches";
+import { demarrerRepriseSms, tenterLivraison } from "./livraison";
+import { fournisseurSms, type SmsProvider } from "./provider";
 
 /**
  * Remise des SMS differes (F-NOT-02, RG-NOT-04 du pack) : un SMS non urgent
  * demande entre 21h et 7h (heure du Benin) est enregistre au statut "differe"
  * avec une date programmee a 7h00 (voir envoyer.ts). Ce module le remet
- * quand cette date est atteinte : la ligne passe a "simule" (seul fournisseur
- * de ce depot, boite d'envoi simulee : aucun SMS reel ne part) et sa date
- * d'envoi devient l'instant de la remise.
+ * quand cette date est atteinte : la ligne passe a "en_attente" puis la
+ * livraison est tentee tout de suite par livraison.ts (RG-NOT-03 : reprises et
+ * statut "echec"). Avec la boite d'envoi simulee, la ligne devient "simule".
  *
  * Meme principe d'implementation que purge.ts (setInterval en process, pas de
  * file de taches externe). Chaque ligne est reclamee par une mise a jour
@@ -22,7 +24,7 @@ declare global {
 }
 
 /** Remet les SMS differes dont la date programmee est atteinte. Retourne le nombre remis. */
-export async function remettreSmsDifferes(maintenant: Date = new Date()): Promise<number> {
+export async function remettreSmsDifferes(maintenant: Date = new Date(), fournisseur: SmsProvider = fournisseurSms()): Promise<number> {
   const echus = await prisma.envoiSms.findMany({
     where: { statut: "differe", dateProgrammee: { lte: maintenant } },
     select: { id: true },
@@ -32,9 +34,11 @@ export async function remettreSmsDifferes(maintenant: Date = new Date()): Promis
   for (const { id } of echus) {
     const reclamation = await prisma.envoiSms.updateMany({
       where: { id, statut: "differe" },
-      data: { statut: "simule", dateEnvoi: maintenant },
+      data: { statut: "en_attente", tentatives: 0, prochaineTentativeLe: maintenant, dateEnvoi: maintenant },
     });
-    remis += reclamation.count;
+    if (reclamation.count === 0) continue;
+    remis += 1;
+    await tenterLivraison(id, fournisseur, maintenant);
   }
 
   return remis;
@@ -60,6 +64,9 @@ export function demarrerRemiseSmsDifferes(): void {
     return;
   }
   globalThis.__remiseSmsDifferesDemarree = true;
+
+  // Les reprises de SMS (RG-NOT-03) partent avec la remise : un seul point de demarrage dans src/instrumentation.ts.
+  demarrerRepriseSms();
 
   setInterval(() => {
     void executerRemiseAvecJournal();

@@ -14,8 +14,9 @@
  *
  * La remise d'un SMS differe (statut "differe") a 7h00 est assuree par la
  * tache planifiee en process remise-differes.ts (demarree par
- * src/instrumentation.ts) : elle passe la ligne a "simule" une fois la date
- * programmee atteinte. Limite : tache dans le processus web, sans reprise
+ * src/instrumentation.ts) : elle le livre une fois la date programmee
+ * atteinte. Toute livraison passe par livraison.ts (RG-NOT-03 : reprises et
+ * statut "echec"). Limite : tache dans le processus web, sans reprise
  * garantie si le serveur est arrete a 7h (la remise a lieu au redemarrage).
  *
  * Module pur (pas de "use server") : appele depuis d'autres modules
@@ -24,7 +25,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
-import { OutboxSmsProvider } from "./provider";
+import { livrerSms } from "./livraison";
 import type { CategorieNotification, CategorieVerrouillee } from "../categories";
 
 const LONGUEUR_MAX_SMS = 160;
@@ -99,5 +100,6 @@ export async function envoyerSms({ destinataire, texte, categorie, modele }: Env
     return;
   }
 
-  await OutboxSmsProvider.send({ to: destinataire, text: texteFinal, category: categorie, modele });
+  // RG-NOT-03 : livraison avec trois reprises (1, 5 puis 30 minutes) puis statut "echec" ; un echec ne remonte jamais a l'appelant.
+  await livrerSms({ destinataire, texte: texteFinal, categorie, modele: modele ?? null });
 }

@@ -20,6 +20,7 @@ export const LONGUEUR_MAX_MESSAGE = 300;
 export const LIBELLES_TACHES: Record<string, string> = {
   purge_notifications: "Purge des notifications",
   remise_sms_differes: "Remise des SMS différés",
+  reprises_sms: "Reprises des SMS en échec",
   relances_laboratoire: "Relances du laboratoire",
   rappels_rendez_vous: "Rappels de rendez-vous",
   marquage_absences: "Marquage des absences",

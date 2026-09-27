@@ -87,6 +87,17 @@ describe("getFilesAttenteAdmin : files et etat technique (F-ADM-01)", () => {
     expect(files.smsDeposes24h).toBe(9);
   });
 
+  it("compte les SMS en reprise et en echec sur 24 h (RG-NOT-03)", async () => {
+    p.envoiSms.count.mockImplementation(async ({ where }: { where: { statut: string } }) => (where.statut === "en_attente" ? 2 : where.statut === "echec" ? 1 : 0));
+
+    const files = await getFilesAttenteAdmin();
+
+    expect(files.smsEnAttenteDeReprise).toBe(2);
+    expect(files.smsEnEchec24h).toBe(1);
+    const echecs = p.envoiSms.count.mock.calls.map((appel) => appel[0].where).find((where) => where.statut === "echec");
+    expect(echecs.dateEnvoi.gte).toBeInstanceOf(Date);
+  });
+
   it("compte les erreurs de taches des 24 dernieres heures seulement", async () => {
     p.executionTache.count.mockResolvedValue(3);
 

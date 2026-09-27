@@ -136,6 +136,14 @@ export function SectionFilesAttente({ files }: { files: FilesAttenteAdmin }) {
             SMS déposés sur 24 h : <span className="chiffres font-semibold">{files.smsDeposes24h}</span>
           </div>
           <div className="flex items-center gap-2 text-[14px] text-encre">
+            SMS en reprise :
+            <Badge tone={files.smsEnAttenteDeReprise > 0 ? "alert" : "good"}>{files.smsEnAttenteDeReprise}</Badge>
+          </div>
+          <div className="flex items-center gap-2 text-[14px] text-encre">
+            SMS en échec sur 24 h :
+            <Badge tone={files.smsEnEchec24h > 0 ? "critical" : "good"}>{files.smsEnEchec24h}</Badge>
+          </div>
+          <div className="flex items-center gap-2 text-[14px] text-encre">
             Erreurs de tâches sur 24 h :
             <Badge tone={files.erreursTaches24h > 0 ? "critical" : "good"}>{files.erreursTaches24h}</Badge>
           </div>

@@ -964,15 +964,23 @@ model EnvoiSms {
   // src/modules/notification/categories.ts, y compris les 2 verrouillees :
   // un envoi peut concerner une categorie sans preference modifiable).
   categorie      String
-  // simule | differe (RG-NOT-04 : SMS non urgent envoye entre 21h et 7h,
-  // reporte a 7h00 - la remise effective a 7h n'est pas automatisee dans ce
-  // depot, aucune tache planifiee fiable, voir limite documentee dans
-  // src/modules/notification/sms/envoyer.ts).
+  // simule | envoye | differe | en_attente | echec.
+  // differe : SMS non urgent demande entre 21h et 7h, reporte a 7h00
+  // (RG-NOT-04, remis par src/modules/notification/sms/remise-differes.ts).
+  // en_attente : a livrer ou a reessayer (RG-NOT-03 : apres 1 min, 5 min puis
+  // 30 min). echec : les reprises sont epuisees, visible par l'administrateur.
   statut         String    @default("simule")
   dateProgrammee DateTime?
   modele         String?
   cout           Float?
   dateEnvoi      DateTime  @default(now())
+  // RG-NOT-03 : nombre de tentatives faites, prochaine tentative (aussi le
+  // bail d'une tentative en cours) et derniere erreur, sans donnee de sante.
+  tentatives           Int       @default(0)
+  prochaineTentativeLe DateTime?
+  derniereErreur       String?
+
+  @@index([statut, prochaineTentativeLe])
   @@schema("public")
 }
 

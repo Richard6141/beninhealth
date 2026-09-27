@@ -35,9 +35,13 @@ export interface EnvoiSmsResume {
   dateProgrammee: string | null;
   modele: string | null;
   dateEnvoi: string;
+  /** RG-NOT-03 : tentatives faites, prochaine reprise programmee et derniere erreur technique. */
+  tentatives: number;
+  prochaineTentativeLe: string | null;
+  derniereErreur: string | null;
 }
 
-/** Les 100 derniers envois (simules et differes), les plus recents en premier. Reserve a admin_national. */
+/** Les 100 derniers envois (simules, differes, en attente de reprise ou en echec), les plus recents en premier. Reserve a admin_national. */
 export async function getEnvoisSms(): Promise<EnvoiSmsResume[] | null> {
   const session = await getSession();
 
@@ -59,6 +63,9 @@ export async function getEnvoisSms(): Promise<EnvoiSmsResume[] | null> {
     dateProgrammee: envoi.dateProgrammee?.toISOString() ?? null,
     modele: envoi.modele,
     dateEnvoi: envoi.dateEnvoi.toISOString(),
+    tentatives: envoi.tentatives,
+    prochaineTentativeLe: envoi.prochaineTentativeLe?.toISOString() ?? null,
+    derniereErreur: envoi.derniereErreur,
   }));
 }
 
