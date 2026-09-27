@@ -9,10 +9,13 @@ import {
   Circle,
   ClipboardList,
   Droplet,
+  FileText,
   FlaskConical,
   Heart,
   Pill,
   QrCode,
+  Share2,
+  ShieldAlert,
   ShieldCheck,
   TriangleAlert,
   UserRound,
@@ -30,7 +33,16 @@ import {
   type PrescriptionResume,
 } from "@/modules/prescription/actions";
 import { getMesExamens } from "@/modules/laboratoire/actions";
+import {
+  getAlertesImportantes,
+  getDerniersDocuments,
+  type AlerteImportante,
+  type DocumentTableauDeBord,
+  type TypeAlerteImportante,
+  type TypeDocumentTableauDeBord,
+} from "@/modules/patient/tableau-de-bord";
 import { estPrescriptionEnCours } from "./prescriptions/lib";
+import { IndicateurConnexion } from "./IndicateurConnexion";
 import { cn } from "@/lib/cn";
 import { Alert } from "@/components/ui/Alert";
 import { Badge } from "@/components/ui/Badge";
@@ -179,6 +191,99 @@ function champsManquants(dossier: DossierPatientResume): string[] {
   return manquants;
 }
 
+// F-CIT-02 : icone et couleur par type d'alerte (section "Alertes importantes").
+const ICONE_ALERTE: Record<TypeAlerteImportante, LucideIcon> = {
+  resultat_disponible: FlaskConical,
+  rendez_vous_annule: CalendarClock,
+  acces_urgence: ShieldAlert,
+  consentement_demande: UserRound,
+  profil_incomplet: ClipboardList,
+};
+
+const STYLE_ALERTE: Record<TypeAlerteImportante, string> = {
+  resultat_disponible: "border-info bg-info-clair text-info",
+  rendez_vous_annule: "border-vigilance bg-vigilance-clair text-vigilance",
+  acces_urgence: "border-critique bg-critique-clair text-critique",
+  consentement_demande: "border-info bg-info-clair text-info",
+  profil_incomplet: "border-vigilance bg-vigilance-clair text-vigilance",
+};
+
+/** Ligne d'alerte : icone, message et lien, dans la couleur de son type. Jamais la couleur seule (texte explicite). */
+function LigneAlerte({ alerte }: { alerte: AlerteImportante }) {
+  const Icone = ICONE_ALERTE[alerte.type];
+  return (
+    <Link
+      href={alerte.lien}
+      className={cn(
+        "flex items-start gap-3 rounded-champ border px-4 py-3 transition-colors motion-reduce:transition-none hover:brightness-95",
+        STYLE_ALERTE[alerte.type]
+      )}
+    >
+      <Icone size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
+      <span className="flex-1 text-[14px] font-semibold">{alerte.message}</span>
+      <ChevronRight size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+    </Link>
+  );
+}
+
+// F-CIT-02 : icone et libelle par type de document (section "Derniers documents").
+const ICONE_DOCUMENT: Record<TypeDocumentTableauDeBord, LucideIcon> = {
+  ordonnance: Pill,
+  resultat: FlaskConical,
+  compte_rendu: FileText,
+};
+
+const LIBELLE_TYPE_DOCUMENT: Record<TypeDocumentTableauDeBord, string> = {
+  ordonnance: "Ordonnance",
+  resultat: "Résultat",
+  compte_rendu: "Compte rendu",
+};
+
+function LigneDocument({ document }: { document: DocumentTableauDeBord }) {
+  const Icone = ICONE_DOCUMENT[document.type];
+  return (
+    <Link
+      href={document.lien}
+      className="flex items-center gap-3 rounded-champ border border-bordure bg-plan px-4 py-3 transition-colors motion-reduce:transition-none hover:border-bordure-forte"
+    >
+      <IconCercle icon={Icone} ton="accent" taille={36} tailleIcone={16} />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <span className="text-[12px] font-semibold uppercase tracking-[0.05em] text-encre-attenuee">
+          {LIBELLE_TYPE_DOCUMENT[document.type]} · {formaterDateCourte(document.date)}
+        </span>
+        <span className="truncate text-[14px] font-semibold text-encre">{document.titre}</span>
+        <span className="truncate text-[12px] text-encre-attenuee">{document.soustitre}</span>
+      </div>
+      <ChevronRight size={16} className="shrink-0 text-encre-attenuee" aria-hidden="true" />
+    </Link>
+  );
+}
+
+/**
+ * Tuile d'action rapide (F-CIT-02, section "Actions rapides") : 4 tuiles
+ * dans l'ordre impose par le pack, distinctes des tuiles d'indicateurs
+ * ci-dessus (TuileKpi, deja existantes avant ce chantier et conservees).
+ */
+function TuileActionRapide({
+  icon,
+  label,
+  href,
+}: {
+  icon: LucideIcon;
+  label: string;
+  href: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="flex flex-col items-center gap-2.5 rounded-carte border border-bordure bg-surface px-4 py-5 text-center shadow-[var(--ombre-carte)] transition-colors motion-reduce:transition-none hover:border-bordure-forte"
+    >
+      <IconCercle icon={icon} ton="accent" plein taille={44} tailleIcone={20} />
+      <span className="text-[14px] font-semibold text-encre">{label}</span>
+    </Link>
+  );
+}
+
 /**
  * Tuile d'indicateur cle, cliquable, en tete de page : icone pleine
  * couleur + valeur + sous-texte + chevron, sur le modele d'une carte de
@@ -253,17 +358,20 @@ function TitreSection({
   ton,
   titre,
   sousTitre,
+  id,
 }: {
   icon: LucideIcon;
   ton: TonCouleur;
   titre: string;
   sousTitre?: string;
+  /** Assorti a l'aria-labelledby de la <section> englobante : sans lui, le lien d'accessibilite est rompu. */
+  id?: string;
 }) {
   return (
     <div className="flex items-center gap-3">
       <IconCercle icon={icon} ton={ton} plein taille={36} tailleIcone={17} />
       <div className="flex flex-col">
-        <h2 className="text-[20px] font-bold text-encre">{titre}</h2>
+        <h2 id={id} className="text-[20px] font-bold text-encre">{titre}</h2>
         {sousTitre ? (
           <p className="text-[13px] text-encre-secondaire">{sousTitre}</p>
         ) : null}
@@ -273,6 +381,8 @@ function TitreSection({
 }
 
 export default async function PatientPage() {
+  const genereLe = new Date().toISOString();
+
   const [profil, dossier, consentements, rendezVous, prescriptions, examens, qrCode] = await Promise.all([
     getMonProfil(),
     getMonDossierPatient(),
@@ -286,6 +396,14 @@ export default async function PatientPage() {
   const consentementsActifs = consentements.filter((c) => c.statutEffectif === "actif");
   const completude = dossier ? calculerCompletudeDossier(dossier) : null;
   const manquants = dossier ? champsManquants(dossier) : [];
+
+  // F-CIT-02 : composees a part (src/modules/patient/tableau-de-bord.ts), a
+  // partir de completude/manquants qui viennent d'etre calcules ci-dessus
+  // (evite une deuxieme lecture du dossier pour "profil incomplet").
+  const [alertesImportantes, derniersDocuments] = await Promise.all([
+    getAlertesImportantes(manquants.length > 0),
+    getDerniersDocuments(),
+  ]);
   const rendezVousFuturs = rendezVousAVenir(rendezVous);
   const prochainsRendezVous = rendezVousFuturs.slice(0, 2);
   const prescriptionsActives = prescriptionsEnCours(prescriptions);
@@ -298,6 +416,8 @@ export default async function PatientPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 px-4 py-8 sm:px-6 lg:px-8">
+      <IndicateurConnexion genereLe={genereLe} />
+
       <header className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-col gap-2">
           {dossier ? (
@@ -349,6 +469,23 @@ export default async function PatientPage() {
           </div>
         ) : null}
       </header>
+
+      {alertesImportantes.length > 0 ? (
+        <section aria-labelledby="titre-alertes" className="flex flex-col gap-3">
+          <TitreSection
+            icon={TriangleAlert}
+            ton="vigilance"
+            titre="Alertes importantes"
+            sousTitre="Ce qui mérite votre attention en priorité."
+            id="titre-alertes"
+          />
+          <div className="flex flex-col gap-2">
+            {alertesImportantes.map((alerte, index) => (
+              <LigneAlerte key={`${alerte.type}-${index}`} alerte={alerte} />
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <TuileKpi
@@ -592,6 +729,7 @@ export default async function PatientPage() {
           ton="accent"
           titre="Mon suivi"
           sousTitre="Consultez l'état de vos rendez-vous, traitements et examens."
+          id="titre-suivi"
         />
         <div className="grid gap-4 sm:grid-cols-3">
               <Card
@@ -784,6 +922,41 @@ export default async function PatientPage() {
                 </Link>
               </Card>
             </div>
+      </section>
+
+      <section aria-labelledby="titre-documents" className="flex flex-col gap-4">
+        <TitreSection
+          icon={FileText}
+          ton="info"
+          titre="Derniers documents"
+          sousTitre="Vos 3 documents les plus récents : ordonnances, résultats et comptes rendus."
+          id="titre-documents"
+        />
+        {derniersDocuments.length > 0 ? (
+          <div className="grid gap-3 sm:grid-cols-3">
+            {derniersDocuments.map((document, index) => (
+              <LigneDocument key={`${document.type}-${index}`} document={document} />
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-col items-center gap-2 rounded-champ border border-dashed border-bordure-forte bg-plan px-4 py-8 text-center">
+            <IconCercle icon={FileText} ton="info" taille={44} tailleIcone={20} />
+            <p className="text-[14px] font-semibold text-encre">Aucun document pour le moment</p>
+            <p className="max-w-[36ch] text-[13px] text-encre-attenuee">
+              Vos ordonnances, résultats d&apos;examens et comptes rendus apparaîtront ici.
+            </p>
+          </div>
+        )}
+      </section>
+
+      <section aria-labelledby="titre-actions-rapides" className="flex flex-col gap-4">
+        <TitreSection icon={Share2} ton="sombre" titre="Actions rapides" id="titre-actions-rapides" />
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <TuileActionRapide icon={CalendarClock} label="Prendre rendez-vous" href="/app/patient/rendez-vous" />
+          <TuileActionRapide icon={ClipboardList} label="Mon dossier" href="/app/patient/dossier" />
+          <TuileActionRapide icon={FlaskConical} label="Mes résultats" href="/app/patient/examens" />
+          <TuileActionRapide icon={Share2} label="Partager mon dossier" href="/app/patient/consentements" />
+        </div>
       </section>
     </div>
   );
