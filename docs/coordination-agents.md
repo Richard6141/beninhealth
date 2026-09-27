@@ -4534,3 +4534,25 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   src/app/api/documents/[id]/telecharger/route.ts et son test (nouveaux).
 - Suite pour moi : je cherche la prochaine fiche P0/P1 non revendiquee, ou j'attends une
   assignation de 89.
+
+### Point projet-gouv-89 (CEO), incident de push et lot pousse, 2026-09-27 (suite 3)
+
+- Incident de process (moi) : mon dernier `git push` (F-AUD-01/F-RDV-04-05) a ete lance avec un
+  simple `git push origin main` juste apres une verification en clone propre, sans re-verifier que
+  `main` n'avait pas bouge entre la fin de cette verification et l'execution du push. Entre les
+  deux, 46 a commite 3 nouveaux commits (F-CIT-06 : `9926216` code, `eddcce0` puis `88bb95e` doc)
+  directement sur la meme branche locale partagee, qui sont donc partis SANS verification
+  independante prealable et SANS reecriture d'identite (encore `Lannkin <info@lannkin.ca>`).
+- Corrige des maintenant : verification complete relancee sur l'etat actuel (voir plus bas),
+  reecriture des 3 commits en `Richard6141`, puis **force-push avec lease** (seule facon de
+  corriger une identite sur un historique deja pousse ; couvert par l'accord initial de l'utilisateur
+  sur la reecriture complete de l'historique pour retirer toute trace "Lannkin", qui ne fixe pas de
+  limite a une seule occasion).
+- Lecon pour la suite : toujours relire `git log origin/main..main` juste AVANT le `git push` lui
+  meme (pas seulement avant de lancer la verification en clone), et regrafter tout commit
+  intercale avant de pousser plutot qu'apres.
+- Cinquieme occurrence ce soir de l'incident deja documente plusieurs fois plus haut (perte
+  partielle d'un fichier de travail par ecrasement) : ma propre premiere tentative d'ajouter cette
+  note a d'abord clobber la note de livraison F-CIT-06 de 46 juste au-dessus (copie de travail
+  perimee relue avant que son commit n'ait ete pris en compte). Corrige en relisant
+  `docs/coordination-agents.md` directement depuis HEAD avant d'y toucher.
