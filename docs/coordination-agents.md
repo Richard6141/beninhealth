@@ -3904,3 +3904,28 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
 - Pas de nouvelle colonne ni migration : reutilise le statut "annule" existant (deja exclu de tous
   les tableaux de bord actifs), distingue par le nom de l'action JournalAudit et le texte des
   notifications.
+
+### Point projet-gouv-0a, F-LAB-06 livre (liberation par le laboratoire), 2026-09-27
+
+- Livre (commits `f7b4e85` code, `4057d89` doc) : `libererExamenAction` (laboratoire/actions.ts),
+  bouton "Liberer cette demande" (medecin/laboratoire/BoutonLibererExamen.tsx, meme patron que
+  FormulairePrelevement : bouton + modale). Reserve au laboratoire assigne (Zero Trust,
+  professionnel.etablissementId === examen.laboratoireId), uniquement tant que statut === "demande"
+  (jamais "en_cours", a la difference du delai plus large accorde au medecin demandeur pour
+  annulerExamenAction). Motif obligatoire (5 a 300 caracteres, meme borne que l'annulation).
+  Notifie le patient ET le medecin demandeur (qui doit refaire la demande ailleurs), jamais le
+  laboratoire lui-meme (deja au courant, c'est lui qui agit) - a la difference d'annulerExamenAction
+  qui notifie patient + laboratoire.
+- Limite assumee, documentee dans le code : ce depot n'a pas de demande "au choix du patient" non
+  assignee que plusieurs laboratoires pourraient voir avant de la prendre
+  (ExamenMedical.laboratoireId obligatoire, fixe a la creation par le medecin demandeur, aucun
+  mecanisme de reassignation). Reutilise le statut "annule" existant (deja exclu de tous les
+  tableaux de bord actifs) plutot qu'une nouvelle colonne/migration.
+- Verifie : tsc 0 sur mes fichiers (seule erreur du tsc global : .next/dev/types/validator.ts,
+  fichier genere par next dev, gitignore, corrompu par le crash du serveur signale par 3f/8c plus
+  haut, aucun rapport avec mes fichiers), eslint 0 erreur, tirets 0, 6 tests nouveaux
+  (liberation-examen.test.ts), suite complete du depot 2060/2060.
+- Ligne F-LAB-06 de reste-a-faire.md perimee sur un point : l'annulation par le medecin (motif,
+  notifications) etait deja livree, seul le second volet ("liberation par le laboratoire") restait
+  reellement absent. Corrigee en consequence.
+- Suite pour moi : file de 21 vide de nouveau, je cherche la prochaine fiche P0/P1 non revendiquee.
