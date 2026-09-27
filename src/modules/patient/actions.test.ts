@@ -47,14 +47,12 @@ function buildFormData(donnees: Record<string, string>): FormData {
   return formData;
 }
 
+// F-CIT-04 : allergies, antecedents, maladies chroniques et contacts d'urgence
+// sont geres par src/modules/patient/informations-declarees.ts depuis ce
+// soir (versionnement declare/confirme/retire, RG-CIT-30/31) ; cette action
+// ne garde que le groupe sanguin et la grossesse.
 const donneesValides = {
   groupeSanguin: "O+",
-  allergies: "",
-  antecedents: "",
-  maladiesChroniques: "",
-  contactUrgenceNom: "",
-  contactUrgenceTelephone: "",
-  contactUrgenceLien: "",
 };
 
 describe("updatePatientProfileAction (validation)", () => {
@@ -73,35 +71,7 @@ describe("updatePatientProfileAction (validation)", () => {
     expect(prismaMock.patient.findUnique).not.toHaveBeenCalled();
   });
 
-  it("rejette un contact d'urgence avec un nom renseigne mais sans telephone", async () => {
-    const formData = buildFormData({
-      ...donneesValides,
-      contactUrgenceNom: "Marie Doe",
-      contactUrgenceTelephone: "",
-    });
-
-    const resultat = await updatePatientProfileAction(ETAT_INITIAL, formData);
-
-    expect(resultat.success).toBe(false);
-    expect(resultat.error).toBeTruthy();
-    expect(prismaMock.patient.findUnique).not.toHaveBeenCalled();
-  });
-
-  it("rejette un contact d'urgence avec un telephone renseigne mais sans nom", async () => {
-    const formData = buildFormData({
-      ...donneesValides,
-      contactUrgenceNom: "",
-      contactUrgenceTelephone: "+22997000000",
-    });
-
-    const resultat = await updatePatientProfileAction(ETAT_INITIAL, formData);
-
-    expect(resultat.success).toBe(false);
-    expect(resultat.error).toBeTruthy();
-    expect(prismaMock.patient.findUnique).not.toHaveBeenCalled();
-  });
-
-  it("accepte des donnees valides (groupe sanguin connu, contact d'urgence coherent)", async () => {
+  it("accepte des donnees valides (groupe sanguin connu)", async () => {
     prismaMock.patient.findUnique.mockResolvedValue({ id: "dossier-1", userId: "patient-1" });
     prismaMock.$transaction.mockResolvedValue([{}, {}]);
 

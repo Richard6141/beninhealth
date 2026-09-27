@@ -118,29 +118,14 @@ const TYPES_ACCES_CONNUS = [
   "documents",
 ] as const satisfies readonly TypeAccesConsentement[];
 
-const schemaMiseAJourDossier = z
-  .object({
-    groupeSanguin: z.enum(GROUPES_SANGUINS_CONNUS, { message: "Groupe sanguin invalide." }),
-    allergies: z.string().optional().default(""),
-    antecedents: z.string().optional().default(""),
-    maladiesChroniques: z.string().optional().default(""),
-    grossesseEnCours: z.coerce.boolean().optional().default(false),
-    contactUrgenceNom: z.string().optional().default(""),
-    contactUrgenceTelephone: z.string().optional().default(""),
-    contactUrgenceLien: z.string().optional().default(""),
-  })
-  .refine(
-    (donnees) => {
-      const nomRempli = donnees.contactUrgenceNom.trim().length > 0;
-      const telephoneRempli = donnees.contactUrgenceTelephone.trim().length > 0;
-      return nomRempli === telephoneRempli;
-    },
-    {
-      message:
-        "Le nom et le telephone du contact d'urgence sont obligatoires ensemble (renseignez les deux, ou aucun des deux).",
-      path: ["contactUrgenceNom"],
-    }
-  );
+// F-CIT-04 du pack : allergies, antecedents, maladies chroniques et contacts
+// d'urgence sont geres par src/modules/patient/informations-declarees.ts
+// (versionnement declare/confirme/retire, RG-CIT-30/31), plus modifiables ici
+// wholesale. Cette action ne garde que le groupe sanguin et la grossesse.
+const schemaMiseAJourDossier = z.object({
+  groupeSanguin: z.enum(GROUPES_SANGUINS_CONNUS, { message: "Groupe sanguin invalide." }),
+  grossesseEnCours: z.coerce.boolean().optional().default(false),
+});
 
 const schemaOctroiConsentement = z.object({
   acteurAutoriseId: z.string().trim().min(1, "Le professionnel de sante est obligatoire."),
@@ -193,14 +178,6 @@ function parseContactsUrgence(valeur: string): ContactUrgence[] {
   } catch {
     return [];
   }
-}
-
-/** Decoupe un champ "une entree par ligne" en tableau de chaines non vides, nettoyees. */
-function parseListeLignes(valeur: string): string[] {
-  return valeur
-    .split("\n")
-    .map((ligne) => ligne.trim())
-    .filter((ligne) => ligne.length > 0);
 }
 
 /** Nom complet d'un acteur, prefixe de "Dr." s'il s'agit d'un professionnel de sante. */
@@ -466,13 +443,7 @@ export async function updatePatientProfileAction(
 
   const validation = schemaMiseAJourDossier.safeParse({
     groupeSanguin: formData.get("groupeSanguin"),
-    allergies: formData.get("allergies"),
-    antecedents: formData.get("antecedents"),
-    maladiesChroniques: formData.get("maladiesChroniques"),
     grossesseEnCours: formData.get("grossesseEnCours"),
-    contactUrgenceNom: formData.get("contactUrgenceNom"),
-    contactUrgenceTelephone: formData.get("contactUrgenceTelephone"),
-    contactUrgenceLien: formData.get("contactUrgenceLien"),
   });
 
   if (!validation.success) {
@@ -490,15 +461,6 @@ export async function updatePatientProfileAction(
     }
 
     const donnees = validation.data;
-    const nomContact = donnees.contactUrgenceNom.trim();
-    const telephoneContact = donnees.contactUrgenceTelephone.trim();
-    const lienContact = donnees.contactUrgenceLien.trim();
-
-    const contactsUrgence: ContactUrgence[] =
-      nomContact.length > 0 && telephoneContact.length > 0
-        ? [{ nom: nomContact, telephone: telephoneContact, lienParente: lienContact }]
-        : [];
-
     const adresseTechnique = await adresseTechniqueCourante();
 
     await prisma.$transaction([
@@ -506,14 +468,10 @@ export async function updatePatientProfileAction(
         where: { id: patient.id },
         data: {
           groupeSanguin: donnees.groupeSanguin,
-          allergies: JSON.stringify(parseListeLignes(donnees.allergies)),
-          antecedents: JSON.stringify(parseListeLignes(donnees.antecedents)),
-          maladiesChroniques: JSON.stringify(parseListeLignes(donnees.maladiesChroniques)),
           // Zero Trust : le champ n'est propose a l'ecran que pour sexe "F",
           // mais la valeur soumise n'est retenue que dans ce cas ici aussi,
           // jamais seulement en confiance du client.
           grossesseEnCours: patient.sexe === "F" ? donnees.grossesseEnCours : false,
-          contactsUrgence: JSON.stringify(contactsUrgence),
         },
       }),
       journaliser({

@@ -1,13 +1,14 @@
 import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
-import { ArrowLeft, Phone, Stethoscope, TriangleAlert, UserRound } from "lucide-react";
+import { ArrowLeft, Stethoscope, UserRound } from "lucide-react";
 import { getMonDossierPatient } from "@/modules/patient/actions";
+import { getMesInformationsDeclarees } from "@/modules/patient/informations-declarees";
 import { Alert } from "@/components/ui/Alert";
 import { Badge } from "@/components/ui/Badge";
-import type { BadgeTone } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { FormulaireDossier } from "./FormulaireDossier";
 import { SectionChronologie } from "./SectionChronologie";
+import { SectionInformationsDeclarees } from "./SectionInformationsDeclarees";
 
 function formaterDate(date: string): string {
   try {
@@ -19,38 +20,6 @@ function formaterDate(date: string): string {
   } catch {
     return date;
   }
-}
-
-function ListeOuVide({
-  elements,
-  messageVide,
-  tonBadge,
-}: {
-  elements: string[];
-  messageVide: string;
-  tonBadge?: BadgeTone;
-}) {
-  if (elements.length === 0) {
-    return <p className="text-[13px] text-encre-attenuee">{messageVide}</p>;
-  }
-  if (tonBadge) {
-    return (
-      <div className="flex flex-wrap gap-1.5">
-        {elements.map((element) => (
-          <Badge key={element} tone={tonBadge}>
-            {element}
-          </Badge>
-        ))}
-      </div>
-    );
-  }
-  return (
-    <ul className="list-disc space-y-1 pl-5 text-[14px] text-encre">
-      {elements.map((element) => (
-        <li key={element}>{element}</li>
-      ))}
-    </ul>
-  );
 }
 
 /** Titre de section avec icône, pour marquer clairement les trois regroupements
@@ -82,13 +51,23 @@ interface DossierPatientPageProps {
 /**
  * Ecran "dossier santé" complet (Phase 3, Partie 4 §7 du cahier des charges) :
  * lecture détaillée du résumé santé (getMonDossierPatient), regroupée en
- * trois blocs logiques (identité, santé, contacts), chronologie unifiée
- * (F-CIT-03 du pack : consultations, ordonnances, résultats, vaccinations,
- * documents fusionnés, filtrés et paginés, voir SectionChronologie), puis
- * formulaire d'édition branché sur updatePatientProfileAction.
+ * blocs logiques (identité, informations médicales déclarées, contacts
+ * d'urgence, chronologie), chronologie unifiée (F-CIT-03 du pack :
+ * consultations, ordonnances, résultats, vaccinations, documents fusionnés,
+ * filtrés et paginés, voir SectionChronologie), puis formulaire d'édition
+ * branché sur updatePatientProfileAction (groupe sanguin et grossesse
+ * uniquement, voir FormulaireDossier.tsx).
+ *
+ * Allergies, antécédents, maladies chroniques et contacts d'urgence (F-CIT-04
+ * du pack) sont désormais gérés individuellement (ajout/retrait, historique)
+ * par SectionInformationsDeclarees, alimentée par getMesInformationsDeclarees.
  */
 export default async function DossierPatientPage({ searchParams }: DossierPatientPageProps) {
-  const [dossier, searchParamsResolus] = await Promise.all([getMonDossierPatient(), searchParams]);
+  const [dossier, informationsDeclarees, searchParamsResolus] = await Promise.all([
+    getMonDossierPatient(),
+    getMesInformationsDeclarees(),
+    searchParams,
+  ]);
 
   return (
     <div className="conteneur-page mx-auto flex flex-col gap-8 px-4 py-8 sm:px-6">
@@ -109,121 +88,53 @@ export default async function DossierPatientPage({ searchParams }: DossierPatien
 
       {dossier ? (
         <>
-          <div className="grid gap-6 lg:grid-cols-3">
-            <section
-              aria-labelledby="titre-identite"
-              className="flex flex-col gap-4 lg:col-span-2"
-            >
-              <TitreSection icon={UserRound} id="titre-identite">
-                Identité et informations générales
-              </TitreSection>
-              <Card className="flex-1">
-                <dl className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-                  <div>
-                    <dt className="text-[13px] font-semibold text-encre-secondaire">
-                      Identifiant santé
-                    </dt>
-                    <dd className="mt-1.5 text-[15px] text-encre">
-                      {dossier.identifiantSante}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-[13px] font-semibold text-encre-secondaire">
-                      Date de naissance
-                    </dt>
-                    <dd className="mt-1.5 text-[15px] text-encre">
-                      {formaterDate(dossier.dateNaissance)}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-[13px] font-semibold text-encre-secondaire">
-                      Sexe
-                    </dt>
-                    <dd className="mt-1.5 text-[15px] text-encre">
-                      {dossier.sexe === "M" ? "Homme" : "Femme"}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-[13px] font-semibold text-encre-secondaire">
-                      Groupe sanguin
-                    </dt>
-                    <dd className="mt-1.5">
-                      <Badge tone="accent">{dossier.groupeSanguin || "Inconnu"}</Badge>
-                    </dd>
-                  </div>
-                </dl>
-              </Card>
-            </section>
-
-            <section aria-labelledby="titre-urgence" className="flex flex-col gap-4">
-              <TitreSection icon={Phone} id="titre-urgence">
-                Contacts d&apos;urgence
-              </TitreSection>
-              <Card className="flex-1">
-                {dossier.contactsUrgence.length > 0 ? (
-                  <ul className="flex flex-col gap-3">
-                    {dossier.contactsUrgence.map((contact) => (
-                      <li
-                        key={`${contact.nom}-${contact.telephone}`}
-                        className="flex flex-col gap-0.5 border-b border-bordure pb-3 last:border-0 last:pb-0"
-                      >
-                        <span className="font-semibold text-encre">{contact.nom}</span>
-                        <span className="text-[13px] text-encre-secondaire">
-                          {contact.lienParente}
-                        </span>
-                        <span className="text-[14px] text-encre">{contact.telephone}</span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-[13px] text-encre-attenuee">
-                    Aucun contact d&apos;urgence enregistré. Ajoutez-en un
-                    ci-dessous : il pourra être contacté en cas d&apos;urgence
-                    médicale.
-                  </p>
-                )}
-              </Card>
-            </section>
-          </div>
+          <section aria-labelledby="titre-identite" className="flex flex-col gap-4">
+            <TitreSection icon={UserRound} id="titre-identite">
+              Identité et informations générales
+            </TitreSection>
+            <Card>
+              <dl className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+                <div>
+                  <dt className="text-[13px] font-semibold text-encre-secondaire">
+                    Identifiant santé
+                  </dt>
+                  <dd className="mt-1.5 text-[15px] text-encre">
+                    {dossier.identifiantSante}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-[13px] font-semibold text-encre-secondaire">
+                    Date de naissance
+                  </dt>
+                  <dd className="mt-1.5 text-[15px] text-encre">
+                    {formaterDate(dossier.dateNaissance)}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-[13px] font-semibold text-encre-secondaire">
+                    Sexe
+                  </dt>
+                  <dd className="mt-1.5 text-[15px] text-encre">
+                    {dossier.sexe === "M" ? "Homme" : "Femme"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-[13px] font-semibold text-encre-secondaire">
+                    Groupe sanguin
+                  </dt>
+                  <dd className="mt-1.5">
+                    <Badge tone="accent">{dossier.groupeSanguin || "Inconnu"}</Badge>
+                  </dd>
+                </div>
+              </dl>
+            </Card>
+          </section>
 
           <section aria-labelledby="titre-sante" className="flex flex-col gap-4">
             <TitreSection icon={Stethoscope} id="titre-sante">
-              Informations médicales
+              Informations médicales et contacts d&apos;urgence
             </TitreSection>
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              <Card
-                title="Allergies"
-                description="Substances ou éléments à éviter."
-                className={
-                  dossier.allergies.length > 0
-                    ? "border-vigilance bg-vigilance-clair"
-                    : undefined
-                }
-                actions={
-                  dossier.allergies.length > 0 ? (
-                    <TriangleAlert size={18} className="text-vigilance" aria-hidden="true" />
-                  ) : undefined
-                }
-              >
-                <ListeOuVide
-                  elements={dossier.allergies}
-                  messageVide="Aucune allergie connue."
-                  tonBadge="warning"
-                />
-              </Card>
-              <Card title="Maladies chroniques" description="Suivi au long cours.">
-                <ListeOuVide
-                  elements={dossier.maladiesChroniques}
-                  messageVide="Aucune maladie chronique connue."
-                />
-              </Card>
-              <Card title="Antécédents" description="Antécédents médicaux et chirurgicaux.">
-                <ListeOuVide
-                  elements={dossier.antecedents}
-                  messageVide="Aucun antécédent connu."
-                />
-              </Card>
-            </div>
+            <SectionInformationsDeclarees informations={informationsDeclarees} />
           </section>
         </>
       ) : (

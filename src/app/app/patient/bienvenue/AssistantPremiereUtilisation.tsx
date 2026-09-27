@@ -1,19 +1,19 @@
 "use client";
 
-import { useActionState, useEffect, useId, useRef, useState } from "react";
+import { startTransition, useActionState, useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import type { DossierPatientResume } from "@/modules/patient/actions";
 import {
-  updatePatientProfileAction,
-  type DossierPatientResume,
-  type PatientActionState,
-} from "@/modules/patient/actions";
+  enregistrerPremiereUtilisationAction,
+  type InformationDeclareeActionState,
+} from "@/modules/patient/informations-declarees";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { SelectField } from "@/components/ui/SelectField";
 import { TextField } from "@/components/ui/TextField";
 
-const etatInitial: PatientActionState = { error: null, success: false };
+const etatInitial: InformationDeclareeActionState = { error: null, success: false };
 
 const optionsGroupeSanguin = [
   { value: "A+", label: "A+" },
@@ -88,17 +88,19 @@ export interface AssistantPremiereUtilisationProps {
  * 4 etapes reprenant exactement les champs cites par l'audit
  * (docs/audit-cote-patient.md, F-CIT-01) : groupe sanguin, allergies,
  * maladies chroniques, contact d'urgence. Un seul formulaire, un seul appel
- * a updatePatientProfileAction (deja existant, src/modules/patient/actions.ts) :
- * chaque etape ne fait qu'afficher/masquer ses propres champs, tous presents
- * dans le DOM du debut a la fin pour que leur valeur survive à la navigation
- * entre etapes sans gestion d'etat React dediee par champ. Les antecedents
- * medicaux (aussi geres par updatePatientProfileAction) ne sont pas repris
- * ici, en dehors des 4 champs cites par l'audit ; toujours modifiables
- * ensuite depuis /app/patient/dossier.
+ * a enregistrerPremiereUtilisationAction (src/modules/patient/informations-declarees.ts,
+ * F-CIT-04 : chaque allergie/maladie chronique saisie ici devient une ligne
+ * InformationDeclaree "declare" a part entiere, modifiable et retirable
+ * individuellement ensuite depuis /app/patient/dossier) : chaque etape ne
+ * fait qu'afficher/masquer ses propres champs, tous presents dans le DOM du
+ * debut a la fin pour que leur valeur survive à la navigation entre etapes
+ * sans gestion d'etat React dediee par champ. Les antecedents medicaux ne
+ * sont pas repris ici, en dehors des 4 champs cites par l'audit ; toujours
+ * ajoutables ensuite depuis /app/patient/dossier.
  */
 export function AssistantPremiereUtilisation({ dossier }: AssistantPremiereUtilisationProps) {
   const [etape, setEtape] = useState(0);
-  const [state, formAction, pending] = useActionState(updatePatientProfileAction, etatInitial);
+  const [state, formAction, pending] = useActionState(enregistrerPremiereUtilisationAction, etatInitial);
   const router = useRouter();
   // Garde contre une double soumission (observee en developpement sous Fast
   // Refresh frequent : un rechargement a chaud pendant la soumission peut
@@ -134,6 +136,18 @@ export function AssistantPremiereUtilisation({ dossier }: AssistantPremiereUtili
   const [contactTelephone, setContactTelephone] = useState(contactPrincipal?.telephone ?? "");
   const [contactLien, setContactLien] = useState(contactPrincipal?.lienParente ?? "");
 
+  // Confirme en direct (Playwright, F-CIT-04) : ces 3 champs precis
+  // n'arrivent jamais dans le FormData que React construit lui-meme pour un
+  // <form action={formAction}>, alors qu'un `new FormData(form)` construit a
+  // la main au meme instant les contient correctement (DOM verifie correct
+  // dans les deux cas). Conforme au guide du depot
+  // (node_modules/next/dist/docs/01-app/02-guides/interactive-apps.md,
+  // "Add comments with instant feedback") : un champ controle (value/onChange)
+  // doit appeler la Server Function directement, jamais compter sur le
+  // FormData automatique d'un formulaire. On construit donc nous-memes le
+  // FormData a la soumission finale et on y ecrase ces 3 champs avec l'etat
+  // React avant d'appeler formAction, au lieu de laisser le <form> le faire.
+
   return (
     <Card>
       <div className="mb-5 flex flex-col gap-2">
@@ -158,7 +172,6 @@ export function AssistantPremiereUtilisation({ dossier }: AssistantPremiereUtili
       ) : null}
 
       <form
-        action={formAction}
         aria-busy={pending}
         className="flex flex-col gap-5"
         onSubmit={(evenement) => {
@@ -166,7 +179,29 @@ export function AssistantPremiereUtilisation({ dossier }: AssistantPremiereUtili
             evenement.preventDefault();
             return;
           }
+          // Toujours une soumission manuelle (jamais laisser le <form>
+          // construire son propre FormData, voir le commentaire plus haut) :
+          // pas de prop action={formAction} sur ce <form> non plus, sinon
+          // React declenche EN PLUS sa propre soumission automatique sur le
+          // meme evenement natif (constate en direct : la soumission
+          // manuelle ci-dessous s'executait bien, mais le contact restait
+          // absent, signe que la dispatch automatique de React, avec son
+          // FormData casse pour les champs controles, l'emportait quand
+          // meme). formAction reste appelable directement en dehors de tout
+          // <form action=...>, voir react.dev/reference/react/useActionState.
+          evenement.preventDefault();
           dejaSoumis.current = true;
+          const donnees = new FormData(evenement.currentTarget);
+          donnees.set("contactUrgenceNom", contactNom);
+          donnees.set("contactUrgenceTelephone", contactTelephone);
+          donnees.set("contactUrgenceLien", contactLien);
+          // formAction doit etre appelee dans une transition quand ce n'est
+          // pas le <form> lui-meme qui la declenche nativement (avertissement
+          // React sinon : useActionState hors transition, isPending ne se
+          // met plus a jour correctement).
+          startTransition(() => {
+            formAction(donnees);
+          });
         }}
       >
         <div hidden={etape !== 0}>
@@ -228,11 +263,6 @@ export function AssistantPremiereUtilisation({ dossier }: AssistantPremiereUtili
             onChange={(evenement) => setContactLien(evenement.target.value)}
           />
         </div>
-
-        {/* Antecedents non repris dans cet assistant (voir docstring), mais
-            requis par le schema de updatePatientProfileAction cote serveur :
-            transmis vide, modifiable ensuite depuis /app/patient/dossier. */}
-        <input type="hidden" name="antecedents" value={dossier.antecedents.join("\n")} />
 
         <div className="flex items-center justify-between gap-3 border-t border-bordure pt-5">
           <Button

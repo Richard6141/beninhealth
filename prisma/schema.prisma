@@ -312,7 +312,42 @@ model Patient {
   codesReclamation CodeReclamationDossier[]
   demandesAccesDossier DemandeAccesDossier[]
   jetonsCarteSante JetonCarteSante[]
+  // F-CIT-04 : historique versionne des informations declarees, voir le modele ci-dessous.
+  informationsDeclarees InformationDeclaree[]
   @@index([dateNaissance])
+  @@schema("public")
+}
+
+// F-CIT-04 du pack : versionnement des informations declarees par le patient
+// (allergies, antecedents, maladies chroniques, contacts d'urgence). Chaque
+// ligne est une version, jamais ecrasee : une modification cree une nouvelle
+// ligne "declare" et retire l'ancienne (RG-CIT-31, jamais de suppression
+// physique). Les champs plats de Patient (allergies, antecedents,
+// maladiesChroniques, contactsUrgence) restent la valeur COURANTE, lue par
+// tous les autres modules (consultation, controle de securite allergie de la
+// prescription) : ce modele est la source de l'historique et des statuts
+// (RG-CIT-30), synchronise a chaque ecriture par
+// src/modules/patient/informations-declarees.ts. Aucun ecran professionnel
+// n'ecrit encore le statut "confirme" dans ce depot (voir la limite assumee
+// documentee dans ce module) : la regle RG-CIT-30 est deja appliquee et
+// testee, prete pour le jour ou un tel ecran existera.
+model InformationDeclaree {
+  id               String    @id @default(cuid())
+  patientId        String
+  patient          Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  // allergie | antecedent | maladie_chronique | contact_urgence
+  categorie        String
+  // Texte de l'element ; JSON {nom,telephone,lienParente} pour contact_urgence.
+  valeur           String
+  // declare | confirme | retire (RG-CIT-30/31).
+  statut           String    @default("declare")
+  confirmeParId    String?
+  dateConfirmation DateTime?
+  dateRetrait      DateTime?
+  motifRetrait     String?
+  dateCreation     DateTime  @default(now())
+
+  @@index([patientId, categorie])
   @@schema("public")
 }
 
