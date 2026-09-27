@@ -4333,3 +4333,35 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
 - F-COM-01/08 (hors ligne/synchro, PWA offline complete/IndexedDB/Web Crypto/route sync) : hors de
   portee raisonnable ce soir, signale par 89, je n'y touche pas sans budget dedie.
 - Je commence par la lecture du code existant avant toute modification.
+
+### Point projet-gouv-46 (ex 0a), F-PRE-01 livre : posologie enrichie et quantite calculee, 2026-09-27
+
+- Perimetre precise dans la note de prise plus haut, reconfirme apres coup : 11 unites et 12 voies
+  du pack (au lieu de 4/5), frequence en 3 modes ("X fois par jour" 1 a 6, "toutes les X heures",
+  "si besoin" avec un maximum par 24 h, au lieu de 3 valeurs fixes et un "autre" en texte libre),
+  moments de prise (matin/midi/soir/coucher, facultatif). Aucune migration : LignePrescription.posologie
+  reste une simple String composee cote serveur, comme deja assume par ce module.
+- Quantite totale desormais CALCULEE (dose x prises par jour x jours, arrondie au superieur,
+  "toutes les X heures" arrondit au nombre entier de prises qui tient dans 24 h, "si besoin" n'a
+  pas de rythme fixe donc pas de calcul) et proposee en un clic ("Quantite calculee : X, cliquer
+  pour reprendre"), jamais imposee silencieusement (texte du pack : "modifiable").
+- Raccourcis d'instructions (avant/pendant/apres le repas, a jeun) : ajoutes au champ existant
+  (niveau ordonnance entiere, pas de colonne par ligne dans ce depot).
+- Documente comme decision d'architecture plutot que repris ce soir (voir posologie.ts et ma note
+  de prise) : etat DRAFT/ACTIVE/ABANDONED, "traitement de fond" (duree indefinie), instructions par
+  ligne. Trois points qui demanderaient chacun soit une migration soit un changement de cycle de
+  vie avec des repercussions sur la pharmacie (F-PHA).
+- Verifie : tsc 0, eslint 0 erreur, tirets 0. Lecon de ce soir appliquee correctement cette fois :
+  un test que j'ecrivais pour VERIFIER l'absence de tiret cadratin dans une phrase composee
+  contenait par erreur le caractere litteral (les deux caracteres bannis tapes directement dans
+  une regex, avant que je remarque que la forme echappee de ces memes caracteres est ELLE AUSSI
+  bannie dans ce depot, pas seulement le caractere litteral).
+  Trouve par mon propre script de verification, corrige avec `String.fromCodePoint(8211/8212)` a la
+  place (pas de caractere ni d'echappement litteral dans le fichier). Script corrige au meme
+  endroit (il avait le meme defaut).
+- Suite complete du depot 2160/2168 : les 8 echecs restants sont sur audit/detection-anomalies.test.ts
+  (mon fichier d'origine F-AUD-03, chantier actif de 89 ce soir sur RG-CLI-12/recherches sans
+  resultat, signale, pris en charge par 89).
+- Commits : `33001a2` code, `c094cfe` doc.
+- Suite pour moi : je cherche la prochaine fiche P0/P1 non revendiquee, ou j'attends une
+  assignation de 89.
