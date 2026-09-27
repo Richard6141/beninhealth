@@ -23,6 +23,7 @@ import {
   Settings,
   ShieldAlert,
   ShieldCheck,
+  Stethoscope,
   Sparkles,
   UserCog,
   Users,
@@ -292,6 +293,16 @@ const navigationAdminNational: ElementNavigation[] = [
     label: "Jours fériés",
     href: "/app/ministere/referentiels/jours-feries",
     icon: <CalendarOff size={tailleIconeNav} aria-hidden="true" />,
+  },
+  {
+    label: "Listes de référence",
+    href: "/app/ministere/referentiels/listes",
+    icon: <ClipboardList size={tailleIconeNav} aria-hidden="true" />,
+  },
+  {
+    label: "Diagnostics CIM-10",
+    href: "/app/ministere/referentiels/cim10",
+    icon: <Stethoscope size={tailleIconeNav} aria-hidden="true" />,
   },
   {
     label: "Validation des professionnels",

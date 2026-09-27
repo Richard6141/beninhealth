@@ -237,6 +237,16 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     'read:jour_ferie',
     'create:jour_ferie',
     'update:jour_ferie',
+    // F-ADM-04 (partie 6) : referentiels "listes simples" (services, types
+    // d'etablissement, specialites, motifs de rendez-vous, voir
+    // src/modules/administration/referentiels-simples.ts) et sous-liste CIM-10
+    // (src/modules/administration/referentiel-cim10.ts).
+    'read:referentiel_simple',
+    'create:referentiel_simple',
+    'update:referentiel_simple',
+    'read:referentiel_cim10',
+    'create:referentiel_cim10',
+    'update:referentiel_cim10',
     // F-NOT-02 : boite d'envoi SMS simulee, consultable et testable (voir
     // src/modules/notification/sms/dev.ts).
     'read:envoi_sms',
