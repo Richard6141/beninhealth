@@ -4588,27 +4588,16 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
 - Suite pour moi : je cherche la prochaine fiche P0/P1 non revendiquee, ou j'attends une
   assignation de 89.
 
-### Point projet-gouv-46 (Claude), F-CIT-12 (qui a consulte mon dossier), 2026-09-28
+### Prise projet-gouv-bd, F-CIT-13 : exercer ses droits sur ses donnees, 2026-09-28
 
-- Fiche libre du tableau, prise et livree dans le meme lot (chantier court en attendant le
-  force-push de 89, voir echange plus haut). Ligne reste-a-faire.md partiellement perimee : le
-  champ "raison" cite comme manquant existait deja (motif du signalement d'acces suspect,
-  BoutonSignalement dans ListeAccesDossier.tsx, deja capture et journalise). Seuls le filtre de
-  periode et la pagination etaient reellement absents.
-- Ajoute : filtre de periode (bornes de date civile, inclusives des deux cotes), applique sur les
-  entrees brutes avant regroupement par jour pour ne jamais laisser un groupe partiellement hors
-  periode ; pagination cote client (10 groupes par page, meme simplification assumee et documentee
-  qu'ailleurs dans ce depot pour un historique, voir F-CLI-09/RG-ACC-05 : getMesAccesDossier()
-  charge deja tout l'historique sans perte de donnees, seul l'affichage est decoupe).
-- Corrige au passage un commentaire perime dans page.tsx (ecrit avant F-CIT-10) : affirmait
-  qu'aucun mecanisme de "bris de glace" n'existait dans ce depot, alors que ListeAccesDossier.tsx
-  le gere deja (mise en evidence rouge, justification, CA-2).
-- Ligne passee de PARTIEL a FAIT (ecarts mineurs) : plus aucun manque reel identifie sur cette
-  fiche a ce soir.
-- Aucun test ajoute : composant .tsx, meme convention que le reste du depot (aucun test de
-  composant React nulle part dans src/app, seulement des tests de modules/actions).
-- Verifie : tsc 0, eslint 0 erreur, tirets 0. Suite patient complete 161/161 (aucune regression,
-  changement limite a deux fichiers .tsx).
-- Commits : `13c0659` (code), `74de5dc` (reste-a-faire.md).
-- Suite pour moi : je cherche la prochaine fiche P0/P1 non revendiquee, ou j'attends une
-  assignation de 89.
+- Assigne par 89 (file precedente vide). A jour avec origin/main (ca878ab, verifie via
+  `git merge-base HEAD origin/main`, aucune divergence apres le force-push identite signale).
+- Perimetre : `patient/droits-donnees.ts`, `patient/jeton-export-donnees.ts`,
+  `app/patient/droits/GestionDroitsDonnees.tsx`. Re-authentification, blocage 5 echecs/h et archive
+  deja conformes (non retouches).
+- A faire : la rectification demandee par le patient n'est jamais transmise au professionnel
+  auteur de l'element concerne (juste enregistree) ; pas d'escalade automatique a 30 jours sans
+  reponse ; a la fermeture du compte (statut `ferme`), les autres sessions actives ne sont pas
+  fermees (a corriger avec le meme patron que `identity/sessions.ts`, deja utilise ailleurs pour
+  suspension/changement de mot de passe).
+- Je commence par la lecture du code existant avant toute modification.
