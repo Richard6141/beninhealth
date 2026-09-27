@@ -8,6 +8,7 @@ import {
   CalendarOff,
   ClipboardList,
   CreditCard,
+  FileText,
   FlaskConical,
   FolderOpen,
   Gauge,
@@ -92,6 +93,11 @@ const navigationPatient: ElementNavigation[] = [
     label: "Mes examens",
     href: "/app/patient/examens",
     icon: <FlaskConical size={tailleIconeNav} aria-hidden="true" />,
+  },
+  {
+    label: "Mes documents",
+    href: "/app/patient/documents",
+    icon: <FileText size={tailleIconeNav} aria-hidden="true" />,
   },
   {
     label: "Ma carte santé",

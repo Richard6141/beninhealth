@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowLeft, FlaskConical } from "lucide-react";
-import { getMesExamens, type ExamenResume } from "@/modules/laboratoire/actions";
+import { getMesExamens, type ExamenResume, type ResultatParametre } from "@/modules/laboratoire/actions";
+import type { Indicateur } from "@/modules/laboratoire/referentiel-parametres-examens";
 import { Badge } from "@/components/ui/Badge";
 import type { BadgeTone } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
@@ -32,6 +33,55 @@ function formaterDate(date: string): string {
   } catch {
     return date;
   }
+}
+
+/**
+ * Libelle et pastille pour un indicateur de parametre structure (F-LAB-03),
+ * purement descriptif ("Bas"/"Eleve"), sans interpretation medicale (RG-CIT-20 :
+ * ni diagnostic ni gravite suggeree au-dela du terme lui-meme). L'indicateur
+ * lui-meme est deja calcule et fige cote serveur, jamais recalcule ici.
+ */
+function libelleIndicateur(indicateur: Indicateur): { texte: string; tone: BadgeTone } {
+  switch (indicateur) {
+    case "LL":
+      return { texte: "Tres bas", tone: "critical" };
+    case "L":
+      return { texte: "Bas", tone: "warning" };
+    case "N":
+      return { texte: "Normal", tone: "good" };
+    case "H":
+      return { texte: "Eleve", tone: "warning" };
+    case "HH":
+      return { texte: "Tres eleve", tone: "critical" };
+  }
+}
+
+/** Une ligne de resultat structure (F-LAB-03/F-CIT-06) : valeur, unite, plage normale et indicateur visuel. */
+function LigneParametreResultat({ parametre }: { parametre: ResultatParametre }) {
+  const indicateur = libelleIndicateur(parametre.indicateur);
+  const plage = parametre.plageNormaleAffichee;
+
+  return (
+    <div className="flex flex-col gap-1 rounded-champ border border-bordure bg-plan px-3 py-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[13px] font-semibold text-encre">{parametre.libelle}</p>
+        <Badge tone={indicateur.tone}>{indicateur.texte}</Badge>
+      </div>
+      <p className="chiffres text-[15px] font-semibold text-encre">
+        {parametre.valeur} <span className="text-[12px] font-normal text-encre-attenuee">{parametre.unite}</span>
+      </p>
+      {plage ? (
+        <p className="text-[12px] text-encre-attenuee">
+          Normale : {plage.min} a {plage.max} {parametre.unite}
+        </p>
+      ) : null}
+      {parametre.referenceAdulteParDefaut ? (
+        <p className="text-[12px] text-encre-attenuee">
+          Reference adulte appliquee (valeur pediatrique non disponible pour ce parametre).
+        </p>
+      ) : null}
+    </div>
+  );
 }
 
 function formaterDateHeure(date: string): string {
@@ -85,14 +135,25 @@ function CarteExamen({ examen }: { examen: ExamenResume }) {
             </p>
           ) : estTermine ? (
             <>
-              <p className="text-[14px] text-encre">
-                {examen.resultat || "Resultat transmis sans detail."}
-              </p>
+              {examen.resultatsParametres && examen.resultatsParametres.length > 0 ? (
+                <div className="flex flex-col gap-2">
+                  {examen.resultatsParametres.map((parametre) => (
+                    <LigneParametreResultat key={parametre.code} parametre={parametre} />
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[14px] text-encre">
+                  {examen.resultat || "Resultat transmis sans detail."}
+                </p>
+              )}
               {examen.dateResultat ? (
                 <p className="mt-1 text-[12px] text-encre-attenuee">
                   Recu le {formaterDateHeure(examen.dateResultat)}
                 </p>
               ) : null}
+              <p className="mt-2 text-[12px] font-semibold text-encre-secondaire">
+                Discutez de ce resultat avec votre medecin.
+              </p>
             </>
           ) : (
             <p className="text-[13px] text-encre-attenuee">

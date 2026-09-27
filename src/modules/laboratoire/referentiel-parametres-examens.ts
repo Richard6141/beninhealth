@@ -213,6 +213,24 @@ function plageNormale(
   return { ...adulte, referenceAdulteParDefaut: true };
 }
 
+/**
+ * Plage normale a afficher au patient pour un parametre, un sexe et un age
+ * (en mois, null si inconnu : plage adulte) : uniquement les bornes, jamais
+ * l'indicateur (deja fige dans ResultatParametre au moment de la saisie,
+ * jamais recalcule a l'affichage). Retourne null si le code de parametre est
+ * inconnu du referentiel.
+ */
+export function plageNormaleAffichee(
+  codeParametre: string,
+  sexe: Sexe,
+  ageMois: number | null = null
+): { min: number; max: number } | null {
+  const parametre = PAR_CODE_PARAMETRE.get(codeParametre);
+  if (!parametre) return null;
+  const { min, max } = plageNormale(parametre, sexe, ageMois);
+  return { min, max };
+}
+
 export interface EvaluationParametre {
   indicateur: Indicateur;
   /** Vrai si le patient a moins de 15 ans et que la plage adulte a ete appliquee faute de valeur pediatrique sourcee. */

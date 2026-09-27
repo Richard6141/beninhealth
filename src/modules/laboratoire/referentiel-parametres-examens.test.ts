@@ -4,6 +4,7 @@ import {
   calculerIndicateur,
   evaluerParametre,
   parametresPourExamen,
+  plageNormaleAffichee,
 } from "@/modules/laboratoire/referentiel-parametres-examens";
 import { REFERENTIEL_EXAMENS } from "@/modules/laboratoire/referentiel-examens";
 
@@ -91,5 +92,31 @@ describe("limites physiologiques et compatibilite", () => {
       expect(libelle).toBeTruthy();
       expect(parametresPourExamen(libelle as string)).not.toBeNull();
     }
+  });
+});
+
+describe("plageNormaleAffichee (F-CIT-06 : bornes a afficher au patient)", () => {
+  it("retourne null pour un code de parametre inconnu", () => {
+    expect(plageNormaleAffichee("CODE_INCONNU", "M")).toBeNull();
+  });
+
+  it("ajuste par sexe quand le referentiel le prevoit (hemoglobine adulte)", () => {
+    expect(plageNormaleAffichee("HEMOGLOBINE", "F", 180)).toEqual({ min: 12, max: 15.5 });
+    expect(plageNormaleAffichee("HEMOGLOBINE", "M", 180)).toEqual({ min: 13.5, max: 17.5 });
+  });
+
+  it("applique la plage pediatrique de l'hemoglobine dans la fenetre OMS, meme borne haute que l'adulte", () => {
+    expect(plageNormaleAffichee("HEMOGLOBINE", "M", 36)).toEqual({ min: 11.0, max: 17.5 });
+  });
+
+  it("age inconnu : plage adulte, coherente avec evaluerParametre", () => {
+    expect(plageNormaleAffichee("GLYCEMIE_JEUN", "M", null)).toEqual({
+      min: 0.7,
+      max: 1.1,
+    });
+    expect(evaluerParametre("GLYCEMIE_JEUN", 0.9, "M", null)).toEqual({
+      indicateur: "N",
+      referenceAdulteParDefaut: false,
+    });
   });
 });

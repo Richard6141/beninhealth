@@ -47,6 +47,7 @@ import {
   parametresPourExamen,
   evaluerParametre,
   valeurPhysiologiquementPossible,
+  plageNormaleAffichee,
   type Sexe,
   type Indicateur,
 } from "./referentiel-parametres-examens";
@@ -73,6 +74,14 @@ export interface ResultatParametre {
   indicateur: Indicateur;
   /** Patient de moins de 15 ans evalue avec la plage adulte faute de valeur pediatrique sourcee : a interpreter par le medecin. */
   referenceAdulteParDefaut?: boolean;
+  /**
+   * Plage normale a afficher au patient (F-CIT-06), jamais persistee : ajoutee
+   * uniquement par getMesExamens() au moment de la lecture, a partir du
+   * referentiel courant et du sexe/age actuels du patient. Absente (undefined)
+   * pour toute autre lecture (medecin, laboratoire) et pour le snapshot stocke
+   * en base, qui ne connait que l'indicateur deja calcule.
+   */
+  plageNormaleAffichee?: { min: number; max: number } | null;
 }
 
 /** Etat renvoye par chaque Server Action de ce module, consomme via useActionState. */
@@ -962,6 +971,12 @@ export async function getMesExamens(): Promise<ExamenResume[]> {
     orderBy: { date: "desc" },
   });
 
+  // F-CIT-06 : plage normale a afficher, calculee une seule fois pour ce
+  // patient (sexe fixe, age au jour de la lecture) plutot qu'a chaque
+  // parametre de chaque examen.
+  const sexePatient = patient.sexe as Sexe;
+  const ageMoisPatient = patient.dateNaissance ? ageEnMois(new Date(patient.dateNaissance), new Date()) : null;
+
   return examens.map((examen) => {
     const resume = versExamenResume(examen, {
       patientNomComplet: null,
@@ -972,12 +987,25 @@ export async function getMesExamens(): Promise<ExamenResume[]> {
     // RG-LAB-30 (F-LAB-04, visible seulement une fois valide) et
     // RG-LAB-02/RG-LAB-41 (examen sensible masque tant que non annonce) :
     // deux motifs de masquage distincts, cumules dans la meme condition
-    // plutot que dupliques dans deux blocs separes.
+    // plutot que dupliques dans deux blocs separes. resultatsParametres est
+    // masque au meme titre que resultat (RG-CIT-20) : sans cela, la version
+    // structuree du resultat resterait visible dans l'objet retourne meme
+    // quand le texte libre est masque.
     if (resume.statut !== "termine" || (resume.sensible && !resume.resultatAnnonceAuPatient)) {
-      return { ...resume, resultat: null, dateResultat: null };
+      return { ...resume, resultat: null, dateResultat: null, resultatsParametres: null };
     }
 
-    return resume;
+    if (!resume.resultatsParametres) {
+      return resume;
+    }
+
+    return {
+      ...resume,
+      resultatsParametres: resume.resultatsParametres.map((parametre) => ({
+        ...parametre,
+        plageNormaleAffichee: plageNormaleAffichee(parametre.code, sexePatient, ageMoisPatient),
+      })),
+    };
   });
 }
 
