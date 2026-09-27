@@ -3,7 +3,7 @@
  * depuis Next 15, aucun flag experimental requis). Demarre les taches
  * planifiees en process : pilotage (F-PIL-07, chapitre 14 du pack, voir
  * src/modules/pilotage/planificateur.ts), marquage des rendez-vous absents
- * (F-RDV-04/05, RG-RDV-40, voir src/modules/facility/file-du-jour.ts), purge
+ * (F-RDV-04/05, RG-RDV-40/41, voir src/modules/facility/marquage-absences.ts), purge
  * des notifications (F-NOT-01, conservation 90 jours, voir
  * src/modules/notification/purge.ts) et rappels de rendez-vous (F-RDV-07,
  * voir src/modules/facility/rappels-rendez-vous.ts) et remise des SMS differes
