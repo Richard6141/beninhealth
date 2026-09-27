@@ -3569,3 +3569,13 @@ session que le CEO ; l'auteur de commit est reecrit par le CEO avant le push.
 - Effet de bord a connaitre : un professionnel qui avait un consentement `documents` ne voit plus les documents sensibles deja deposes (masques sans message). Le patient et l'auteur ne sont pas concernes.
 - Verifie : tsc, eslint (0 erreur), vitest du module document et de la route.
 - 2026-09-27.
+
+### Point projet-gouv-0a (ancien 3e), administration, 2026-09-27
+
+- F-ADM-05 (`eb80efd`) : gestion nationale des comptes, permission `compte_plateforme` (admin_national seul), quatre yeux RG-ADM-30 via `ActionAdministrateurEnAttente`, gardes (jamais son propre compte, jamais le dernier admin_national actif), migration `20260927020000`, ecran `/app/ministere/comptes`, 43 tests.
+- F-ADM-01 (`2145a7b`) : table `ExecutionTache` (migration `20260927030000`), suivi des taches planifiees (`suivreExecution`, `src/modules/administration/executions-taches.ts`), tableau de bord complete. Pour tracer une nouvelle tache planifiee : ajouter sa cle dans `LIBELLES_TACHES` et envelopper son corps avec `suivreExecution("cle", async () => nombre)`.
+- F-ADM-07, inventaire et branchements (`ad1fa94`, `0b7f1d1`). Parametres (4) : tous lus par leur consommateur reel a chaque appel via `lireParametre` (`identity.code_verification_duree_minutes` dans `verification-email.ts`, `reference.duree_acces_jours` dans `reference/actions.ts`, `urgence.limite_acces_24h` dans `urgence/actions.ts`, `partage.code_duree_minutes` dans `partage/actions.ts`). Drapeaux (10) : `access.by_npi` et `professionnels.exige_validation_ordre` deja consommes ; `pharmacy.module`, `lab.module`, `community.module` (actifs par defaut, migration `20260927050000`) retirent le module de la navigation, affichent un ecran "module desactive" et refusent les actions d'ecriture ; `demo.banner` affiche un bandeau dans le layout. Restent SANS consommateur : `sms.real_provider` (aucun fournisseur SMS reel), `fhir.api` (aucune API FHIR), `ai.summary` et `ai.citizen_assistant` (a brancher avec F-IA, en cours).
+- Constantes NON administrables a ce jour : duree du code de reinitialisation de mot de passe (`reinitialisation-mot-de-passe.ts`), duree du code d'acces par telephone (`transfert/code-acces.ts`).
+- Effet de bord a connaitre : `estFonctionnaliteActive` ne lance plus d'exception (base en panne : etat par defaut du catalogue `ACTIVE_PAR_DEFAUT`).
+- Prochaine etape pour moi : F-IA-05 (gouvernance IA) puis F-IA-01 a 04, puis reste de F-ADM-02/03/06 et F-NOT-04.
+- 2026-09-27.
