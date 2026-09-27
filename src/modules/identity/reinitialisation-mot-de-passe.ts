@@ -38,6 +38,7 @@ import { envoyerEmail } from "@/lib/mail";
 import { journaliser } from "@/modules/audit/journaliser";
 import { enregistrerEvenement, limiteAtteinte, verifierEtIncrementerDebit } from "@/lib/limite-debit";
 import { adresseDeLaRequete } from "./limitation-connexion";
+import { evaluerMotDePasse, longueurMinimaleSelonRoles } from "./politique-mot-de-passe";
 
 const UNE_HEURE_MS = 60 * 60 * 1000;
 const QUINZE_MINUTES_MS = 15 * 60 * 1000;
@@ -51,7 +52,6 @@ function cleEchecsReinitialisation(email: string): string {
 
 const ROUNDS_BCRYPT = 12;
 const DUREE_VALIDITE_CODE_MINUTES = 10;
-const LONGUEUR_MIN_MOT_DE_PASSE = 8;
 
 /**
  * MESSAGE_GENERIQUE_DEMANDE : identique que le compte existe ou non (CA-2).
@@ -246,9 +246,7 @@ const schemaReinitialisation = z
   .object({
     email: z.email("Adresse e-mail invalide."),
     code: z.string().trim().min(1, "Le code est obligatoire."),
-    nouveauMotDePasse: z
-      .string()
-      .min(LONGUEUR_MIN_MOT_DE_PASSE, `Le mot de passe doit contenir au moins ${LONGUEUR_MIN_MOT_DE_PASSE} caracteres.`),
+    nouveauMotDePasse: z.string().min(1, "Le nouveau mot de passe est obligatoire."),
     confirmationMotDePasse: z.string(),
   })
   .refine((donnees) => donnees.nouveauMotDePasse === donnees.confirmationMotDePasse, {
@@ -289,7 +287,7 @@ export async function reinitialiserMotDePasseAction(
   }
 
   try {
-    const utilisateur = await prisma.user.findUnique({ where: { email }, include: { roles: true } });
+    const utilisateur = await prisma.user.findUnique({ where: { email }, include: { roles: true, patient: true } });
 
     if (!utilisateur || utilisateur.statut !== "actif") {
       enregistrerEvenement(cleEchecsReinitialisation(email), QUINZE_MINUTES_MS);
@@ -308,6 +306,22 @@ export async function reinitialiserMotDePasseAction(
     // code avait malgre tout ete genere avant un changement de role.
     if (libreServiceExclu(utilisateur.roles)) {
       return { error: MESSAGE_GENERIQUE_ECHEC_RESET, success: false };
+    }
+
+    // RG-AUTH-02 et RG-AUTH-43 : politique de mot de passe (longueur selon le
+    // role, mots courants, telephone, date de naissance). Verifiee apres le
+    // code : un code faux ne renseigne jamais sur la politique.
+    const erreurPolitique = evaluerMotDePasse(nouveauMotDePasse, {
+      minimum: longueurMinimaleSelonRoles(utilisateur.roles.map((role) => role.nom)),
+      contexte: {
+        telephone: utilisateur.telephone,
+        email: utilisateur.email,
+        dateNaissance: utilisateur.patient?.dateNaissance,
+      },
+    });
+
+    if (erreurPolitique) {
+      return { error: erreurPolitique, success: false };
     }
 
     // RG-AUTH-30 : le nouveau mot de passe ne doit pas etre identique a l'actuel.

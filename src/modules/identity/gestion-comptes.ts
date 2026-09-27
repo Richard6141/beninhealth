@@ -28,6 +28,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
+import { evaluerMotDePasse, longueurMinimaleSelonRoles } from "./politique-mot-de-passe";
 import type { NomRole, TypeEtablissement } from "@/types";
 import {
   CODES_IDENTIFIANT_PAR_ROLE,
@@ -180,9 +181,7 @@ const schemaCreationProfessionnel = z.object({
 const schemaChangementMotDePasse = z
   .object({
     motDePasseActuel: z.string().min(1, "Le mot de passe actuel est obligatoire."),
-    nouveauMotDePasse: z
-      .string()
-      .min(8, "Le nouveau mot de passe doit contenir au moins 8 caracteres."),
+    nouveauMotDePasse: z.string().min(1, "Le nouveau mot de passe est obligatoire."),
     confirmationMotDePasse: z
       .string()
       .min(1, "La confirmation du mot de passe est obligatoire."),
@@ -703,6 +702,16 @@ export async function changerMotDePasseAction(
 
     if (!motDePasseActuelValide) {
       return { error: "Le mot de passe actuel est incorrect.", success: false };
+    }
+
+    const patient = await prisma.patient.findUnique({ where: { userId: session.userId }, select: { dateNaissance: true } });
+    const erreurPolitique = evaluerMotDePasse(nouveauMotDePasse, {
+      minimum: longueurMinimaleSelonRoles(session.roles),
+      contexte: { telephone: utilisateur.telephone, email: utilisateur.email, dateNaissance: patient?.dateNaissance },
+    });
+
+    if (erreurPolitique) {
+      return { error: erreurPolitique, success: false };
     }
 
     const nouveauMotDePasseHash = await bcrypt.hash(nouveauMotDePasse, ROUNDS_BCRYPT);

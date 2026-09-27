@@ -32,6 +32,7 @@ import { enregistrerEvenement, limiteAtteinte } from "@/lib/limite-debit";
 import { journaliser } from "@/modules/audit/journaliser";
 import { envoyerSms } from "@/modules/notification/sms/envoyer";
 import type { NomRole } from "@/types";
+import { LONGUEUR_MIN_CITOYEN, evaluerMotDePasse } from "./politique-mot-de-passe";
 
 const ROLES_VALIDES: readonly string[] = [
   "patient",
@@ -245,7 +246,7 @@ const schemaReclamation = z.object({
   dateNaissance: z.string().trim().min(1, "La date de naissance est obligatoire."),
   telephone: z.string().trim().min(1, "Le téléphone est obligatoire."),
   nouvelEmail: z.string().trim().email("Adresse e-mail invalide."),
-  nouveauMotDePasse: z.string().min(8, "Le mot de passe doit comporter au moins 8 caractères."),
+  nouveauMotDePasse: z.string().min(1, "Le mot de passe est obligatoire."),
 });
 
 /**
@@ -281,6 +282,17 @@ export async function reclamerDossierAction(
 
   if (Number.isNaN(dateNaissanceSaisie.getTime())) {
     return { error: "Date de naissance invalide.", success: false };
+  }
+
+  // RG-AUTH-02 : politique de mot de passe, avec le telephone et la date de
+  // naissance saisis (ce sont ceux du dossier si la reclamation aboutit).
+  const erreurPolitique = evaluerMotDePasse(nouveauMotDePasse, {
+    minimum: LONGUEUR_MIN_CITOYEN,
+    contexte: { telephone, dateNaissance: dateNaissanceSaisie, email: nouvelEmail },
+  });
+
+  if (erreurPolitique) {
+    return { error: erreurPolitique, success: false };
   }
 
   try {

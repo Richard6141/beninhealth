@@ -52,7 +52,7 @@ function formulaire(surcharges: Record<string, string> = {}): FormData {
     dateNaissance: "1990-05-05",
     telephone: "+2290100000000",
     nouvelEmail: "nouveau@exemple.bj",
-    nouveauMotDePasse: "MotDePasse123",
+    nouveauMotDePasse: "girafe-bleue-42x",
     ...surcharges,
   };
   const donnees = new FormData();
@@ -94,6 +94,21 @@ describe("reclamerDossierAction : code juste (F-AUTH-03)", () => {
     expect(critere.patientId).toEqual({ in: ["pat-1"] });
     expect(critere.consommeLe).toBeNull();
     expect(critere.tentatives).toEqual({ lt: 5 });
+  });
+
+  it("applique la politique de mot de passe (mot courant, date de naissance du dossier) avant toute lecture de code", async () => {
+    for (const [motDePasse, message] of [
+      ["motdepasse123", /trop facile/],
+      ["zebre05051990", /date de naissance/],
+      ["court", /au moins 8/],
+    ] as Array<[string, RegExp]>) {
+      const resultat = await reclamerDossierAction(etatInitial, formulaire({ nouveauMotDePasse: motDePasse }));
+
+      expect(resultat.success).toBe(false);
+      expect(resultat.error).toMatch(message);
+    }
+    expect(p.codeReclamationDossier.findMany).not.toHaveBeenCalled();
+    expect(createSessionMock).not.toHaveBeenCalled();
   });
 
   it("refuse une adresse e-mail deja utilisee par un autre compte", async () => {

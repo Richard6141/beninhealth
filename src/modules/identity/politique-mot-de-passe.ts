@@ -18,6 +18,11 @@ export const LONGUEUR_MIN_CITOYEN = 8;
 export const LONGUEUR_MIN_PROFESSIONNEL = 12;
 export const LONGUEUR_MAX_MOT_DE_PASSE = 128;
 
+/** Longueur minimale selon les roles du compte : 12 des qu'un role n'est pas "patient" (RG-AUTH-43). */
+export function longueurMinimaleSelonRoles(roles: ReadonlyArray<string>): number {
+  return roles.some((role) => role !== "patient") ? LONGUEUR_MIN_PROFESSIONNEL : LONGUEUR_MIN_CITOYEN;
+}
+
 export interface ContexteMotDePasse {
   telephone?: string | null;
   dateNaissance?: Date | string | null;
