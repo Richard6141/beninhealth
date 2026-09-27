@@ -3840,3 +3840,36 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
     portee d'une correction manuelle).
 - Je reste disponible pour toute fiche que le CEO voudrait m'assigner specifiquement, plutot que de
   prendre l'initiative sur un chantier deja actif ce soir.
+
+### Point projet-gouv-0a, F-CIT-05 : livre (QR hors ligne, impression), 2026-09-27
+
+- Note : ma note de prise precedente sur F-CIT-05 (annoncant ce chantier avant de coder) a
+  disparu de l'historique actuel entre-temps (rebase constate : meme message, hash different,
+  ancien hash `31f4e43` non present dans `git log` courant alors qu'il l'etait au moment ou je l'ai
+  commite). Contenu du code non affecte (commits `3268892` et `058ef82`, bien presents). Je remets
+  ici l'essentiel de ce qu'elle disait, pour que la trace reste dans le fichier courant.
+- Livre, assigne par 21 (`patient/carte-sante{,-impression}.ts`,
+  `app/patient/carte/{CarteSanteQr,BoutonImprimerCarteSante,page}.tsx`,
+  `app/api/patient/carte-sante/telecharger/route.ts`) : QR de secours "hors ligne" (RG-CIT-41,
+  section repliable "Mode hors connexion" sur l'ecran carte sante, encode uniquement l'identifiant
+  sante, jamais un jeton, avec l'avertissement explicite qu'il ne suffit pas seul) ; bouton
+  "Imprimer ma carte" (etape 4, P1 : PDF format carte bancaire, identite + identifiant sante, sans
+  QR dynamique, jeton de telechargement a usage unique de 60 secondes,
+  `carte-sante-impression.ts`, meme principe que le PDF d'ordonnance F-CIT-06).
+- Important, pour eviter tout malentendu avec F-RDV-04 (fichier `facility/file-du-jour.ts`, deja
+  chez 3d) : RG-CIT-41 exige qu'un QR hors ligne (identifiant seul) soit complete par un code SMS
+  ou une verification sur piece avant d'ouvrir un contexte de soins (RG-ACC-20, 3 moyens de
+  preuve). Cette livraison ne construit QUE le cote citoyen (afficher le QR de secours avec
+  l'avertissement) : l'application des 3 moyens de RG-ACC-20 a l'accueil reste hors de mon
+  perimetre, deja notee absente dans `file-du-jour.ts` par 3d/e1, aucun changement de ma part sur
+  ce fichier ni sur F-RDV-04.
+- Fonction de lecture dediee (`getCarteSanteProfilAction`) plutot qu'une extension de
+  `getMonProfil` (`identity/actions.ts`, deja modifie par une autre session ce soir) : evite ce
+  fichier partage, et fournit en prime la date de naissance que `getMonProfil` ne renvoie pas.
+- Verifie : tsc 0, eslint 0 erreur, tirets 0, 24 tests nouveaux (37 au total sur
+  `patient/carte-sante*`), suite complete du depot 2031/2031 apres la livraison. Verification sur
+  la base partagee non faite (base injoignable au moment ou j'ai code, panne reseau signalee par
+  3f plus haut) : a refaire par qui le peut si un doute apparait, sinon les tests mockes couvrent
+  deja les deux nouvelles fonctions.
+- Doc : `docs/reste-a-faire.md`, ligne F-CIT-05 passee en FAIT (ecarts mineurs).
+- Suite pour moi : F-LAB-06 (annuler une demande d'examen), comme convenu avec 21.
