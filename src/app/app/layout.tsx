@@ -31,6 +31,8 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { getMonProfil, logoutAction } from "@/modules/identity/actions";
 import { getNombreNotificationsNonLues } from "@/modules/notification/actions";
+import { estFonctionnaliteActive } from "@/modules/administration/parametres";
+import { filtrerNavigationParModules } from "@/modules/administration/modules-actifs";
 import type { NomRole } from "@/types";
 import { AvatarMenu } from "@/components/ui/AvatarMenu";
 import { ClocheNotifications } from "@/components/ui/ClocheNotifications";
@@ -357,23 +359,38 @@ export default async function EspaceAuthentifieLayout({
     redirect("/connexion");
   }
 
-  const [profil, nombreNotificationsNonLues] = await Promise.all([
-    getMonProfil(),
-    getNombreNotificationsNonLues(),
-  ]);
+  // F-ADM-07 : etat des modules metier et du bandeau de demonstration, relu en base a chaque rendu (RG-ADM-50).
+  const [profil, nombreNotificationsNonLues, pharmacieActive, laboratoireActif, communautaireActif, bandeauDemo] =
+    await Promise.all([
+      getMonProfil(),
+      getNombreNotificationsNonLues(),
+      estFonctionnaliteActive("pharmacy.module"),
+      estFonctionnaliteActive("lab.module"),
+      estFonctionnaliteActive("community.module"),
+      estFonctionnaliteActive("demo.banner"),
+    ]);
   const libelleCompte = profil
     ? `${profil.prenom} ${profil.nom}`
     : session.roles[0]
       ? libellesRole[session.roles[0]]
       : "Utilisateur";
 
-  const navigation = getNavigationPourRole(session.roles[0]);
+  const navigation = filtrerNavigationParModules(getNavigationPourRole(session.roles[0]), {
+    "pharmacy.module": pharmacieActive,
+    "lab.module": laboratoireActif,
+    "community.module": communautaireActif,
+  });
 
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar items={navigation} />
 
       <div className="flex h-screen flex-1 flex-col overflow-hidden">
+        {bandeauDemo ? (
+          <p role="status" className="sans-impression shrink-0 bg-vigilance-clair px-4 py-1.5 text-center text-[13px] font-semibold text-vigilance">
+            Environnement de démonstration : les données affichées sont fictives.
+          </p>
+        ) : null}
         <header className="sans-impression shrink-0 border-b border-bordure bg-marine">
           <div className="flex items-center justify-end gap-2 px-4 py-3 sm:px-6">
             <ClocheNotifications nombreNonLues={nombreNotificationsNonLues} />

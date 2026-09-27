@@ -33,6 +33,7 @@ import { can } from "@/security/permissions";
 import { PARAMETRES_PAR_DEFAUT } from "./parametres-catalogue";
 import {
   CLES_FONCTIONNALITES,
+  ACTIVE_PAR_DEFAUT,
   DESCRIPTIONS_FONCTIONNALITES,
   type CleFonctionnalite,
 } from "@/modules/administration/fonctionnalites-catalogue";
@@ -66,9 +67,10 @@ async function adresseTechniqueCourante(): Promise<string> {
 }
 
 /**
- * Cree les 8 fonctionnalites du catalogue MVP si elles n'existent pas
- * encore (toujours desactivees par defaut, RG-IA-02), sans jamais modifier
- * une ligne deja presente (donc jamais ecraser une activation existante).
+ * Cree les fonctionnalites du catalogue si elles n'existent pas encore (etat
+ * par defaut : ACTIVE_PAR_DEFAUT, IA et autres desactivees, RG-IA-02, modules
+ * metier actifs), sans jamais modifier une ligne deja presente (donc jamais
+ * ecraser une activation existante).
  */
 async function provisionnerFonctionnalitesParDefaut(): Promise<void> {
   await Promise.all(
@@ -76,7 +78,7 @@ async function provisionnerFonctionnalitesParDefaut(): Promise<void> {
       prisma.fonctionnaliteActivable.upsert({
         where: { cle },
         update: {},
-        create: { cle, actif: false, description: DESCRIPTIONS_FONCTIONNALITES[cle] },
+        create: { cle, actif: ACTIVE_PAR_DEFAUT[cle], description: DESCRIPTIONS_FONCTIONNALITES[cle] },
       })
     )
   );
@@ -119,8 +121,14 @@ export async function getFonctionnalitesActivables(): Promise<FonctionnaliteResu
  * une exception (fail-safe, meme principe que can() dans permissions.ts).
  */
 export async function estFonctionnaliteActive(cle: CleFonctionnalite): Promise<boolean> {
-  const fonctionnalite = await prisma.fonctionnaliteActivable.findUnique({ where: { cle } });
-  return fonctionnalite?.actif ?? false;
+  let fonctionnalite: { actif: boolean } | null = null;
+  try {
+    fonctionnalite = await prisma.fonctionnaliteActivable.findUnique({ where: { cle }, select: { actif: true } });
+  } catch (erreur) {
+    console.error("[administration] lecture de la fonctionnalite impossible, etat par defaut utilise :", cle, erreur);
+  }
+  // Ligne absente (jamais provisionnee) : etat par defaut du catalogue, modules actifs, le reste desactive.
+  return fonctionnalite?.actif ?? ACTIVE_PAR_DEFAUT[cle];
 }
 
 /** Etat renvoye par basculerFonctionnaliteAction, consomme via useActionState. */

@@ -54,6 +54,8 @@ import { journaliser } from "@/modules/audit/journaliser";
 import { creerNotification, type OptionsNotification } from "@/modules/notification/creer";
 import { estCollisionUnicite, genererNumeroExamen } from "./numero-examen";
 import { construireAnterieurs } from "./anterieurs";
+import { estFonctionnaliteActive } from "@/modules/administration/parametres";
+import { MESSAGE_MODULE_INACTIF } from "@/modules/administration/modules-actifs";
 
 /** Une valeur de parametre structure saisie et son indicateur calcule (F-LAB-03). Snapshot autonome, stocke tel quel dans ExamenMedical.resultatsParametres : jamais recalcule depuis le referentiel a l'affichage, pour rester stable si le referentiel change. */
 export interface ResultatParametre {
@@ -278,6 +280,16 @@ async function notifierPersonnelLaboratoire(
   await Promise.all(personnel.map((membre) => creerNotification(membre.userId, type, message, lien, options)));
 }
 
+/**
+ * F-ADM-07 : le module laboratoire peut etre retire par l'administration
+ * nationale (fonctionnalite lab.module, relue en base a chaque appel, RG-ADM-50).
+ * Non exportee : dans un fichier "use server", une fonction exportee est un point
+ * d'entree. Les lectures et l'annulation d'une demande restent possibles.
+ */
+async function refuserSiModuleLaboratoireInactif(): Promise<LaboratoireActionState | null> {
+  return (await estFonctionnaliteActive("lab.module")) ? null : { error: MESSAGE_MODULE_INACTIF, success: false };
+}
+
 /** Nom complet d'un utilisateur, sans prefixe. */
 function nomComplet(utilisateur: { nom: string; prenom: string }): string {
   return `${utilisateur.prenom} ${utilisateur.nom}`;
@@ -491,6 +503,9 @@ export async function demanderExamenAction(
   if (!session.roles.some((role) => can(role, "create", "examen_medical"))) {
     return { error: "Action reservee aux medecins.", success: false };
   }
+
+  const moduleInactif = await refuserSiModuleLaboratoireInactif();
+  if (moduleInactif) return moduleInactif;
 
   const validation = schemaDemandeExamen.safeParse({
     patientId: texte(formData, "patientId"),
@@ -928,6 +943,9 @@ export async function enregistrerPrelevementAction(
     return { error: "Action reservee au role laboratoire.", success: false };
   }
 
+  const moduleInactif = await refuserSiModuleLaboratoireInactif();
+  if (moduleInactif) return moduleInactif;
+
   const validation = schemaPrelevement.safeParse({
     examenId: texte(formData, "examenId"),
     typeEchantillon: texte(formData, "typeEchantillon"),
@@ -1023,6 +1041,9 @@ export async function rejeterEchantillonAction(
   if (!session || !session.roles.some((role) => can(role, "update", "examen_medical"))) {
     return { error: "Action reservee au role laboratoire.", success: false };
   }
+
+  const moduleInactif = await refuserSiModuleLaboratoireInactif();
+  if (moduleInactif) return moduleInactif;
 
   const validation = schemaRejetEchantillon.safeParse({
     examenId: texte(formData, "examenId"),
@@ -1154,6 +1175,9 @@ export async function saisirResultatExamenAction(
   if (!session.roles.some((role) => can(role, "update", "examen_medical"))) {
     return { error: "Action reservee au role laboratoire.", success: false };
   }
+
+  const moduleInactif = await refuserSiModuleLaboratoireInactif();
+  if (moduleInactif) return moduleInactif;
 
   const validation = schemaSaisieResultat.safeParse({
     examenId: texte(formData, "examenId"),
@@ -1360,6 +1384,9 @@ export async function validerResultatExamenAction(
     return { error: "Action reservee au role laboratoire.", success: false };
   }
 
+  const moduleInactif = await refuserSiModuleLaboratoireInactif();
+  if (moduleInactif) return moduleInactif;
+
   const validation = schemaValidationResultat.safeParse({
     examenId: texte(formData, "examenId"),
     motDePasse: texte(formData, "motDePasse"),
@@ -1554,6 +1581,9 @@ export async function renvoyerPourCorrectionAction(
     return { error: "Action reservee au role laboratoire.", success: false };
   }
 
+  const moduleInactif = await refuserSiModuleLaboratoireInactif();
+  if (moduleInactif) return moduleInactif;
+
   const validation = schemaCorrectionResultat.safeParse({
     examenId: texte(formData, "examenId"),
     commentaire: texte(formData, "commentaire"),
@@ -1669,6 +1699,9 @@ export async function corrigerResultatValideAction(
   if (!session.roles.some((role) => can(role, "create", "validation_examen"))) {
     return { error: "Action reservee au role laboratoire.", success: false };
   }
+
+  const moduleInactif = await refuserSiModuleLaboratoireInactif();
+  if (moduleInactif) return moduleInactif;
 
   const validation = schemaCorrectionResultatValide.safeParse({
     examenId: texte(formData, "examenId"),

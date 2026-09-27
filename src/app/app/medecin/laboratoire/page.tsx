@@ -6,6 +6,8 @@ import {
   getExamensPourLaboratoire,
   getIdProfessionnelCourant,
 } from "@/modules/laboratoire/actions";
+import { estFonctionnaliteActive } from "@/modules/administration/parametres";
+import { ModuleDesactive } from "@/components/ModuleDesactive";
 import { ListeExamensLaboratoire } from "./ListeExamensLaboratoire";
 
 /**
@@ -30,6 +32,10 @@ export default async function LaboratoirePage() {
 
   if (!session.roles.includes("laboratoire")) {
     redirect("/app/medecin");
+  }
+
+  if (!(await estFonctionnaliteActive("lab.module"))) {
+    return <ModuleDesactive cle="lab.module" />;
   }
 
   const [examens, idProfessionnelCourant] = await Promise.all([

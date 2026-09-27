@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { getTableauDeBordPharmacie } from "@/modules/prescription/actions";
+import { estFonctionnaliteActive } from "@/modules/administration/parametres";
+import { ModuleDesactive } from "@/components/ModuleDesactive";
 import { Badge } from "@/components/ui/Badge";
 import type { BadgeTone } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
@@ -40,6 +42,10 @@ export default async function PharmaciePage() {
 
   if (!session || !session.roles.includes("pharmacien")) {
     redirect("/app/medecin");
+  }
+
+  if (!(await estFonctionnaliteActive("pharmacy.module"))) {
+    return <ModuleDesactive cle="pharmacy.module" />;
   }
 
   const tableau = await getTableauDeBordPharmacie();

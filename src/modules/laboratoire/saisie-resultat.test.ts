@@ -14,6 +14,7 @@ vi.mock("@/lib/session", () => ({ getSession: vi.fn() }));
 vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers()) }));
 vi.mock("@/modules/audit/journaliser", () => ({ journaliser: vi.fn() }));
 vi.mock("@/modules/notification/creer", () => ({ creerNotification: vi.fn() }));
+vi.mock("@/modules/administration/parametres", () => ({ estFonctionnaliteActive: vi.fn(async () => true) }));
 
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";

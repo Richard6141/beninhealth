@@ -16,12 +16,15 @@ vi.mock("@/lib/session", () => ({ getSession: vi.fn() }));
 vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers()) }));
 vi.mock("@/modules/audit/journaliser", () => ({ journaliser: vi.fn() }));
 vi.mock("@/modules/notification/creer", () => ({ creerNotification: vi.fn() }));
+vi.mock("@/modules/administration/parametres", () => ({ estFonctionnaliteActive: vi.fn(async () => true) }));
 
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { creerNotification } from "@/modules/notification/creer";
 import { demanderExamenAction } from "@/modules/laboratoire/actions";
 import { FORMAT_NUMERO_EXAMEN } from "@/modules/laboratoire/numero-examen";
+import { estFonctionnaliteActive } from "@/modules/administration/parametres";
+import { MESSAGE_MODULE_INACTIF } from "@/modules/administration/modules-actifs";
 
 const p = prisma as unknown as {
   professionnelSante: { findUnique: Mock; findMany: Mock };
@@ -102,5 +105,18 @@ describe("demanderExamenAction : numero LB et notification du laboratoire (F-LAB
     expect(resultat.success).toBe(false);
     expect(p.examenMedical.create).toHaveBeenCalledTimes(1);
     erreurConsole.mockRestore();
+  });
+});
+
+describe("module laboratoire desactive (F-ADM-07)", () => {
+  it("refuse la demande d'examen sans rien ecrire quand lab.module est inactif", async () => {
+    (estFonctionnaliteActive as unknown as Mock).mockResolvedValueOnce(false);
+
+    const resultat = await demanderExamenAction(etatInitial, formulaire());
+
+    expect(resultat).toEqual({ error: MESSAGE_MODULE_INACTIF, success: false });
+    expect(estFonctionnaliteActive).toHaveBeenCalledWith("lab.module");
+    expect(p.examenMedical.create).not.toHaveBeenCalled();
+    expect(creerNotificationMock).not.toHaveBeenCalled();
   });
 });

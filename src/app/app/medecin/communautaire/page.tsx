@@ -8,6 +8,8 @@ import {
 } from "@/modules/communautaire/actions";
 import { Badge, type BadgeTone } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
+import { estFonctionnaliteActive } from "@/modules/administration/parametres";
+import { ModuleDesactive } from "@/components/ModuleDesactive";
 import { FormulaireSuiviCommunautaire } from "./FormulaireSuiviCommunautaire";
 
 const libellesTypeVisite: Record<string, string> = {
@@ -85,6 +87,10 @@ export default async function CommunautairePage() {
 
   if (!session.roles.includes("agent_communautaire")) {
     redirect("/app/medecin");
+  }
+
+  if (!(await estFonctionnaliteActive("community.module"))) {
+    return <ModuleDesactive cle="community.module" />;
   }
 
   const [visites, personnes] = await Promise.all([

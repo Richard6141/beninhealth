@@ -14,10 +14,13 @@ vi.mock("@/lib/prisma", () => {
 vi.mock("@/lib/session", () => ({ getSession: vi.fn() }));
 vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers()) }));
 vi.mock("@/modules/audit/journaliser", () => ({ journaliser: vi.fn() }));
+vi.mock("@/modules/administration/parametres", () => ({ estFonctionnaliteActive: vi.fn(async () => true) }));
 
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { journaliser } from "@/modules/audit/journaliser";
+import { estFonctionnaliteActive } from "@/modules/administration/parametres";
+import { MESSAGE_MODULE_INACTIF } from "@/modules/administration/modules-actifs";
 import {
   creerSuiviCommunautaireAction,
   enregistrerPersonneAction,
@@ -234,5 +237,24 @@ describe("lectures limitees a l'agent et a son etablissement", () => {
     expect(await getMesSuivisCommunautaires()).toEqual([]);
     expect(p.personneCommunautaire.findMany).not.toHaveBeenCalled();
     expect(p.suiviCommunautaire.findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("module communautaire desactive (F-ADM-07)", () => {
+  it("refuse la visite et l'enregistrement d'une personne quand community.module est inactif", async () => {
+    (estFonctionnaliteActive as unknown as Mock).mockResolvedValue(false);
+
+    const visite = await creerSuiviCommunautaireAction(etatSuivi, formulaire({ beneficiaireNom: "X", typeVisite: "autre" }));
+    const personne = await enregistrerPersonneAction(
+      etatPersonne,
+      formulaire({ nom: "Mensah", prenom: "Koffi", sexe: "M", dateNaissance: "1990-05-05", villageQuartier: "Nord" })
+    );
+
+    expect(visite).toEqual({ error: MESSAGE_MODULE_INACTIF, success: false });
+    expect(personne).toEqual({ error: MESSAGE_MODULE_INACTIF, success: false });
+    expect(estFonctionnaliteActive).toHaveBeenCalledWith("community.module");
+    expect(p.suiviCommunautaire.create).not.toHaveBeenCalled();
+    expect(p.personneCommunautaire.create).not.toHaveBeenCalled();
+    (estFonctionnaliteActive as unknown as Mock).mockResolvedValue(true);
   });
 });

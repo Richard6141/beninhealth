@@ -112,11 +112,14 @@ vi.mock("bcryptjs", () => {
 });
 vi.mock("@/modules/audit/journaliser", () => ({ journaliser: vi.fn() }));
 vi.mock("@/modules/notification/creer", () => ({ creerNotification: vi.fn() }));
+vi.mock("@/modules/administration/parametres", () => ({ estFonctionnaliteActive: vi.fn(async () => true) }));
 
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { delivrerPrescriptionAction } from "@/modules/prescription/actions";
 import { creerJetonPresentation } from "@/modules/prescription/presentation";
+import { estFonctionnaliteActive } from "@/modules/administration/parametres";
+import { MESSAGE_MODULE_INACTIF } from "@/modules/administration/modules-actifs";
 
 const p = prisma as unknown as {
   professionnelSante: { findUnique: Mock };
@@ -279,5 +282,24 @@ describe("delivrerPrescriptionAction, delivrance a zero", () => {
     expect(resultat).toEqual({ error: null, success: true });
     expect(base.totalLivre).toBe(4);
     expect(base.statut).toBe("delivree_partiellement");
+  });
+});
+
+describe("module pharmacie desactive (F-ADM-07)", () => {
+  it("refuse la delivrance sans rien lire ni ecrire quand pharmacy.module est inactif", async () => {
+    (estFonctionnaliteActive as unknown as Mock).mockResolvedValueOnce(false);
+
+    const resultat = await delivrerPrescriptionAction(etatInitial, delivrance(10));
+
+    expect(resultat).toEqual({ error: MESSAGE_MODULE_INACTIF, success: false });
+    expect(estFonctionnaliteActive).toHaveBeenCalledWith("pharmacy.module");
+    expect(p.$transaction).not.toHaveBeenCalled();
+    expect(base.totalLivre).toBe(0);
+  });
+
+  it("le meme module actif laisse passer la delivrance", async () => {
+    const resultat = await delivrerPrescriptionAction(etatInitial, delivrance(10));
+
+    expect(resultat.success).toBe(true);
   });
 });

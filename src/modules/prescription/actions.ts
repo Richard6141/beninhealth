@@ -31,6 +31,8 @@ import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
+import { estFonctionnaliteActive } from "@/modules/administration/parametres";
+import { MESSAGE_MODULE_INACTIF } from "@/modules/administration/modules-actifs";
 import { creerNotification } from "@/modules/notification/creer";
 import {
   allergieCorrespondante,
@@ -2152,6 +2154,10 @@ export async function delivrerPrescriptionAction(
     return { error: "Action reservee au role pharmacien.", success: false };
   }
 
+  if (!(await estFonctionnaliteActive("pharmacy.module"))) {
+    return { error: MESSAGE_MODULE_INACTIF, success: false };
+  }
+
   const lignesJSON = texte(formData, "lignesJSON");
   let lignesBrutes: unknown;
 
@@ -2489,6 +2495,10 @@ export async function annulerDelivranceAction(
 
   if (!session || !session.roles.includes("pharmacien") || !can("pharmacien", "update", "delivrance")) {
     return { error: "Action reservee au role pharmacien.", success: false };
+  }
+
+  if (!(await estFonctionnaliteActive("pharmacy.module"))) {
+    return { error: MESSAGE_MODULE_INACTIF, success: false };
   }
 
   const validation = schemaAnnulationDelivrance.safeParse({

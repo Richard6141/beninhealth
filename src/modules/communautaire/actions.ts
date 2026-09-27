@@ -18,6 +18,8 @@ import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
+import { estFonctionnaliteActive } from "@/modules/administration/parametres";
+import { MESSAGE_MODULE_INACTIF } from "@/modules/administration/modules-actifs";
 import type { TypeVisiteCommunautaire } from "@/types";
 
 /** Etat renvoye par chaque Server Action de ce module, consomme via useActionState. */
@@ -168,6 +170,10 @@ export async function creerSuiviCommunautaireAction(
 
   if (!session.roles.some((role) => can(role, "create", "suivi_communautaire"))) {
     return { error: "Action reservee aux agents communautaires.", success: false };
+  }
+
+  if (!(await estFonctionnaliteActive("community.module"))) {
+    return { error: MESSAGE_MODULE_INACTIF, success: false };
   }
 
   const validation = schemaSuivi.safeParse({
@@ -329,6 +335,10 @@ export async function enregistrerPersonneAction(
 
   if (!session.roles.some((role) => can(role, "create", "personne_communautaire"))) {
     return { error: "Action reservee aux agents communautaires.", success: false };
+  }
+
+  if (!(await estFonctionnaliteActive("community.module"))) {
+    return { error: MESSAGE_MODULE_INACTIF, success: false };
   }
 
   const validation = schemaEnregistrementPersonne.safeParse({
