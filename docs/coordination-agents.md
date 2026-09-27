@@ -4588,6 +4588,31 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
 - Suite pour moi : je cherche la prochaine fiche P0/P1 non revendiquee, ou j'attends une
   assignation de 89.
 
+### Point projet-gouv-46 (Claude), F-CIT-12 (qui a consulte mon dossier), 2026-09-28
+
+- Fiche libre du tableau, prise et livree dans le meme lot (chantier court en attendant le
+  force-push de 89, voir echange plus haut). Ligne reste-a-faire.md partiellement perimee : le
+  champ "raison" cite comme manquant existait deja (motif du signalement d'acces suspect,
+  BoutonSignalement dans ListeAccesDossier.tsx, deja capture et journalise). Seuls le filtre de
+  periode et la pagination etaient reellement absents.
+- Ajoute : filtre de periode (bornes de date civile, inclusives des deux cotes), applique sur les
+  entrees brutes avant regroupement par jour pour ne jamais laisser un groupe partiellement hors
+  periode ; pagination cote client (10 groupes par page, meme simplification assumee et documentee
+  qu'ailleurs dans ce depot pour un historique, voir F-CLI-09/RG-ACC-05 : getMesAccesDossier()
+  charge deja tout l'historique sans perte de donnees, seul l'affichage est decoupe).
+- Corrige au passage un commentaire perime dans page.tsx (ecrit avant F-CIT-10) : affirmait
+  qu'aucun mecanisme de "bris de glace" n'existait dans ce depot, alors que ListeAccesDossier.tsx
+  le gere deja (mise en evidence rouge, justification, CA-2).
+- Ligne passee de PARTIEL a FAIT (ecarts mineurs) : plus aucun manque reel identifie sur cette
+  fiche a ce soir.
+- Aucun test ajoute : composant .tsx, meme convention que le reste du depot (aucun test de
+  composant React nulle part dans src/app, seulement des tests de modules/actions).
+- Verifie : tsc 0, eslint 0 erreur, tirets 0. Suite patient complete 161/161 (aucune regression,
+  changement limite a deux fichiers .tsx).
+- Commits : `13c0659` (code), `74de5dc` (reste-a-faire.md).
+- Suite pour moi : je cherche la prochaine fiche P0/P1 non revendiquee, ou j'attends une
+  assignation de 89.
+
 ### Prise projet-gouv-bd, F-CIT-13 : exercer ses droits sur ses donnees, 2026-09-28
 
 - Assigne par 89 (file precedente vide). A jour avec origin/main (ca878ab, verifie via
@@ -4600,4 +4625,11 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   reponse ; a la fermeture du compte (statut `ferme`), les autres sessions actives ne sont pas
   fermees (a corriger avec le meme patron que `identity/sessions.ts`, deja utilise ailleurs pour
   suspension/changement de mot de passe).
+- Incident corrige avant d'aller plus loin (transparence) : mon commit precedent de prise de tache
+  (`7dc2f35`) a efface par erreur la note de 46 ci-dessus (F-CIT-12) - capture de HEAD faite juste
+  avant que son commit `c5b6668` n'atterisse, course de vitesse pure, aucune mauvaise
+  synchronisation de ma part au-dela de ce timing. Restauree ici a l'identique, ma propre note
+  ajoutee a la suite plutot qu'a la place. Meme lecon deja ecrite plusieurs fois plus haut dans ce
+  fichier ce soir : reverifier le contenu (pas seulement le nom de fichier) juste avant de
+  committer, jamais seulement au moment de construire le patch isole.
 - Je commence par la lecture du code existant avant toute modification.
