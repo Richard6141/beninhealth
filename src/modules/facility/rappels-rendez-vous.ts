@@ -33,6 +33,7 @@ import { prisma } from "@/lib/prisma";
 import { creerNotification } from "@/modules/notification/creer";
 import { suivreExecution } from "@/modules/administration/executions-taches";
 import { veilleA18hBenin } from "@/lib/fuseau-horaire";
+import { destinataireNotificationPatient } from "./destinataire-notification-patient";
 
 const FUSEAU_BENIN = "Africa/Porto-Novo";
 const DELAI_RAPPEL_DEUX_HEURES_MS = 2 * 60 * 60 * 1000;
@@ -74,7 +75,7 @@ export async function envoyerRappelsDus(
       date: { gt: maintenant, lt: borneRecherche },
       OR: [{ rappelVeilleEnvoyeLe: null }, { rappelDeuxHeuresEnvoyeLe: null }],
     },
-    include: { patient: true, etablissement: true },
+    include: { etablissement: true },
   });
 
   let veille = 0;
@@ -82,6 +83,10 @@ export async function envoyerRappelsDus(
 
   for (const rendezVous of candidats) {
     const dateLisible = formaterDateRendezVous(rendezVous.date);
+    // Pour une personne a charge (F-CIT-07), Patient.userId est un compte
+    // "sans_compte" jamais connecte : le rappel doit aller a son tuteur
+    // (defaut trouve et corrige, voir destinataire-notification-patient.ts).
+    const destinataire = await destinataireNotificationPatient(rendezVous.patientId);
 
     if (!rendezVous.rappelVeilleEnvoyeLe) {
       const declenchement = veilleA18hBenin(rendezVous.date);
@@ -96,7 +101,7 @@ export async function envoyerRappelsDus(
           data: { rappelVeilleEnvoyeLe: maintenant },
         });
         await creerNotification(
-          rendezVous.patient.userId,
+          destinataire,
           "rendez_vous_rappel",
           `Rappel : vous avez rendez-vous demain, le ${dateLisible}, a ${rendezVous.etablissement.nom}.`,
           "/app/patient/rendez-vous"
@@ -117,7 +122,7 @@ export async function envoyerRappelsDus(
           data: { rappelDeuxHeuresEnvoyeLe: maintenant },
         });
         await creerNotification(
-          rendezVous.patient.userId,
+          destinataire,
           "rendez_vous_rappel",
           `Rappel : votre rendez-vous est dans 2 heures, a ${rendezVous.etablissement.nom} (${dateLisible}).`,
           "/app/patient/rendez-vous"

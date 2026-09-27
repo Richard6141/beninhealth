@@ -24,6 +24,7 @@ vi.mock("@/lib/prisma", () => {
     etablissementSanitaire: { findUnique: vi.fn() },
     professionnelSante: { findUnique: vi.fn() },
     rendezVous: { findUnique: vi.fn(), findFirst: vi.fn(), create: vi.fn(), updateMany: vi.fn() },
+    consentement: { findFirst: vi.fn() },
     $transaction: vi.fn(),
   };
   prisma.$transaction.mockImplementation(async (rappel: (tx: unknown) => unknown) => rappel(prisma));
@@ -52,6 +53,7 @@ const prismaMock = prisma as unknown as {
   etablissementSanitaire: { findUnique: Mock };
   professionnelSante: { findUnique: Mock };
   rendezVous: { findUnique: Mock; findFirst: Mock; create: Mock; updateMany: Mock };
+  consentement: { findFirst: Mock };
 };
 const getSessionMock = getSession as unknown as Mock;
 const journaliserMock = journaliser as unknown as Mock;
@@ -84,7 +86,7 @@ function rendezVousDuPatient(surcharges: Record<string, unknown> = {}) {
     statut: "confirme",
     nombreDeplacements: 0,
     etablissement: ETABLISSEMENT,
-    patient: { userId: "user-pat" },
+    patient: { userId: "user-pat", user: { statut: "actif" } },
     ...surcharges,
   };
 }
@@ -94,7 +96,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(MAINTENANT);
   getSessionMock.mockResolvedValue({ userId: "user-1", roles: ["patient"] });
-  prismaMock.patient.findUnique.mockResolvedValue({ id: "pat-1", userId: "user-1" });
+  prismaMock.patient.findUnique.mockResolvedValue({ id: "pat-1", userId: "user-1", user: { statut: "actif" } });
   prismaMock.etablissementSanitaire.findUnique.mockResolvedValue(ETABLISSEMENT);
   prismaMock.professionnelSante.findUnique.mockResolvedValue({
     id: "pro-1",
@@ -159,6 +161,11 @@ describe("traitement par le professionnel assigne ou par l'accueil", () => {
     getSessionMock.mockResolvedValue({ userId: "user-pro", roles: ["medecin"] });
   });
 
+  beforeEach(() => {
+    // rendezVousDuPatient() : le patient est "user-pat" (distinct de "user-1", utilise cote creerRendezVousAction plus haut).
+    prismaMock.patient.findUnique.mockResolvedValue({ userId: "user-pat", user: { statut: "actif" } });
+  });
+
   it("le professionnel assigne confirme une demande et le patient est prevenu", async () => {
     prismaMock.rendezVous.findUnique.mockResolvedValue(rendezVousDuPatient({ statut: "demande" }));
 
@@ -170,6 +177,19 @@ describe("traitement par le professionnel assigne ou par l'accueil", () => {
       data: { statut: "confirme" },
     });
     expect(creerNotificationMock).toHaveBeenCalledWith("user-pat", "rendez_vous_confirme", expect.stringContaining("confirmé"), "/app/patient/rendez-vous");
+  });
+
+  it("pour une personne a charge (sans_compte), previent son tuteur plutot que le compte placeholder (defaut corrige)", async () => {
+    prismaMock.rendezVous.findUnique.mockResolvedValue(
+      rendezVousDuPatient({ statut: "demande", patient: { userId: "user-placeholder", user: { statut: "sans_compte" } } })
+    );
+    prismaMock.patient.findUnique.mockResolvedValue({ userId: "user-placeholder", user: { statut: "sans_compte" } });
+    prismaMock.consentement.findFirst.mockResolvedValue({ acteurAutoriseId: "user-tuteur" });
+
+    const resultat = await confirmerRendezVousAction(ETAT, formulaire({ rendezVousId: "rdv-1" }));
+
+    expect(resultat).toEqual({ error: null, success: true });
+    expect(creerNotificationMock).toHaveBeenCalledWith("user-tuteur", "rendez_vous_confirme", expect.stringContaining("confirmé"), "/app/patient/rendez-vous");
   });
 
   it("ne reconfirme pas un rendez-vous annule et ne previent personne", async () => {
@@ -249,6 +269,10 @@ describe("refuserRendezVousAction (F-RDV-03)", () => {
   beforeEach(() => {
     getSessionMock.mockResolvedValue({ userId: "user-pro", roles: ["medecin"] });
     prismaMock.rendezVous.findUnique.mockResolvedValue(rendezVousDuPatient({ statut: "demande" }));
+  });
+
+  beforeEach(() => {
+    prismaMock.patient.findUnique.mockResolvedValue({ userId: "user-pat", user: { statut: "actif" } });
   });
 
   it("exige un motif de la liste, et une precision pour 'Autre motif'", async () => {

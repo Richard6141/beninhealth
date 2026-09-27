@@ -22,6 +22,7 @@ import { getSession } from "@/lib/session";
 import { dateDepuisChaineLocaleBenin } from "@/lib/fuseau-horaire";
 import { dateDansUnCreneauDisponible } from "./creneau-disponible";
 import { creerNotification } from "@/modules/notification/creer";
+import { destinataireNotificationPatient } from "./destinataire-notification-patient";
 import {
   STATUTS_QUI_LIBERENT_LE_CRENEAU,
   estConflitDeCreneau,
@@ -81,6 +82,8 @@ export interface RendezVousResume {
   motifRefus: string | null;
   /** RG-RDV-11 : nombre de deplacements deja effectues (2 au maximum). */
   nombreDeplacements: number;
+  /** F-CLI-01 du pack : heure d'arrivee enregistree a l'accueil (file-du-jour.ts), pour le temps d'attente. Null tant que le patient n'est pas arrive. */
+  heureArrivee: string | null;
 }
 
 const schemaCreationRendezVous = z.object({
@@ -619,6 +622,7 @@ interface RendezVousCharge {
   patientId: string;
   motifRefus: string | null;
   nombreDeplacements: number;
+  heureArrivee: Date | null;
   etablissement: { nom: string; telephoneEtablissement: string | null };
   professionnel: { specialite: string; user: { nom: string; prenom: string; avatarUrl: string | null } } | null;
 }
@@ -642,6 +646,7 @@ function versResume(
     patientId: rdv.patientId,
     motifRefus: rdv.motifRefus,
     nombreDeplacements: rdv.nombreDeplacements,
+    heureArrivee: rdv.heureArrivee?.toISOString() ?? null,
   };
 }
 
@@ -807,7 +812,11 @@ export async function confirmerRendezVousAction(
       return { error: TRANSITIONS.confirmer.refus, success: false };
     }
 
-    await prevenirPatient(rendezVous.patient.userId, "rendez_vous_confirme", `Votre rendez-vous du ${dateLisible(rendezVous.date)} a été confirmé.`);
+    await prevenirPatient(
+      await destinataireNotificationPatient(rendezVous.patientId),
+      "rendez_vous_confirme",
+      `Votre rendez-vous du ${dateLisible(rendezVous.date)} a été confirmé.`
+    );
 
     return { error: null, success: true };
   } catch (erreur) {
@@ -889,7 +898,7 @@ export async function refuserRendezVousAction(
     }
 
     await prevenirPatient(
-      rendezVous.patient.userId,
+      await destinataireNotificationPatient(rendezVous.patientId),
       "rendez_vous_refuse",
       `Votre demande de rendez-vous du ${dateLisible(rendezVous.date)} a été refusée. Motif : ${motifRefus}`
     );
@@ -960,7 +969,7 @@ export async function annulerRendezVousProfessionnelAction(
     }
 
     await prevenirPatient(
-      rendezVous.patient.userId,
+      await destinataireNotificationPatient(rendezVous.patientId),
       "rendez_vous_annule_par_etablissement",
       `Votre rendez-vous du ${dateLisible(rendezVous.date)} a été annulé par l'établissement. Vous pouvez en reprendre un depuis votre espace.`
     );
