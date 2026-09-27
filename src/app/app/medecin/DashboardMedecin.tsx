@@ -6,8 +6,17 @@ import { getConsultationsDuProfessionnel } from "@/modules/clinical/actions";
 import { getExamensDemandesParProfessionnel } from "@/modules/laboratoire/actions";
 import { getPrescriptionsDuProfessionnel } from "@/modules/prescription/actions";
 import { getMonQrCode } from "@/modules/verification/actions";
+import { jourCivilBenin } from "@/modules/administration/jours-feries-calcul";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
+
+/** Minutes ecoulees depuis un instant passe (arrondi a la minute la plus proche, jamais negatif). */
+function minutesEcoulees(depuisIso: string, maintenant: Date): number {
+  return Math.max(0, Math.round((maintenant.getTime() - new Date(depuisIso).getTime()) / 60000));
+}
+
+/** RG-CLI-01/F-CLI-01 du pack : temps d'attente en orange au-dela de 60 minutes. */
+const SEUIL_ATTENTE_MINUTES = 60;
 
 /** Salutation dependante de l'heure du serveur, meme logique que src/app/app/patient/page.tsx. */
 function salutation(): string {
@@ -15,14 +24,9 @@ function salutation(): string {
   return heure >= 5 && heure < 18 ? "Bonjour" : "Bonsoir";
 }
 
+/** "Aujourd'hui" en heure LOCALE Africa/Porto-Novo, jamais celle du serveur (voir src/lib/fuseau-horaire.ts). */
 function estAujourdHui(dateIso: string): boolean {
-  const date = new Date(dateIso);
-  const maintenant = new Date();
-  return (
-    date.getFullYear() === maintenant.getFullYear() &&
-    date.getMonth() === maintenant.getMonth() &&
-    date.getDate() === maintenant.getDate()
-  );
+  return jourCivilBenin(new Date(dateIso)) === jourCivilBenin(new Date());
 }
 
 function formaterHeure(dateIso: string): string {
@@ -64,39 +68,66 @@ function estDansLes7DerniersJours(dateIso: string): boolean {
   return date >= ilYA7Jours;
 }
 
-function ListePatientsDuJour({ rendezVous }: { rendezVous: RendezVousResume[] }) {
+/**
+ * Statut du patient dans la file (F-CLI-01 du pack). Ce depot n'a pas de
+ * sous-statut "constantes prises" distinct sur RendezVous (F-CLI-12 ecrit
+ * PriseEnChargeInfirmiere, une table separee non jointe ici) : seuls "en
+ * attente" et "en consultation" (statut RendezVous "en_consultation", pose
+ * par enregistrerConsultationAction au demarrage) sont donc distingues,
+ * limite assumee plutot qu'une troisieme valeur inventee.
+ */
+function statutFile(rdv: RendezVousResume): { texte: string; tone: "warning" | "good" } {
+  return rdv.statut === "en_consultation"
+    ? { texte: "En consultation", tone: "good" }
+    : { texte: "En attente", tone: "warning" };
+}
+
+function ListePatientsDuJour({ rendezVous, maintenant }: { rendezVous: RendezVousResume[]; maintenant: Date }) {
   if (rendezVous.length === 0) {
     return (
       <p className="text-[13px] text-encre-attenuee">
-        Aucun patient confirmé pour aujourd&apos;hui.
+        Aucun patient arrivé pour aujourd&apos;hui.
       </p>
     );
   }
 
   return (
     <ul className="flex flex-col gap-3">
-      {rendezVous.map((rdv) => (
-        <li
-          key={rdv.id}
-          className="flex flex-col gap-1.5 border-b border-bordure pb-3 last:border-0 last:pb-0"
-        >
-          <div className="flex items-center justify-between gap-2">
-            <span className="font-semibold text-encre">
-              {rdv.patientNomComplet ?? "Patient non précisé"}
-            </span>
-            <span className="text-[13px] text-encre-secondaire">{formaterHeure(rdv.date)}</span>
-          </div>
-          <span className="text-[13px] text-encre-secondaire">{rdv.motif}</span>
-          <Link
-            href={`/app/medecin/consultations/nouvelle?patientId=${encodeURIComponent(
-              rdv.patientId
-            )}&rendezVousId=${encodeURIComponent(rdv.id)}`}
-            className="w-fit text-[13px] font-semibold text-accent hover:underline"
+      {rendezVous.map((rdv) => {
+        const statut = statutFile(rdv);
+        const attente = rdv.heureArrivee ? minutesEcoulees(rdv.heureArrivee, maintenant) : null;
+        const attenteLongue = attente !== null && attente > SEUIL_ATTENTE_MINUTES;
+        return (
+          <li
+            key={rdv.id}
+            className="flex flex-col gap-1.5 border-b border-bordure pb-3 last:border-0 last:pb-0"
           >
-            Démarrer la consultation
-          </Link>
-        </li>
-      ))}
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-semibold text-encre">
+                {rdv.patientNomComplet ?? "Patient non précisé"}
+              </span>
+              <Badge tone={statut.tone}>{statut.texte}</Badge>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-encre-secondaire">
+              <span>Rendez-vous à {formaterHeure(rdv.date)}</span>
+              {attente !== null ? (
+                <span className={attenteLongue ? "font-semibold text-vigilance" : undefined}>
+                  Arrivé il y a {attente} min
+                </span>
+              ) : null}
+            </div>
+            <span className="text-[13px] text-encre-secondaire">{rdv.motif}</span>
+            <Link
+              href={`/app/medecin/consultations/nouvelle?patientId=${encodeURIComponent(
+                rdv.patientId
+              )}&rendezVousId=${encodeURIComponent(rdv.id)}`}
+              className="w-fit text-[13px] font-semibold text-accent hover:underline"
+            >
+              Ouvrir
+            </Link>
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -183,10 +214,21 @@ function ListeResultatsAAnnoncer({
  * docs/audit-cote-medecin.md), c'est le seul rappel qu'une saisie est restee
  * en cours ; chaque ligne mene directement a sa reprise.
  */
+/** Age d'un brouillon (F-CLI-01 du pack), en clair : minutes puis heures puis jours. */
+function ageLisible(depuisIso: string, maintenant: Date): string {
+  const minutes = minutesEcoulees(depuisIso, maintenant);
+  if (minutes < 60) return `il y a ${minutes} min`;
+  const heures = Math.floor(minutes / 60);
+  if (heures < 24) return `il y a ${heures} h`;
+  return `il y a ${Math.floor(heures / 24)} j`;
+}
+
 function ListeBrouillonsEnCours({
   consultations,
+  maintenant,
 }: {
   consultations: { id: string; patientId: string; patientNomComplet: string | null; date: string }[];
+  maintenant: Date;
 }) {
   if (consultations.length === 0) {
     return (
@@ -205,7 +247,7 @@ function ListeBrouillonsEnCours({
             <span className="font-semibold text-encre">
               {consultation.patientNomComplet ?? "Patient non précisé"}
             </span>
-            <span className="text-[13px] text-encre-secondaire">{formaterDateHeure(consultation.date)}</span>
+            <span className="text-[13px] text-encre-secondaire">{ageLisible(consultation.date, maintenant)}</span>
           </div>
           <Link
             href={`/app/medecin/consultations/nouvelle?patientId=${encodeURIComponent(consultation.patientId)}`}
@@ -261,8 +303,19 @@ export async function DashboardMedecin() {
     getExamensDemandesParProfessionnel(),
   ]);
 
+  const maintenant = new Date();
+  // F-CLI-01 du pack : "patients arrives dans les services", pas seulement
+  // confirmes pour aujourd'hui - heureArrivee (posee a l'accueil,
+  // file-du-jour.ts) distingue un rendez-vous confirme de demain d'un
+  // patient reellement present. RG-CLI-01 est deja tenue par construction :
+  // getRendezVousDuProfessionnel ne renvoie que les rendez-vous OU ce
+  // medecin est le professionnel assigne (base d'acces = affectation
+  // nommee), jamais ceux d'un autre professionnel de l'etablissement.
   const patientsDuJour = rendezVous.filter(
-    (rdv) => rdv.statut === "confirme" && estAujourdHui(rdv.date)
+    (rdv) =>
+      (rdv.statut === "confirme" || rdv.statut === "en_consultation") &&
+      rdv.heureArrivee !== null &&
+      estAujourdHui(rdv.date)
   );
   const idsPatientsDuJour = new Set(patientsDuJour.map((rdv) => rdv.id));
   const prochainRendezVous = rendezVous
@@ -353,7 +406,7 @@ export async function DashboardMedecin() {
               actions={<Badge tone="warning">{brouillonsEnCours.length}</Badge>}
             >
               <div className="flex flex-col gap-4">
-                <ListeBrouillonsEnCours consultations={brouillonsEnCours} />
+                <ListeBrouillonsEnCours consultations={brouillonsEnCours} maintenant={maintenant} />
                 <Link
                   href="/app/medecin/consultations"
                   className="w-fit text-[13px] font-semibold text-accent hover:underline"
@@ -365,10 +418,10 @@ export async function DashboardMedecin() {
           ) : null}
           <Card
             title="Patients du jour"
-            description="Rendez-vous confirmés pour aujourd'hui."
+            description="Patients arrivés aujourd'hui, avec temps d'attente."
             actions={<Badge tone="accent">{patientsDuJour.length}</Badge>}
           >
-            <ListePatientsDuJour rendezVous={patientsDuJour} />
+            <ListePatientsDuJour rendezVous={patientsDuJour} maintenant={maintenant} />
           </Card>
           <Card
             title="Rendez-vous"

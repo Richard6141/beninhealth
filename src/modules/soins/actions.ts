@@ -405,6 +405,12 @@ export async function enregistrerPriseEnChargeAction(
  * detenant read:prise_en_charge_infirmiere (infirmier, medecin), avec la
  * meme garde Zero Trust que getResumePatient : un Consentement actif pour ce
  * patient doit exister pour l'utilisateur connecte.
+ *
+ * Bornee au jour courant et a l'etablissement du medecin connecte (defaut
+ * corrige, signale dans docs/reste-a-faire.md) : sans ces deux bornes, une
+ * prise en charge vieille de plusieurs jours, ou faite dans un tout autre
+ * etablissement, pouvait pre-remplir la consultation du jour sans aucun
+ * rapport avec la visite en cours.
  */
 export async function getPriseEnChargeNonRecuperee(
   patientId: string
@@ -416,6 +422,12 @@ export async function getPriseEnChargeNonRecuperee(
   }
 
   if (!session.roles.some((role) => can(role, "read", "prise_en_charge_infirmiere"))) {
+    return null;
+  }
+
+  const professionnel = await prisma.professionnelSante.findUnique({ where: { userId: session.userId } });
+
+  if (!professionnel) {
     return null;
   }
 
@@ -437,8 +449,15 @@ export async function getPriseEnChargeNonRecuperee(
     return null;
   }
 
+  const { debut, fin } = bornesDuJourCourant();
+
   const priseEnCharge = await prisma.priseEnChargeInfirmiere.findFirst({
-    where: { patientId, statut: "en_attente" },
+    where: {
+      patientId,
+      statut: "en_attente",
+      etablissementId: professionnel.etablissementId,
+      date: { gte: debut, lt: fin },
+    },
     orderBy: { date: "desc" },
   });
 

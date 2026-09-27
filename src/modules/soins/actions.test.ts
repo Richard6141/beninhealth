@@ -19,7 +19,7 @@ vi.mock("@/modules/audit/journaliser", () => ({ journaliser: vi.fn() }));
 
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
-import { enregistrerPriseEnChargeAction } from "@/modules/soins/actions";
+import { enregistrerPriseEnChargeAction, getPriseEnChargeNonRecuperee } from "@/modules/soins/actions";
 import { PRIORITES_TRI } from "@/modules/soins/priorites";
 
 const p = prisma as unknown as {
@@ -27,7 +27,7 @@ const p = prisma as unknown as {
   patient: { findUnique: Mock };
   consentement: { findUnique: Mock };
   rendezVous: { findUnique: Mock };
-  priseEnChargeInfirmiere: { create: Mock };
+  priseEnChargeInfirmiere: { create: Mock; findFirst: Mock };
 };
 const getSessionMock = getSession as unknown as Mock;
 
@@ -140,5 +140,64 @@ describe("enregistrerPriseEnChargeAction : constantes et droits (F-CLI-12)", () 
     p.rendezVous.findUnique.mockResolvedValue({ id: "rdv-1", patientId: "patient-1", etablissementId: "etab-1" });
 
     expect((await enregistrerPriseEnChargeAction(etatInitial, formulaire({ rendezVousId: "rdv-1" }))).success).toBe(true);
+  });
+});
+
+describe("getPriseEnChargeNonRecuperee (F-CLI-12 : pre-remplissage de la consultation)", () => {
+  function priseEnCharge(surcharges: Record<string, unknown> = {}) {
+    return {
+      id: "pec-1",
+      patientId: "patient-1",
+      prioriteTri: "standard",
+      temperatureCelsius: 37,
+      pouls: 80,
+      tensionSystolique: null,
+      tensionDiastolique: null,
+      frequenceRespiratoire: null,
+      saturationOxygene: null,
+      poidsKg: null,
+      tailleCm: null,
+      glycemieGL: null,
+      noteSoins: "RAS",
+      statut: "en_attente",
+      date: new Date(),
+      ...surcharges,
+    };
+  }
+
+  beforeEach(() => {
+    p.priseEnChargeInfirmiere.findFirst.mockResolvedValue(priseEnCharge());
+  });
+
+  it("filtre desormais sur l'etablissement et le jour courant du medecin connecte (defaut corrige)", async () => {
+    const resultat = await getPriseEnChargeNonRecuperee("patient-1");
+
+    expect(resultat?.id).toBe("pec-1");
+    const filtre = p.priseEnChargeInfirmiere.findFirst.mock.calls[0][0].where;
+    expect(filtre).toMatchObject({ patientId: "patient-1", statut: "en_attente", etablissementId: "etab-1" });
+    expect(filtre.date).toHaveProperty("gte");
+    expect(filtre.date).toHaveProperty("lt");
+  });
+
+  it("un infirmier d'un autre etablissement ne recupere jamais une prise en charge (le filtre etablissement l'exclut deja de la requete)", async () => {
+    p.professionnelSante.findUnique.mockResolvedValue({ id: "inf-2", etablissementId: "autre-etab" });
+
+    await getPriseEnChargeNonRecuperee("patient-1");
+
+    expect(p.priseEnChargeInfirmiere.findFirst.mock.calls[0][0].where.etablissementId).toBe("autre-etab");
+  });
+
+  it("sans profil professionnel associe au compte : null, sans lire la prise en charge", async () => {
+    p.professionnelSante.findUnique.mockResolvedValue(null);
+
+    expect(await getPriseEnChargeNonRecuperee("patient-1")).toBeNull();
+    expect(p.priseEnChargeInfirmiere.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("sans consentement actif : null", async () => {
+    p.consentement.findUnique.mockResolvedValue(null);
+
+    expect(await getPriseEnChargeNonRecuperee("patient-1")).toBeNull();
+    expect(p.priseEnChargeInfirmiere.findFirst).not.toHaveBeenCalled();
   });
 });
