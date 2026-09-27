@@ -3688,3 +3688,35 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   erreurs 24h deja faits ce soir ; comptes par role a verifier), F-ADM-02 (fait ce soir, voir
   commit anterieur), F-NOT-04 (emissions des 22 codes N-* jamais emis), puis premiere fiche P0/P1
   libre de docs/reste-a-faire.md.
+
+### Point projet-gouv-0a, catalogue des notifications et tableau de bord complet (F-NOT-04, F-ADM-01), 2026-09-27
+
+- F-ADM-01 (`ac3c155`) : derniere piece manquante ajoutee, "etablissements par statut" (volumetrie,
+  derivee de la liste deja chargee). Le tableau de bord est desormais complet au sens du pack ; seule
+  la file "brouillon" reste a 0 par construction (creation directement active, decision assumee,
+  documentee dans etablissements.ts). "/app/ministere/sms" ajoute au menu (existait, jamais accessible).
+- F-NOT-04 (`20c9385`), defaut reel trouve et corrige : `getTexteSmsDuCatalogue()` (notification/catalogue.ts)
+  ne lisait que la table `ModeleNotification`, jamais semee avant qu'un administrateur ouvre l'ecran
+  `/app/ministere/referentiels/notifications` au moins une fois. Tout code catalogue reference avant
+  cette premiere ouverture supprimait donc son SMS EN SILENCE : verifie sur la base partagee,
+  `N-2FA-RESET` n'etait pas provisionne. Repli desormais sur le texte compile de
+  `CATALOGUE_NOTIFICATIONS_DEFAUT` quand la ligne est absente (meme principe que
+  `estFonctionnaliteActive`) ; une ligne deja presente en base garde toujours la priorite.
+- Catalogue complete a 38 codes (les 11 manquants du pack ajoutes, textes repris tels quels).
+  `codeCatalogue` cable sur 3 emissions qui n'en avaient pas encore, toutes dans mes modules :
+  echantillon rejete au patient (`N-LAB-SAMPLE-REJECTED`, ajoute un vrai SMS, absent avant), revue
+  d'urgence non conforme, fusion de dossiers.
+- A verifier par tout le monde : si une action `creerNotification({ codeCatalogue: "N-XXX" })` existe
+  deja dans VOS modules avec un code ABSENT du catalogue compile (`notification/catalogue-defaut.ts`),
+  le SMS partait deja en silence avant ce correctif ET continue de ne rien envoyer (fail-closed
+  volontaire pour un code inconnu) : verifiez que votre code y figure, sinon ajoutez-le au meme
+  fichier avec le texte du pack (chapitre 17.1) plutot que de l'improviser.
+- Verifie : 174 tests sur mes modules, tsc et eslint propres, scenario reel sur la base partagee
+  (N-2FA-RESET absent de la table, texte de repli obtenu ; N-MERGE interne seulement, null confirme).
+- A signaler, pas de mon fait : `src/security/tirets-interdits.test.ts` et `service-guard.test.ts`
+  echouent actuellement sur deux fichiers non commites d'une autre session
+  (`app/patient/IndicateurConnexion.tsx`, `modules/patient/tableau-de-bord.ts`).
+- Suite pour moi : ma file est desormais vide sur les fiches assignees par 21 (F-ADM-01/02/05/06/07,
+  F-IA-01/02/04/05, F-NOT-01/02/04, F-LAB-01 a 06, F-AUD-* en cours avec 21). Je prends la premiere
+  fiche P0 puis P1 en PARTIEL ou ABSENT de `docs/reste-a-faire.md` non revendiquee, l'inscris ici
+  avant de coder, comme convenu.
