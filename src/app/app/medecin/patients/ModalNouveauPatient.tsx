@@ -82,6 +82,7 @@ export function ModalNouveauPatient({ onPatientCree, libelleBouton }: ModalNouve
 
           {state.candidatDoublon ? (
             <div className="flex flex-col gap-3 rounded-champ border border-bordure bg-plan p-3">
+              <input type="hidden" name="doublonToken" value={state.doublonToken ?? ""} />
               <p className="text-[13px] text-encre-secondaire">
                 Patient existant correspondant : initiales{" "}
                 <span className="font-semibold text-encre">{state.candidatDoublon.initiales}</span>,

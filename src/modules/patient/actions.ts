@@ -24,6 +24,11 @@ import { creerNotification } from "@/modules/notification/creer";
 import type { ContactUrgence, GroupeSanguin, NomRole, TypeAccesConsentement } from "@/types";
 import { calculerDateFinConsentement, DUREES_CONSENTEMENT_CONNUES } from "./consentement-durees";
 import { clesAuditDuPatient } from "./cles-audit-patient";
+import {
+  MAX_RESULTATS_RECHERCHE_PROFESSIONNEL,
+  normaliserPourRecherche,
+  rechercheProfessionnelSuffisante,
+} from "./recherche-professionnel";
 
 /** Libelles francais des types d'acces (ecran de partage et notifications). */
 const LIBELLES_TYPE_ACCES: Record<string, string> = {
@@ -396,24 +401,6 @@ export async function signalerAccesSuspectAction(
   });
 
   return { error: null, success: true };
-}
-
-/** Minuscules, sans accents, espaces compactes (meme principe que recherche-medicaments.ts). */
-function normaliserPourRecherche(texte: string): string {
-  return texte
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-export const MIN_CARACTERES_RECHERCHE_PROFESSIONNEL = 3;
-const MAX_RESULTATS_RECHERCHE_PROFESSIONNEL = 20;
-
-/** Vrai a partir de 3 caracteres (espaces exclus). */
-export function rechercheProfessionnelSuffisante(terme: string): boolean {
-  return normaliserPourRecherche(terme).replace(/ /g, "").length >= MIN_CARACTERES_RECHERCHE_PROFESSIONNEL;
 }
 
 /**

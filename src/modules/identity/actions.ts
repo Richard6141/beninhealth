@@ -76,9 +76,46 @@ export interface AuthActionState {
 const DUREE_PRE_AUTH = "5m";
 const TYPE_JETON_PRE_AUTH_EMAIL = "email_pending";
 const TYPE_JETON_PRE_AUTH_MFA = "mfa_pending";
+const TYPE_JETON_DOUBLON = "doublon_patient";
+const DUREE_JETON_DOUBLON = "10m";
 
 function cleSecretePreAuth(): Uint8Array {
   return new TextEncoder().encode(getEnv().NEXTAUTH_SECRET);
+}
+
+/**
+ * Empreinte du candidat de doublon (identite normalisee + createur), pour
+ * lier le jeton RG-CLI-20 a CE candidat precis : un jeton emis pour une
+ * recherche ne peut pas forcer la creation d'une identite differente.
+ */
+function empreinteDoublon(userId: string, nomNormalise: string, prenomNormalise: string, dateNaissance: Date): string {
+  return `${userId}|${nomNormalise}|${prenomNormalise}|${dateNaissance.toISOString().slice(0, 10)}`;
+}
+
+/**
+ * Jeton signe de 10 minutes (RG-CLI-20) : prouve que le controle de doublon
+ * vient reellement de detecter CE candidat pour CETTE identite, avant
+ * d'accepter une creation forcee. Sans lui, confirmerMalgreDoublon est
+ * ignore (voir creerPatientParProfessionnelAction).
+ */
+async function emettreJetonDoublon(empreinte: string): Promise<string> {
+  return new SignJWT({ type: TYPE_JETON_DOUBLON, empreinte })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime(DUREE_JETON_DOUBLON)
+    .sign(cleSecretePreAuth());
+}
+
+/** Vrai si le jeton est valide, non expire, et correspond exactement a l'empreinte attendue. */
+async function jetonDoublonValide(jeton: string, empreinteAttendue: string): Promise<boolean> {
+  if (!jeton) return false;
+
+  try {
+    const { payload } = await jwtVerify(jeton, cleSecretePreAuth());
+    return payload.type === TYPE_JETON_DOUBLON && payload.empreinte === empreinteAttendue;
+  } catch {
+    return false;
+  }
 }
 
 /** Redirige vers l'espace correspondant aux roles fournis (meme logique pour loginAction et la validation MFA). */
@@ -155,6 +192,7 @@ const schemaCreationPatientParProfessionnel = z.object({
   contactUrgenceTelephone: z.string().trim().optional().default(""),
   confirmerMalgreDoublon: z.coerce.boolean().optional().default(false),
   justificationDoublon: z.string().trim().optional().default(""),
+  doublonToken: z.string().trim().optional().default(""),
 });
 
 /** Candidat de doublon (F-CLI-03 du pack) : uniquement des informations minimales, jamais le dossier complet. */
@@ -176,6 +214,12 @@ export interface CreationPatientActionState {
   // n'a pas ete transmis : le formulaire doit alors demander confirmation
   // avant de reessayer (RG-CLI-20/21 du pack).
   candidatDoublon?: CandidatDoublonPatient | null;
+  // Present avec candidatDoublon : jeton signe de 10 minutes (RG-CLI-20) a
+  // renvoyer tel quel dans doublonToken pour que la creation forcee soit
+  // acceptee. Sans lui, confirmerMalgreDoublon est ignore et le controle de
+  // doublon est refait : impossible de forcer une creation sans etre passe
+  // par la verification qui vient de detecter CE candidat precis.
+  doublonToken?: string;
 }
 
 function normaliserPourComparaison(texte: string): string {
@@ -250,16 +294,22 @@ export async function creerPatientParProfessionnelAction(
     return { error: "Action reservee aux medecins.", success: false };
   }
 
+  // Les champs facultatifs (contact d'urgence, confirmation de doublon,
+  // justification, jeton) ne sont pas toujours rendus dans le formulaire
+  // (ex : la case et la justification n'apparaissent qu'apres un candidat
+  // detecte) : FormData.get() renvoie alors null, que le schema Zod refuse
+  // (null distinct de undefined). "?? undefined" laisse .default() s'appliquer.
   const validation = schemaCreationPatientParProfessionnel.safeParse({
     nom: formData.get("nom"),
     prenom: formData.get("prenom"),
     sexe: formData.get("sexe"),
     dateNaissance: formData.get("dateNaissance"),
-    telephone: formData.get("telephone"),
-    contactUrgenceNom: formData.get("contactUrgenceNom"),
-    contactUrgenceTelephone: formData.get("contactUrgenceTelephone"),
-    confirmerMalgreDoublon: formData.get("confirmerMalgreDoublon"),
-    justificationDoublon: formData.get("justificationDoublon"),
+    telephone: formData.get("telephone") ?? undefined,
+    contactUrgenceNom: formData.get("contactUrgenceNom") ?? undefined,
+    contactUrgenceTelephone: formData.get("contactUrgenceTelephone") ?? undefined,
+    confirmerMalgreDoublon: formData.get("confirmerMalgreDoublon") ?? undefined,
+    justificationDoublon: formData.get("justificationDoublon") ?? undefined,
+    doublonToken: formData.get("doublonToken") ?? undefined,
   });
 
   if (!validation.success) {
@@ -285,11 +335,17 @@ export async function creerPatientParProfessionnelAction(
 
   const nomNormalise = normaliserPourComparaison(donnees.nom);
   const prenomNormalise = normaliserPourComparaison(donnees.prenom);
+  const empreinte = empreinteDoublon(session.userId, nomNormalise, prenomNormalise, dateNaissance);
 
   try {
     // RG-CLI-20 : verification de doublon obligatoire, refaite cote serveur
-    // (jamais uniquement cote client) avant toute ecriture.
-    if (!donnees.confirmerMalgreDoublon) {
+    // (jamais uniquement cote client) avant toute ecriture. Un forcage n'est
+    // accepte que s'il presente le jeton emis par CETTE detection precise
+    // (10 minutes) : cocher la case seule, sans etre passe par un appel qui a
+    // reellement vu ce candidat, ne suffit plus a sauter le controle.
+    const forcageValide = donnees.confirmerMalgreDoublon && (await jetonDoublonValide(donnees.doublonToken, empreinte));
+
+    if (!forcageValide) {
       const patientsExistants = await prisma.patient.findMany({
         where: { dateNaissance },
         include: { user: true },
@@ -311,6 +367,7 @@ export async function creerPatientParProfessionnelAction(
             sexe: candidat.sexe,
             telephoneMasque: masquerTelephone(candidat.user.telephone),
           },
+          doublonToken: await emettreJetonDoublon(empreinte),
         };
       }
     }

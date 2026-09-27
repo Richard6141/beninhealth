@@ -3,12 +3,8 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { X } from "lucide-react";
-import {
-  rechercherProfessionnelsPourPartageAction,
-  MIN_CARACTERES_RECHERCHE_PROFESSIONNEL,
-  rechercheProfessionnelSuffisante,
-  type ProfessionnelDisponible,
-} from "@/modules/patient/actions";
+import { rechercherProfessionnelsPourPartageAction, type ProfessionnelDisponible } from "@/modules/patient/actions";
+import { MIN_CARACTERES_RECHERCHE_PROFESSIONNEL, rechercheProfessionnelSuffisante } from "@/modules/patient/recherche-professionnel";
 
 const DELAI_SAISIE_MS = 250;
 
