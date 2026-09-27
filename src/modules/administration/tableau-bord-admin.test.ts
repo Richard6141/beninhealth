@@ -96,6 +96,15 @@ describe("getFilesAttenteAdmin : files et etat technique (F-ADM-01)", () => {
     expect(p.professionnelSante.findMany.mock.calls[0][0].where.user.statut).toEqual({ not: "invite" });
   });
 
+  it("etablissementsParStatut retrouve la volumetrie sans requete supplementaire (F-ADM-01)", async () => {
+    const files = await getFilesAttenteAdmin();
+
+    expect(files.etablissementsParStatut).toEqual(
+      expect.arrayContaining([{ statut: "brouillon", nombre: 1 }, { statut: "actif", nombre: 1 }])
+    );
+    expect(files.etablissementsParStatut.reduce((total, ligne) => total + ligne.nombre, 0)).toBe(2);
+  });
+
   it("compte les invitations d'activation encore valables", async () => {
     p.invitationCompte.count.mockResolvedValue(5);
 

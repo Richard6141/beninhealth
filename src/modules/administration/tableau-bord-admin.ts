@@ -96,6 +96,8 @@ export interface FilesAttenteAdmin {
   erreursTaches24h: number;
   executionsTaches: ExecutionTacheResume[];
   comptesParRole: CompteParRole[];
+  /** Volumetrie F-ADM-01 : nombre d'etablissements par statut de cycle de vie. */
+  etablissementsParStatut: { statut: string; nombre: number }[];
 }
 
 const ACCES_REFUSE: FilesAttenteAdmin = {
@@ -116,6 +118,7 @@ const ACCES_REFUSE: FilesAttenteAdmin = {
   erreursTaches24h: 0,
   executionsTaches: [],
   comptesParRole: [],
+  etablissementsParStatut: [],
 };
 
 async function lireExecutionsTaches(): Promise<ExecutionTacheResume[]> {
@@ -136,6 +139,13 @@ async function lireExecutionsTaches(): Promise<ExecutionTacheResume[]> {
       };
     })
   );
+}
+
+/** Volumetrie F-ADM-01, derivee de la meme liste que etablissementsEnBrouillon (pas de requete supplementaire). */
+function compterEtablissementsParStatut(etablissements: readonly { statut: string }[]): { statut: string; nombre: number }[] {
+  const comptes = new Map<string, number>();
+  for (const etablissement of etablissements) comptes.set(etablissement.statut, (comptes.get(etablissement.statut) ?? 0) + 1);
+  return [...comptes.entries()].map(([statut, nombre]) => ({ statut, nombre })).sort((a, b) => b.nombre - a.nombre);
 }
 
 async function lireComptesParRole(): Promise<CompteParRole[]> {
@@ -211,6 +221,7 @@ export async function getFilesAttenteAdmin(): Promise<FilesAttenteAdmin> {
     acces: true,
     doublonsPatientsEnAttente: doublons.length,
     etablissementsEnBrouillon: etablissements.filter((e) => e.statut === "brouillon").length,
+    etablissementsParStatut: compterEtablissementsParStatut(etablissements),
     demandesPersonnesEnAttente: (demandes ?? []).filter((d) => !d.traite).length,
     professionnelsAVerifier,
     derniereExecutionPlanificateur: derniereTacheTraitee?.dateTraitement?.toISOString() ?? null,

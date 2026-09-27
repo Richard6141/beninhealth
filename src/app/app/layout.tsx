@@ -24,8 +24,9 @@ import {
   Settings,
   ShieldAlert,
   ShieldCheck,
-  Stethoscope,
+  Send,
   Sparkles,
+  Stethoscope,
   TrendingUp,
   UserCog,
   Users,
@@ -337,6 +338,11 @@ const navigationAdminNational: ElementNavigation[] = [
     label: "Paramètres",
     href: "/app/ministere/parametres",
     icon: <Settings size={tailleIconeNav} aria-hidden="true" />,
+  },
+  {
+    label: "Boîte d'envoi SMS",
+    href: "/app/ministere/sms",
+    icon: <Send size={tailleIconeNav} aria-hidden="true" />,
   },
   {
     label: "Analyses assistées",

@@ -47,6 +47,13 @@ const LIBELLES_ROLE: Record<string, string> = {
   admin_national: "Administrateurs nationaux",
 };
 
+const LIBELLE_STATUT_ETABLISSEMENT: Record<string, string> = {
+  brouillon: "Brouillon",
+  actif: "Actifs",
+  suspendu: "Suspendus",
+  ferme: "Fermés",
+};
+
 function formaterDate(date: string | null): string {
   if (!date) return "Jamais executee";
   try {
@@ -178,6 +185,17 @@ export function SectionFilesAttente({ files }: { files: FilesAttenteAdmin }) {
           {files.comptesParRole.map((ligne) => (
             <li key={ligne.role} className="rounded-champ border border-bordure bg-plan px-3 py-2 text-[14px] text-encre">
               <span className="font-semibold">{LIBELLES_ROLE[ligne.role] ?? ligne.role}</span> : <span className="chiffres">{ligne.nombre}</span>
+            </li>
+          ))}
+        </ul>
+      </Card>
+
+      <Card title="Établissements par statut">
+        <ul className="flex flex-wrap gap-3">
+          {files.etablissementsParStatut.length === 0 ? <li className="text-[14px] text-encre-secondaire">Aucun établissement.</li> : null}
+          {files.etablissementsParStatut.map((ligne) => (
+            <li key={ligne.statut} className="rounded-champ border border-bordure bg-plan px-3 py-2 text-[14px] text-encre">
+              <span className="font-semibold">{LIBELLE_STATUT_ETABLISSEMENT[ligne.statut] ?? ligne.statut}</span> : <span className="chiffres">{ligne.nombre}</span>
             </li>
           ))}
         </ul>
