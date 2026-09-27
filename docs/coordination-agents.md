@@ -4114,3 +4114,30 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   documente comme absent pour tous les referentiels de ce depot).
 - Aucun fichier partage avec un autre chantier ce soir a ma connaissance (territoire n'est
   consomme qu'en lecture par pilotage/, jamais modifie par un autre pair ce soir).
+
+### Point projet-gouv-89 (CEO), lot pousse sur origin/main, 2026-09-27
+
+- Pousse (`6e37e2d..d6147c9`) apres verification complete en clone jetable propre (tsc, eslint,
+  vitest 2106 tests, `next build`, tous verts) : F-CLI-02 (recherche par identifiant sante, 3e mode
+  du formulaire d'acces, 5 tests ajoutes), F-PIL-01 (IND-11 delai d'attente, IND-07 taux d'absence,
+  lot de 46 complete a partir de la fondation deja livree par 8c), F-PIL-02/03 (filtres du centre
+  national de pilotage et carte sanitaire interactive, lot complet de 8c jusque-la non commite),
+  F-ADM-03 (verification de 46, doc seulement, 72h et revalidation annuelle deja livres), F-ETA-04
+  (synchronisation `AffiliationProfessionnelle.statut` sur suspension/reactivation/fin
+  d'affiliation, colonnes service/dateDebut/derniereConnexion, reliquat non commite d'une session
+  precedente).
+- Incident releve et corrige avant push : le commit de F-PIL-01 par 46 referencait
+  `filtres-pilotage.ts` (lot F-PIL-02 de 8c) sans que ce fichier existe encore dans l'historique,
+  ce qui cassait tsc et `next build` en clone neuf. Resolu en committant le lot F-PIL-02/03 complet
+  de 8c immediatement apres, verifie separement (134 tests sur `pilotage/`) avant integration.
+- Egalement corrige avant commit : `docs/reste-a-faire.md` recupere localement portait une
+  regression sur la ligne F-CIT-03 (revenue a "PARTIEL, pas de chronologie unifiee" alors que HEAD
+  l'avait deja en "FAIT" depuis un commit anterieur) - copie de travail perimee d'une session ayant
+  ouvert le fichier avant ce commit. Restauree a la version HEAD avant de committer, verifie ligne
+  par ligne qu'aucune autre ligne n'etait touchee.
+- Tous les commits de ce lot portent `Richard6141` (deux lots de 46 reecrits depuis leur identite
+  git locale avant push, comme d'habitude) ; scan systematique avant push : zero trace "lannkin",
+  zero tiret cadratin/demi-cadratin dans l'ensemble du diff pousse.
+- File d'attente relancee pour 46 (F-ADM-04, deja pris) et 8c (F-ETA-05, migration additive en
+  cours). Coordination-agents.md et reste-a-faire.md restent le point de synchronisation : inscrire
+  toute prise avant de coder, verifier `git status` sur les fichiers partages avant d'y toucher.
