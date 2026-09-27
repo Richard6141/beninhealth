@@ -79,6 +79,11 @@ function CartePrescription({ prescription }: { prescription: PrescriptionResume 
               <p className="text-[13px] text-encre-secondaire">
                 {ligne.posologie} : {ligne.quantite} unite(s), {ligne.dureeTraitementJours} jour(s)
               </p>
+              {ligne.nonSubstituable ? (
+                <p className="text-[13px] font-semibold text-encre">
+                  Non substituable{ligne.motifNonSubstituable ? ` : ${ligne.motifNonSubstituable}` : ""}
+                </p>
+              ) : null}
             </li>
           ))}
         </ul>

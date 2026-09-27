@@ -41,7 +41,7 @@ moteur d'interactions medicamenteuses reel.
 
 Fonctions exposees (voir `actions.ts` pour la signature complete) :
 
-- `listMedicaments` : catalogue complet, trie par nom.
+- `rechercherMedicamentsAction` : recherche dans le referentiel (F-PRE-03) a partir de 3 caracteres, sans accents ni casse, sur la DCI, le nom et les noms commerciaux ; essentiels d'abord puis ordre alphabetique, 20 resultats au plus, medicaments desactives exclus (`recherche-medicaments.ts`).
 - `getMesPrescriptions` : historique du patient connecte, du plus recent au
   plus ancien, avec le nom du medecin prescripteur.
 - `getConsultationPourPrescription` : verifie la propriete de la consultation

@@ -123,6 +123,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   prescription.lignes.forEach((ligne) => {
     ecrireLigne(`${ligne.medicament.nom} : ${ligne.medicament.dosage}, ${ligne.medicament.forme}`, { gras: true });
     ecrireLigne(`   ${ligne.posologie}`);
+    if (ligne.nonSubstituable) {
+      ecrireLigne("   Non substituable");
+    }
     ecrireLigne(
       `   Quantité : ${ligne.quantite} · Durée du traitement : ${ligne.dureeTraitementJours} ${ligne.dureeTraitementJours > 1 ? "jours" : "jour"}`
     );

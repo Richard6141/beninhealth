@@ -35,6 +35,11 @@ function LigneMedicament({ ligne }: { ligne: LignePrescriptionDetail }) {
         </span>
       </div>
       <p className="text-[13px] text-encre-secondaire">{ligne.posologie}</p>
+      {ligne.nonSubstituable ? (
+        <p className="text-[13px] font-semibold text-encre">
+          Non substituable : la pharmacie ne peut pas le remplacer par un générique.
+        </p>
+      ) : null}
       <p className="text-[12px] text-encre-attenuee">
         Quantité : {ligne.quantite} · Durée du traitement :{" "}
         {ligne.dureeTraitementJours}{" "}

@@ -43,16 +43,29 @@ import {
   MESSAGE_POIDS_MANQUANT,
   NOMBRE_LIGNES_MAX,
 } from "@/modules/prescription/regles-ordonnance";
+import {
+  MOTIF_NON_SUBSTITUABLE_MAX,
+  MOTIF_NON_SUBSTITUABLE_MIN,
+  validerNonSubstituable,
+} from "@/modules/prescription/non-substituable";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { IconButton } from "@/components/ui/IconButton";
 import { SelectField } from "@/components/ui/SelectField";
 import { TextField } from "@/components/ui/TextField";
+import { SelecteurMedicament } from "./SelecteurMedicament";
 
 const etatInitial: PrescriptionActionState = { error: null, success: false };
 
-type ChampLigne = "medicamentId" | "dose" | "voieAutre" | "frequenceAutre" | "quantite" | "dureeTraitementJours";
+type ChampLigne =
+  | "medicamentId"
+  | "dose"
+  | "voieAutre"
+  | "frequenceAutre"
+  | "quantite"
+  | "dureeTraitementJours"
+  | "motifNonSubstituable";
 
 // F-PRE-03, version reduite : options courtes plutot qu'un champ texte libre
 // pour la posologie (voir src/modules/prescription/posologie.ts).
@@ -86,6 +99,8 @@ interface LigneFormulaire {
   forcerAlerteAge: boolean;
   forcerAlerteGrossesse: boolean;
   confirmerAvertissementDuree: boolean;
+  nonSubstituable: boolean;
+  motifNonSubstituable: string;
 }
 
 function ligneVide(cle: number): LigneFormulaire {
@@ -106,6 +121,27 @@ function ligneVide(cle: number): LigneFormulaire {
     forcerAlerteAge: false,
     forcerAlerteGrossesse: false,
     confirmerAvertissementDuree: false,
+    nonSubstituable: false,
+    motifNonSubstituable: "",
+  };
+}
+
+/**
+ * Champs saisis d'une ligne qui survivent a un changement de medicament : la
+ * posologie et la duree restent, les confirmations (forcage allergie, age,
+ * grossesse, avertissements) reviennent a leur valeur initiale, car elles
+ * portaient sur l'ancien medicament.
+ */
+function champsSansMedicament(ligne: LigneFormulaire) {
+  return {
+    dose: ligne.dose,
+    unite: ligne.unite,
+    voie: ligne.voie,
+    voieAutre: ligne.voieAutre,
+    frequence: ligne.frequence,
+    frequenceAutre: ligne.frequenceAutre,
+    quantite: ligne.quantite,
+    dureeTraitementJours: ligne.dureeTraitementJours,
   };
 }
 
@@ -144,7 +180,6 @@ function BandeauAllergies({ allergies }: { allergies: string[] }) {
 
 export interface FormulairePrescriptionProps {
   consultationId: string;
-  medicaments: MedicamentOption[];
   patientAllergies: string[];
   patientDateNaissanceISO: string;
   patientSexe: string;
@@ -164,7 +199,6 @@ export interface FormulairePrescriptionProps {
  */
 export function FormulairePrescription({
   consultationId,
-  medicaments,
   patientAllergies,
   patientDateNaissanceISO,
   patientSexe,
@@ -182,10 +216,11 @@ export function FormulairePrescription({
   const prochaineCleRef = useRef(1);
   const patientDateNaissance = new Date(patientDateNaissanceISO);
 
-  const optionsMedicaments = medicaments.map((medicament) => ({
-    value: medicament.id,
-    label: `${medicament.nom} (${medicament.dosage}, ${medicament.forme})`,
-  }));
+  // F-PRE-03 : le catalogue n'est plus charge en entier. Chaque medicament
+  // retenu par la recherche est conserve ici, pour les controles de securite
+  // immediats (allergie, doublon, age, grossesse, duree) qui le retrouvent par id.
+  const [medicamentsConnus, setMedicamentsConnus] = useState<Record<string, MedicamentOption>>({});
+  const medicaments = Object.values(medicamentsConnus);
 
   function ajouterLigne() {
     setLignes((actuelles) => [...actuelles, ligneVide(prochaineCleRef.current++)]);
@@ -200,6 +235,24 @@ export function FormulairePrescription({
   function modifierLigne(cle: number, champ: ChampLigne, valeur: string) {
     setLignes((actuelles) =>
       actuelles.map((ligne) => (ligne.cle === cle ? { ...ligne, [champ]: valeur } : ligne))
+    );
+  }
+
+  /** Retient le medicament choisi pour la ligne et efface les confirmations donnees pour le precedent. */
+  function choisirMedicament(cle: number, medicament: MedicamentOption) {
+    setMedicamentsConnus((actuels) => ({ ...actuels, [medicament.id]: medicament }));
+    setLignes((actuelles) =>
+      actuelles.map((ligne) =>
+        ligne.cle === cle ? { ...ligneVide(cle), ...champsSansMedicament(ligne), medicamentId: medicament.id } : ligne
+      )
+    );
+  }
+
+  function effacerMedicament(cle: number) {
+    setLignes((actuelles) =>
+      actuelles.map((ligne) =>
+        ligne.cle === cle ? { ...ligneVide(cle), ...champsSansMedicament(ligne), medicamentId: "" } : ligne
+      )
     );
   }
 
@@ -248,6 +301,16 @@ export function FormulairePrescription({
   function basculerForcageGrossesse(cle: number, valeur: boolean) {
     setLignes((actuelles) =>
       actuelles.map((ligne) => (ligne.cle === cle ? { ...ligne, forcerAlerteGrossesse: valeur } : ligne))
+    );
+  }
+
+  function basculerNonSubstituable(cle: number, valeur: boolean) {
+    setLignes((actuelles) =>
+      actuelles.map((ligne) =>
+        ligne.cle === cle
+          ? { ...ligne, nonSubstituable: valeur, motifNonSubstituable: valeur ? ligne.motifNonSubstituable : "" }
+          : ligne
+      )
     );
   }
 
@@ -351,6 +414,11 @@ export function FormulairePrescription({
   // F-PRE-03 : dose renseignee et positive, et precision "autre" fournie
   // quand voie/frequence vaut "autre" (revalide de toute facon cote serveur).
   const blocagePosologieIncomplete = lignes.some((ligne) => apercuPosologie(ligne) === null);
+  const blocageMedicamentNonChoisi = lignes.some((ligne) => ligne.medicamentId === "");
+  // F-PRE-01 : "non substituable" coche sans motif suffisant (revalide cote serveur).
+  const blocageMotifNonSubstituable = lignes.some(
+    (ligne) => !validerNonSubstituable(ligne.nonSubstituable, ligne.motifNonSubstituable).ok
+  );
 
   const lignesJSON = JSON.stringify(
     lignes.map(
@@ -370,6 +438,8 @@ export function FormulairePrescription({
         forcerAlerteAge,
         forcerAlerteGrossesse,
         confirmerAvertissementDuree,
+        nonSubstituable,
+        motifNonSubstituable,
       }) => ({
         medicamentId,
         dose,
@@ -386,6 +456,8 @@ export function FormulairePrescription({
         forcerAlerteAge,
         forcerAlerteGrossesse,
         confirmerAvertissementDuree,
+        nonSubstituable,
+        motifNonSubstituable,
       })
     )
   );
@@ -464,15 +536,10 @@ export function FormulairePrescription({
                 />
               </div>
 
-              <SelectField
-                label="Medicament"
-                required
-                options={optionsMedicaments}
-                placeholder="Choisir un medicament"
-                value={ligne.medicamentId}
-                onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-                  modifierLigne(ligne.cle, "medicamentId", event.target.value)
-                }
+              <SelecteurMedicament
+                medicamentChoisi={medicamentsConnus[ligne.medicamentId] ?? null}
+                onChoisir={(medicament) => choisirMedicament(ligne.cle, medicament)}
+                onEffacer={() => effacerMedicament(ligne.cle)}
               />
 
               {/*
@@ -586,6 +653,30 @@ export function FormulairePrescription({
                     modifierLigne(ligne.cle, "dureeTraitementJours", event.target.value)
                   }
                 />
+              </div>
+
+              <div className="flex flex-col gap-3">
+                <label className="flex items-center gap-2 text-[13px] font-semibold text-encre">
+                  <input
+                    type="checkbox"
+                    checked={ligne.nonSubstituable}
+                    onChange={(event) => basculerNonSubstituable(ligne.cle, event.target.checked)}
+                  />
+                  Non substituable (la pharmacie ne pourra pas délivrer de générique)
+                </label>
+                {ligne.nonSubstituable ? (
+                  <TextField
+                    label="Motif de non substitution"
+                    required
+                    maxLength={MOTIF_NON_SUBSTITUABLE_MAX}
+                    hint={`Au moins ${MOTIF_NON_SUBSTITUABLE_MIN} caractères. Visible par le patient et la pharmacie.`}
+                    placeholder="Ex. index thérapeutique étroit, intolérance à un excipient"
+                    value={ligne.motifNonSubstituable}
+                    onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                      modifierLigne(ligne.cle, "motifNonSubstituable", event.target.value)
+                    }
+                  />
+                ) : null}
               </div>
 
               {(() => {
@@ -775,6 +866,8 @@ export function FormulairePrescription({
             blocageAllergieNonResolu ||
             blocageAvertissementNonResolu ||
             blocagePosologieIncomplete ||
+            blocageMedicamentNonChoisi ||
+            blocageMotifNonSubstituable ||
             blocageAgeNonResolu ||
             blocageGrossesseNonResolu ||
             blocageDureeNonResolu ||

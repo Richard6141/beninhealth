@@ -1,10 +1,7 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { getConsultationsDuProfessionnel } from "@/modules/clinical/actions";
-import {
-  getConsultationPourPrescription,
-  listMedicaments,
-} from "@/modules/prescription/actions";
+import { getConsultationPourPrescription } from "@/modules/prescription/actions";
 import { Alert } from "@/components/ui/Alert";
 import { FormulairePrescription } from "./FormulairePrescription";
 import { RenouvellementPrescription } from "./RenouvellementPrescription";
@@ -74,10 +71,7 @@ export default async function NouvellePrescriptionPage({
     );
   }
 
-  const [consultation, medicaments] = await Promise.all([
-    getConsultationPourPrescription(consultationId),
-    listMedicaments(),
-  ]);
+  const consultation = await getConsultationPourPrescription(consultationId);
 
   if (!consultation) {
     return (
@@ -119,7 +113,6 @@ export default async function NouvellePrescriptionPage({
 
       <FormulairePrescription
         consultationId={consultation.id}
-        medicaments={medicaments}
         patientAllergies={consultation.patientAllergies}
         patientDateNaissanceISO={consultation.patientDateNaissanceISO}
         patientSexe={consultation.patientSexe}

@@ -337,3 +337,114 @@ describe("renouvelerPrescriptionAction", () => {
     expect(verifierIntegriteOrdonnance(data.empreinteContenu, relue)).toBe("conforme");
   });
 });
+
+describe("creerPrescriptionAction, non substituable (F-PRE-01, RG-PHA-12)", () => {
+  const MOTIF = "Index therapeutique etroit, ne pas remplacer";
+
+  type DonneesCreation = {
+    patientId: string;
+    medecinPrescripteurId: string;
+    date: Date;
+    instructions: string;
+    empreinteContenu: string;
+    lignes: {
+      create: {
+        medicamentId: string;
+        posologie: string;
+        quantite: number;
+        dureeTraitementJours: number;
+        nonSubstituable: boolean;
+        motifNonSubstituable: string | null;
+      }[];
+    };
+  };
+
+  function donneesCreees(): DonneesCreation {
+    return (p.prescription.create.mock.calls[0][0] as { data: DonneesCreation }).data;
+  }
+
+  it("enregistre l'indicateur et le motif sur la ligne concernee seulement", async () => {
+    const lignes = lignesSoumises(2) as Record<string, unknown>[];
+    lignes[0].nonSubstituable = true;
+    lignes[0].motifNonSubstituable = `  ${MOTIF}  `;
+
+    const resultat = await creerPrescriptionAction(etatInitial, formulaireCreation(lignes));
+
+    expect(resultat).toEqual({ error: null, success: true });
+    const { lignes: creees } = donneesCreees();
+    expect(creees.create[0]).toMatchObject({ nonSubstituable: true, motifNonSubstituable: MOTIF });
+    expect(creees.create[1]).toMatchObject({ nonSubstituable: false, motifNonSubstituable: null });
+  });
+
+  it("couvre l'indicateur par l'empreinte : la modifier apres coup rend l'ordonnance alteree (CA-2)", async () => {
+    const lignes = lignesSoumises(1) as Record<string, unknown>[];
+    lignes[0].nonSubstituable = true;
+    lignes[0].motifNonSubstituable = MOTIF;
+
+    await creerPrescriptionAction(etatInitial, formulaireCreation(lignes));
+
+    const data = donneesCreees();
+    const contenu = (nonSubstituable: boolean) => ({
+      patientId: data.patientId,
+      prescripteurId: data.medecinPrescripteurId,
+      etablissementId: "etab-1",
+      date: data.date,
+      instructions: data.instructions,
+      lignes: data.lignes.create.map((ligne) => ({ ...ligne, nonSubstituable })),
+    });
+
+    expect(verifierIntegriteOrdonnance(data.empreinteContenu, contenu(true))).toBe("conforme");
+    expect(verifierIntegriteOrdonnance(data.empreinteContenu, contenu(false))).toBe("alteree");
+  });
+
+  it("refuse la case cochee sans motif, avec un motif trop court ou fait d'espaces", async () => {
+    for (const motif of [undefined, "", "court", "          "]) {
+      vi.clearAllMocks();
+      const lignes = lignesSoumises(1) as Record<string, unknown>[];
+      lignes[0].nonSubstituable = true;
+      if (motif !== undefined) lignes[0].motifNonSubstituable = motif;
+
+      const resultat = await creerPrescriptionAction(etatInitial, formulaireCreation(lignes));
+
+      expect(resultat.success, String(motif)).toBe(false);
+      expect(resultat.error, String(motif)).toContain("motif de non substitution");
+      expect(p.prescription.create).not.toHaveBeenCalled();
+    }
+  });
+
+  it("refuse un motif de plus de 200 caracteres", async () => {
+    const lignes = lignesSoumises(1) as Record<string, unknown>[];
+    lignes[0].nonSubstituable = true;
+    lignes[0].motifNonSubstituable = "x".repeat(201);
+
+    const resultat = await creerPrescriptionAction(etatInitial, formulaireCreation(lignes));
+
+    expect(resultat.success).toBe(false);
+    expect(resultat.error).toContain("200");
+    expect(p.prescription.create).not.toHaveBeenCalled();
+  });
+
+  it("n'enregistre jamais un motif saisi puis abandonne (case decochee)", async () => {
+    const lignes = lignesSoumises(1) as Record<string, unknown>[];
+    lignes[0].nonSubstituable = false;
+    lignes[0].motifNonSubstituable = MOTIF;
+
+    await creerPrescriptionAction(etatInitial, formulaireCreation(lignes));
+
+    expect(donneesCreees().lignes.create[0]).toMatchObject({ nonSubstituable: false, motifNonSubstituable: null });
+  });
+
+  it("refuse un medicament retire du referentiel (RG-PRE-20), meme si l'identifiant est connu", async () => {
+    p.medicament.findMany.mockImplementation(async ({ where }: { where: { id: { in: string[] } } }) =>
+      medicaments(12)
+        .filter((medicament) => where.id.in.includes(medicament.id))
+        .map((medicament) => ({ ...medicament, actif: medicament.id !== "med-0" }))
+    );
+
+    const resultat = await creerPrescriptionAction(etatInitial, formulaireCreation(lignesSoumises(2)));
+
+    expect(resultat.success).toBe(false);
+    expect(resultat.error).toContain("retire du referentiel");
+    expect(p.prescription.create).not.toHaveBeenCalled();
+  });
+});

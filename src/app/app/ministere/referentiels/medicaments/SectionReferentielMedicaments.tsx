@@ -69,6 +69,26 @@ function ChampsMedicament({ valeurs }: { valeurs?: MedicamentReferentielResume }
           Contre-indiqué pendant la grossesse
         </label>
       </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <TextField
+          label="Noms commerciaux"
+          name="nomsCommerciaux"
+          hint="Séparés par des virgules. Ils sont cherchés avec la DCI par les médecins."
+          maxLength={600}
+          defaultValue={valeurs?.nomsCommerciaux.join(", ")}
+        />
+        <TextField
+          label="Code ATC"
+          name="codeAtc"
+          hint="Ex. J01CA04 (classification ATC, 1 à 7 caractères)."
+          maxLength={7}
+          defaultValue={valeurs?.codeAtc}
+        />
+      </div>
+      <label className="flex items-center gap-2 text-[13px] font-semibold text-encre">
+        <input type="checkbox" name="essentiel" defaultChecked={valeurs?.essentiel ?? false} />
+        Médicament essentiel (proposé en premier dans la recherche)
+      </label>
       <TextField
         label="Informations complémentaires"
         name="informationsComplementaires"
@@ -193,6 +213,7 @@ function LigneMedicament({ medicament }: { medicament: MedicamentReferentielResu
             {medicament.nom} ({medicament.dosage}, {medicament.forme})
           </p>
           <Badge tone={medicament.actif ? "good" : "neutral"}>{medicament.actif ? "Actif" : "Désactivé"}</Badge>
+          {medicament.essentiel ? <Badge tone="info">Essentiel</Badge> : null}
           {medicament.contreIndiqueGrossesse ? <Badge tone="alert">Grossesse</Badge> : null}
           {medicament.ageMinimumMois !== null ? (
             <Badge tone="alert">Âge min. {medicament.ageMinimumMois} mois</Badge>
@@ -201,6 +222,8 @@ function LigneMedicament({ medicament }: { medicament: MedicamentReferentielResu
         <p className="text-[12px] text-encre-attenuee">
           {medicament.principeActif}
           {medicament.classeTherapeutique ? ` · ${medicament.classeTherapeutique}` : ""}
+          {medicament.codeAtc ? ` · ATC ${medicament.codeAtc}` : ""}
+          {medicament.nomsCommerciaux.length > 0 ? ` · ${medicament.nomsCommerciaux.join(", ")}` : ""}
         </p>
       </div>
 

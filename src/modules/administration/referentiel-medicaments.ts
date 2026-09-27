@@ -40,6 +40,12 @@ import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
+import {
+  LONGUEUR_NOM_COMMERCIAL_MAX,
+  NOMBRE_NOMS_COMMERCIAUX_MAX,
+  analyserNomsCommerciaux,
+  normaliserCodeAtc,
+} from "./referentiel-medicaments-catalogue";
 
 /** Adresse technique d'origine de la requete courante, pour le JournalAudit. */
 async function adresseTechniqueCourante(): Promise<string> {
@@ -61,6 +67,9 @@ export interface MedicamentReferentielResume {
   ageMinimumMois: number | null;
   contreIndiqueGrossesse: boolean;
   informationsComplementaires: string;
+  nomsCommerciaux: string[];
+  codeAtc: string;
+  essentiel: boolean;
   actif: boolean;
 }
 
@@ -74,6 +83,9 @@ function versResume(medicament: {
   ageMinimumMois: number | null;
   contreIndiqueGrossesse: boolean;
   informationsComplementaires: string;
+  nomsCommerciaux: string[];
+  codeAtc: string;
+  essentiel: boolean;
   actif: boolean;
 }): MedicamentReferentielResume {
   return {
@@ -86,6 +98,9 @@ function versResume(medicament: {
     ageMinimumMois: medicament.ageMinimumMois,
     contreIndiqueGrossesse: medicament.contreIndiqueGrossesse,
     informationsComplementaires: medicament.informationsComplementaires,
+    nomsCommerciaux: medicament.nomsCommerciaux,
+    codeAtc: medicament.codeAtc,
+    essentiel: medicament.essentiel,
     actif: medicament.actif,
   };
 }
@@ -124,7 +139,33 @@ const schemaMedicament = z.object({
   ageMinimumMois: z.string().trim().optional().default(""),
   contreIndiqueGrossesse: z.coerce.boolean().optional().default(false),
   informationsComplementaires: z.string().trim().max(500).optional().default(""),
+  // F-PRE-03 : noms commerciaux (texte separe par des virgules), code ATC et
+  // indicateur "liste des medicaments essentiels".
+  nomsCommerciaux: z.string().trim().max(600).optional().default(""),
+  codeAtc: z.string().trim().max(20).optional().default(""),
+  essentiel: z.coerce.boolean().optional().default(false),
 });
+
+/** Noms commerciaux et code ATC valides, ou le message a renvoyer a l'ecran. */
+function analyserChampsRecherche(
+  nomsCommerciaux: string,
+  codeAtc: string
+): { ok: true; nomsCommerciaux: string[]; codeAtc: string } | { ok: false; error: string } {
+  const noms = analyserNomsCommerciaux(nomsCommerciaux);
+  if (noms === null) {
+    return {
+      ok: false,
+      error: `Au plus ${NOMBRE_NOMS_COMMERCIAUX_MAX} noms commerciaux, de ${LONGUEUR_NOM_COMMERCIAL_MAX} caracteres au plus chacun.`,
+    };
+  }
+
+  const code = normaliserCodeAtc(codeAtc);
+  if (code === null) {
+    return { ok: false, error: "Le code ATC n'a pas un format valide (exemples : J01, J01CA, J01CA04)." };
+  }
+
+  return { ok: true, nomsCommerciaux: noms, codeAtc: code };
+}
 
 function parseAgeMinimumMois(valeur: string): { ok: true; valeur: number | null } | { ok: false } {
   if (valeur.length === 0) return { ok: true, valeur: null };
@@ -153,6 +194,9 @@ export async function creerMedicamentAction(
     ageMinimumMois: formData.get("ageMinimumMois"),
     contreIndiqueGrossesse: formData.get("contreIndiqueGrossesse"),
     informationsComplementaires: formData.get("informationsComplementaires"),
+    nomsCommerciaux: formData.get("nomsCommerciaux") ?? "",
+    codeAtc: formData.get("codeAtc") ?? "",
+    essentiel: formData.get("essentiel"),
   });
 
   if (!validation.success) {
@@ -165,6 +209,11 @@ export async function creerMedicamentAction(
   const ageMinimumParse = parseAgeMinimumMois(validation.data.ageMinimumMois);
   if (!ageMinimumParse.ok) {
     return { error: "L'age minimum doit etre un nombre entier de mois positif, ou vide.", success: false };
+  }
+
+  const champsRecherche = analyserChampsRecherche(validation.data.nomsCommerciaux, validation.data.codeAtc);
+  if (!champsRecherche.ok) {
+    return { error: champsRecherche.error, success: false };
   }
 
   const donnees = validation.data;
@@ -183,6 +232,9 @@ export async function creerMedicamentAction(
           ageMinimumMois: ageMinimumParse.valeur,
           contreIndiqueGrossesse: donnees.contreIndiqueGrossesse,
           informationsComplementaires: donnees.informationsComplementaires,
+          nomsCommerciaux: champsRecherche.nomsCommerciaux,
+          codeAtc: champsRecherche.codeAtc,
+          essentiel: donnees.essentiel,
           actif: true,
         },
       });
@@ -234,6 +286,9 @@ export async function modifierMedicamentAction(
     ageMinimumMois: formData.get("ageMinimumMois"),
     contreIndiqueGrossesse: formData.get("contreIndiqueGrossesse"),
     informationsComplementaires: formData.get("informationsComplementaires"),
+    nomsCommerciaux: formData.get("nomsCommerciaux") ?? "",
+    codeAtc: formData.get("codeAtc") ?? "",
+    essentiel: formData.get("essentiel"),
   });
 
   if (!validation.success) {
@@ -246,6 +301,11 @@ export async function modifierMedicamentAction(
   const ageMinimumParse = parseAgeMinimumMois(validation.data.ageMinimumMois);
   if (!ageMinimumParse.ok) {
     return { error: "L'age minimum doit etre un nombre entier de mois positif, ou vide.", success: false };
+  }
+
+  const champsRecherche = analyserChampsRecherche(validation.data.nomsCommerciaux, validation.data.codeAtc);
+  if (!champsRecherche.ok) {
+    return { error: champsRecherche.error, success: false };
   }
 
   const { id, ...donnees } = validation.data;
@@ -271,6 +331,9 @@ export async function modifierMedicamentAction(
           ageMinimumMois: ageMinimumParse.valeur,
           contreIndiqueGrossesse: donnees.contreIndiqueGrossesse,
           informationsComplementaires: donnees.informationsComplementaires,
+          nomsCommerciaux: champsRecherche.nomsCommerciaux,
+          codeAtc: champsRecherche.codeAtc,
+          essentiel: donnees.essentiel,
         },
       });
 

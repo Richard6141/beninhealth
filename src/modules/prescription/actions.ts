@@ -81,6 +81,8 @@ import {
   type PoidsRetenu,
 } from "./regles-ordonnance";
 import { verrouillerOrdonnance } from "./verrou";
+import { rechercherMedicaments as filtrerMedicaments, termeMedicamentSuffisant } from "./recherche-medicaments";
+import { validerNonSubstituable } from "./non-substituable";
 import {
   creerJetonPresentation,
   debutJourBenin,
@@ -110,6 +112,10 @@ export interface MedicamentOption {
   // pour un retour immediat, la verification serveur reste seule autorite.
   ageMinimumMois: number | null;
   contreIndiqueGrossesse: boolean;
+  // F-PRE-03 : affichage dans les resultats de recherche.
+  nomsCommerciaux: string[];
+  codeAtc: string;
+  essentiel: boolean;
 }
 
 /** Detail d'une ligne de prescription, enrichi des informations du medicament. */
@@ -122,6 +128,9 @@ export interface LignePrescriptionDetail {
   posologie: string;
   quantite: number;
   dureeTraitementJours: number;
+  // F-PRE-01 / RG-PHA-12 : ligne que la pharmacie ne peut pas remplacer par un generique.
+  nonSubstituable: boolean;
+  motifNonSubstituable: string | null;
 }
 
 /** Resume d'une prescription, pret a afficher cote ecran patient ou professionnel. */
@@ -188,6 +197,11 @@ const schemaLigneSoumise = z.object({
   // F-PRE-02 : avertissement "duree" (> 30 jours pour un antibiotique), meme
   // niveau Avertissement que ci-dessus.
   confirmerAvertissementDuree: z.coerce.boolean().optional().default(false),
+  // F-PRE-01 / RG-PHA-12 : "non substituable", avec motif obligatoire
+  // (non-substituable.ts). z.coerce.boolean() ne convient pas ici : la chaine
+  // "false" serait lue comme vraie, alors que le formulaire envoie un vrai booleen.
+  nonSubstituable: z.boolean().optional().default(false),
+  motifNonSubstituable: z.string().optional().default(""),
 });
 
 const schemaCreationPrescription = z.object({
@@ -208,6 +222,11 @@ const schemaCreationPrescription = z.object({
     .min(1, "Au moins un medicament est obligatoire dans la prescription.")
     .max(NOMBRE_LIGNES_MAX, MESSAGE_TROP_DE_LIGNES),
 });
+
+/** Motif a enregistrer pour une ligne deja validee par validerNonSubstituable (null si non concerne). */
+function motifNonSubstituableDeLaLigne(resultat: ReturnType<typeof validerNonSubstituable> | undefined): string | null {
+  return resultat && resultat.ok ? resultat.motif : null;
+}
 
 /** Adresse technique d'origine de la requete courante, pour le JournalAudit. */
 async function adresseTechniqueCourante(): Promise<string> {
@@ -305,6 +324,8 @@ function versPrescriptionResume(
       posologie: string;
       quantite: number;
       dureeTraitementJours: number;
+      nonSubstituable: boolean;
+      motifNonSubstituable: string | null;
       medicament: { nom: string; principeActif: string; dosage: string; forme: string };
     }[];
   },
@@ -333,6 +354,8 @@ function versPrescriptionResume(
       posologie: ligne.posologie,
       quantite: ligne.quantite,
       dureeTraitementJours: ligne.dureeTraitementJours,
+      nonSubstituable: ligne.nonSubstituable,
+      motifNonSubstituable: ligne.motifNonSubstituable,
     })),
     medecinNomComplet: options.medecinNomComplet,
     patientNomComplet: options.patientNomComplet,
@@ -342,23 +365,49 @@ function versPrescriptionResume(
   };
 }
 
-/** Liste le catalogue de medicaments actifs, trie par nom (F-ADM-04 : un medicament desactive par le ministere disparait du selecteur de creation). */
-export async function listMedicaments(): Promise<MedicamentOption[]> {
-  const medicaments = await prisma.medicament.findMany({
+/**
+ * Recherche dans le referentiel des medicaments actifs (F-PRE-03 du pack) : a
+ * partir de 3 caracteres, insensible aux accents et a la casse, sur la DCI, le
+ * nom et les noms commerciaux ; essentiels d'abord, puis ordre alphabetique ;
+ * 20 resultats au plus (voir ./recherche-medicaments). Reservee aux roles qui
+ * peuvent creer une ordonnance. Un medicament desactive (RG-PRE-20) n'est
+ * jamais propose, mais reste lisible sur les ordonnances existantes.
+ *
+ * Remplace l'ancien chargement du catalogue entier dans un `select` : rien
+ * n'est renvoye sans terme, et le client ne recoit que les 20 lignes utiles.
+ */
+export async function rechercherMedicamentsAction(terme: string): Promise<MedicamentOption[]> {
+  const session = await getSession();
+
+  if (!session || !session.roles.some((role) => can(role, "create", "prescription"))) {
+    return [];
+  }
+
+  if (typeof terme !== "string" || terme.length > 100 || !termeMedicamentSuffisant(terme)) {
+    return [];
+  }
+
+  // Le filtrage accent-insensible se fait en memoire : le catalogue est de
+  // l'ordre de quelques centaines de presentations, et une recherche SQL
+  // insensible aux accents demanderait l'extension unaccent, non garantie.
+  const catalogue = await prisma.medicament.findMany({
     where: { actif: true },
-    orderBy: { nom: "asc" },
+    select: {
+      id: true,
+      nom: true,
+      principeActif: true,
+      dosage: true,
+      forme: true,
+      classeTherapeutique: true,
+      ageMinimumMois: true,
+      contreIndiqueGrossesse: true,
+      nomsCommerciaux: true,
+      codeAtc: true,
+      essentiel: true,
+    },
   });
 
-  return medicaments.map((medicament) => ({
-    id: medicament.id,
-    nom: medicament.nom,
-    principeActif: medicament.principeActif,
-    dosage: medicament.dosage,
-    forme: medicament.forme,
-    classeTherapeutique: medicament.classeTherapeutique,
-    ageMinimumMois: medicament.ageMinimumMois,
-    contreIndiqueGrossesse: medicament.contreIndiqueGrossesse,
-  }));
+  return filtrerMedicaments(catalogue, terme);
 }
 
 /**
@@ -679,6 +728,14 @@ export async function creerPrescriptionAction(
     };
   }
 
+  // F-PRE-01 : une ligne "non substituable" exige un motif (revalide ici, Zero Trust).
+  const nonSubstituables = lignes.map((ligne) => validerNonSubstituable(ligne.nonSubstituable, ligne.motifNonSubstituable));
+  const nonSubstituableInvalide = nonSubstituables.find((resultat) => !resultat.ok);
+
+  if (nonSubstituableInvalide && !nonSubstituableInvalide.ok) {
+    return { error: nonSubstituableInvalide.error, success: false };
+  }
+
   try {
     const professionnel = await prisma.professionnelSante.findUnique({
       where: { userId: session.userId },
@@ -713,6 +770,15 @@ export async function creerPrescriptionAction(
 
     if (medicamentsTrouves.length !== idsMedicaments.length) {
       return { error: "Un des medicaments selectionnes est introuvable au catalogue.", success: false };
+    }
+
+    // RG-PRE-20 : un medicament retire du referentiel n'est plus prescriptible
+    // (la recherche ne le propose plus ; refus aussi pour une saisie forgee).
+    if (medicamentsTrouves.some((medicament) => medicament.actif === false)) {
+      return {
+        error: "Un des medicaments selectionnes a ete retire du referentiel. Choisissez-en un autre.",
+        success: false,
+      };
     }
 
     const medicamentParId = new Map(medicamentsTrouves.map((medicament) => [medicament.id, medicament]));
@@ -907,7 +973,7 @@ export async function creerPrescriptionAction(
         posologie: composerPosologie(ligne),
         quantite: ligne.quantite,
         dureeTraitementJours: ligne.dureeTraitementJours,
-        nonSubstituable: false,
+        nonSubstituable: ligne.nonSubstituable,
       })),
     });
 
@@ -925,11 +991,13 @@ export async function creerPrescriptionAction(
           empreinteContenu,
           instructions,
           lignes: {
-            create: lignes.map((ligne) => ({
+            create: lignes.map((ligne, index) => ({
               medicamentId: ligne.medicamentId,
               posologie: composerPosologie(ligne),
               quantite: ligne.quantite,
               dureeTraitementJours: ligne.dureeTraitementJours,
+              nonSubstituable: ligne.nonSubstituable,
+              motifNonSubstituable: motifNonSubstituableDeLaLigne(nonSubstituables[index]),
             })),
           },
         },

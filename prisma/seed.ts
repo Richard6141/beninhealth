@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { formaterIdentifiant, CODES_IDENTIFIANT_PAR_ROLE, CODE_IDENTIFIANT_ETABLISSEMENT } from "../src/modules/identity/identifiants";
 import { seedTerritoire, zoneSanitairePlaceholder } from "../src/modules/pilotage/referentiel-territoire";
 import { seedPharmacieDemo } from "./seed-pharmacie";
+import { seedMedicamentsDepart } from "./seed-medicaments";
 
 // Jeu de donnees de demonstration, contexte beninois, pour le scenario du
 // cahier des charges (Partie 9) : citoyen cree son espace, prend rendez-vous,
@@ -411,6 +412,9 @@ async function main() {
 
   // Pharmacie et pharmacien de demonstration (idempotent, voir prisma/seed-pharmacie.ts).
   await seedPharmacieDemo(prisma, motDePasseHash);
+
+  // Catalogue de depart des medicaments essentiels (idempotent, voir prisma/seed-medicaments.ts).
+  await seedMedicamentsDepart(prisma);
 
   console.log("Jeu de donnees de demonstration cree.");
   console.log(`Mot de passe pour tous les comptes de demo : ${MOT_DE_PASSE_DEMO}`);
