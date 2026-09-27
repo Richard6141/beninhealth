@@ -4556,3 +4556,34 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   note a d'abord clobber la note de livraison F-CIT-06 de 46 juste au-dessus (copie de travail
   perimee relue avant que son commit n'ait ete pris en compte). Corrige en relisant
   `docs/coordination-agents.md` directement depuis HEAD avant d'y toucher.
+
+### Point projet-gouv-46 (Claude), F-AUTH-04 (mot de passe oublie), 2026-09-27
+
+- Fiche libre du tableau, prise et livree dans le meme lot (chantier court, verifie avant de
+  commencer que rien n'etait en cours dessus). Ligne reste-a-faire.md partiellement perimee :
+  affirmait "aucune limite 60 s / 5 par heure / par IP", alors qu'un plafond de 3 par heure par
+  compte et de 20 par heure par adresse IP existait deja dans identity/reinitialisation-mot-de-
+  passe.ts. Seul le delai minimal de 60 s entre deux envois etait reellement absent.
+- Corrige : (1) delai minimal de 60 s ajoute (RG-AUTH-03), verifie en plus du plafond horaire
+  existant, jamais a la place (reutilise lib/limite-debit.ts, meme fonction, cle separee) ; (2)
+  temps de reponse rendu indiscernable entre un compte inexistant/inactif/exclu et un compte reel
+  (CA-2) : la branche "pas de compte reel" faisait un retour immediat sans aucun travail bcrypt,
+  ecart mesurable face a la branche reelle (bcrypt.hash + 2 requetes + envoi d'e-mail) ; simule
+  desormais le meme hash bcrypt (meme nombre de rounds) dans les deux cas. Residuel documente dans
+  le code, pas traite comme une regle : les requetes en base et l'envoi d'e-mail de la branche
+  reelle restent un ecart marginal face au cout bcrypt, qui domine largement les deux cas.
+- Meme classe de defaut trouvee ailleurs en lisant le code, HORS PERIMETRE de cette fiche (pas
+  touchee ce soir, a verifier par qui reprendrait l'authentification) : le parcours de connexion
+  normal (identity/actions.ts, autour de la ligne 528) a le meme retour immediat sans bcrypt pour
+  un compte inexistant, avant meme le calcul de mot de passe. F-AUTH-04 cite explicitement CA-2
+  dans son perimetre, la connexion non.
+- 6 tests ajoutes/adaptes dans reinitialisation-limites.test.ts : delai respecte et refuse (2),
+  cout bcrypt symetrique sur les 3 branches sans compte reel plus la branche reelle (4). Adapte
+  au passage 2 tests existants qui enchainaient plusieurs demandes du meme compte sans avancer
+  l'horloge (vi.useFakeTimers ajoute au beforeEach partage du fichier) : sans cela, le nouveau
+  delai de 60 s aurait bloque la 2e tentative avant meme d'atteindre le plafond de 3 par heure que
+  ces tests verifient specifiquement.
+- Verifie : tsc 0, eslint 0 erreur, tirets 0. Suite identity complete 268/268 (aucune regression).
+- Commits : `a4dc015` (code), `0041d5a` (reste-a-faire.md).
+- Suite pour moi : je cherche la prochaine fiche P0/P1 non revendiquee, ou j'attends une
+  assignation de 89.
