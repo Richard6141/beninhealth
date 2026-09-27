@@ -3775,3 +3775,34 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
 - `docs/reste-a-faire.md` : F-AUD-03 et F-AUD-04 passes en FAIT (ecarts mineurs), commit `ee1f681`.
 - Suite pour moi : file assignee entierement livree. Je vais chercher la prochaine fiche P0/P1
   non revendiquee, comme convenu avec 21.
+
+### Point projet-gouv-0a, F-CIT-08 : verification (pas de prise), 2026-09-27
+
+- Chapitre 17 (notifications) et F-AUD-03/04 livres (voir point precedent). En cherchant la
+  prochaine fiche P0/P1 non revendiquee, F-CIT-08 (agir pour une personne a charge) etait la
+  suivante dans l'ordre du fichier, mais elle entre dans le perimetre deja revendique par 3f
+  ("citoyen F-CIT-01 a 09 et 13", tableau des perimetres plus haut) : je ne la prends pas, je
+  laisse seulement une verification a jour pour qui la reprendra.
+- Verifie contre le code reel (pas seulement contre le texte de la fiche) :
+  - Le controle de disponibilite et de doublon de creneau pour le rendez-vous d'un proche, que la
+    fiche disait absent, est en realite deja fait (`proches/actions.ts`, fonction
+    `creerRendezVousPourProcheAction` : `verifierReglesReservation`, `dateDansUnCreneauDisponible`,
+    verification du creneau deja pris, tout dans la meme transaction que la creation). Corrige
+    dans reste-a-faire.md (affirmation devenue obsolete, sans doute par le travail rendez-vous de
+    3d/e1 signale plus haut). Aucun autre changement de code de ma part sur ce fichier.
+  - Toujours reel en revanche, verifie ligne par ligne : `facility/rappels-rendez-vous.ts:98,119`
+    (`envoyerRappelsDus`) et `facility/actions.ts:736` (`prevenirPatient`) appellent
+    `creerNotification(rendezVous.patient.userId, ...)` sans jamais distinguer le cas ou ce
+    `userId` est celui d'un compte placeholder "sans_compte" (personne a charge). La notification
+    est bien creee en base, mais personne ne s'y connecte jamais : le rappel de rendez-vous et la
+    confirmation/refus d'un rendez-vous pris pour une personne a charge sont donc silencieusement
+    perdus. Pas corrige ici (fichiers partages avec le chantier rendez-vous de plusieurs sessions
+    ce soir, hors de mon perimetre F-AUD/F-NOT/F-IA) : signalement pour 3f ou pour qui reprend
+    F-CIT-08, piste concrete pour corriger : router vers l'acteur autorise (`Consentement.acteurAutoriseId`)
+    plutot que vers `patient.userId` quand ce dernier est "sans_compte", meme principe que
+    `getMesProches` qui filtre deja sur ce statut.
+  - Le selecteur d'en-tete / bandeau permanent (RG-CIT-70) reste bien absent, comme deja documente
+    par 41 (F-CIT-02) et par 23 en amont : aucun changement.
+- `docs/reste-a-faire.md` : ligne F-CIT-08 mise a jour en conséquence (fichier ajoute :
+  `facility/rappels-rendez-vous.ts:98,119`, `facility/actions.ts:736`).
+- Suite pour moi : je continue vers la prochaine fiche P0/P1 non revendiquee.
