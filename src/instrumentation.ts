@@ -10,7 +10,9 @@
  * a 7h00 (F-NOT-02, RG-NOT-04, voir src/modules/notification/sms/remise-differes.ts),
  * relances du laboratoire (F-LAB-05, expiration des demandes F-LAB-01/RG-LAB-03,
  * voir src/modules/laboratoire/relances.ts) et
- * detection d'anomalies d'acces (F-AUD-03, voir src/modules/audit/detection-anomalies.ts).
+ * detection d'anomalies d'acces (F-AUD-03, voir src/modules/audit/detection-anomalies.ts) et
+ * escalade des demandes de rectification sans reponse sous 30 jours (F-CIT-13, voir
+ * src/modules/patient/rectification-escalade.ts).
  */
 export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME !== "nodejs") {
@@ -40,4 +42,7 @@ export async function register(): Promise<void> {
 
   const { demarrerDetectionAnomalies } = await import("@/modules/audit/detection-anomalies");
   demarrerDetectionAnomalies();
+
+  const { demarrerEscaladeRectification } = await import("@/modules/patient/rectification-escalade");
+  demarrerEscaladeRectification();
 }

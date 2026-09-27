@@ -4687,3 +4687,42 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   en corrigeant une regression similaire sans verifier qu'il n'y avait pas AUSSI du contenu neuf a
   garder. Lecon : avant de reinitialiser un fichier partage a HEAD, verifier que le diff ne
   contient que des pertes, jamais aussi des ajouts legitimes non commits.
+
+### Livraison projet-gouv-bd, F-CIT-13 : rectification routee vers le professionnel confirmant, 2026-09-28
+
+- Assigne par 89. A jour avec origin/main (34018fe au moment d'ecrire ceci, verifie juste avant ce
+  commit).
+- Verifie avant de coder : "autres sessions non fermees" (fermeture de compte) etait deja corrige,
+  affirmation perimee (`fermerMonCompteAction` fait deja `SessionActive.deleteMany` et le statut
+  `ferme` est de toute facon reverifie a chaque requete par `getSession()`). Corrige uniquement la
+  documentation pour ce point, aucun changement de code necessaire.
+- **Livre** : nouveau modele `DemandeRectification` (migration `20260928010000_demande_rectification`).
+  `demanderRectificationAction` distingue desormais deux cas : demande generale (formulaire
+  `/app/patient/droits`, comportement d'origine inchange, JournalAudit seul) et signalement d'un
+  element CONFIRME (RG-CIT-30, `informationDeclareeId` fourni, verifie appartenir au patient et
+  etre bien confirme) : routee vers le professionnel confirmant (`confirmeParId`), notifie
+  (`N-CIT-RECTIFICATION-RECUE`). Nouvel ecran `/app/medecin/rectifications` (medecin/infirmier,
+  entree de menu ajoutee dans app/layout.tsx) pour repondre (`repondreRectificationAction`, jamais
+  ne modifie l'element conteste lui-meme). Sans reponse sous 30 jours : escalade automatique
+  (`src/modules/patient/rectification-escalade.ts`, tache planifiee horaire comme le reste du
+  depot, cablee dans instrumentation.ts) vers admin_national via JournalAudit (role AUDITOR du pack
+  absent de ce depot, meme routage que le reste de ce fichier avant ce chantier).
+- Bouton "Signaler une erreur" cable dans `SectionInformationsDeclarees.tsx` (F-CIT-04) pour un
+  element confirme (jusqu'ici seulement un tooltip sans action).
+- Limite assumee, deja documentee ailleurs pour RG-CIT-30 : aucun ecran de ce depot n'ecrit encore
+  le statut "confirme" sur une InformationDeclaree, ce mecanisme est donc pret et teste mais jamais
+  declenche en usage reel pour l'instant.
+- 25 tests (`droits-donnees.rectification.test.ts`, `rectification-escalade.test.ts`), tsc 0,
+  eslint 0, tirets 0, suite complete du depot 2267/2267 (aucune regression). Verifie en direct de
+  bout en bout via une fixture de test (element marque confirme temporairement sur patient.demo,
+  nettoyee juste apres verification) : badge Confirmee visible, signalement envoye, demande visible
+  et repondue cote medecin, passage en "Traitees".
+- Fichiers prets pour commit : `prisma/schema.prisma` (modele `DemandeRectification` uniquement,
+  isole du reste du fichier partage), migration `20260928010000_demande_rectification/`,
+  `src/modules/patient/{droits-donnees.ts,droits-donnees.rectification.test.ts,
+  rectification-escalade.ts,rectification-escalade.test.ts}`, `src/security/permissions.ts`,
+  `src/instrumentation.ts`, `src/app/app/layout.tsx`,
+  `src/app/app/patient/dossier/SectionInformationsDeclarees.tsx`,
+  `src/app/app/medecin/rectifications/{page.tsx,FormulaireReponseRectification.tsx}`,
+  `docs/reste-a-faire.md` (F-CIT-13, isole du reste du fichier partage).
+- Je pars chercher la prochaine fiche P0/P1 non revendiquee, ou j'attends une assignation de 89.

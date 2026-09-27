@@ -264,6 +264,9 @@ model ProfessionnelSante {
   suivisCommunautaires SuiviCommunautaire[]
   personnesEnregistrees PersonneCommunautaire[]
   referencesCommunautairesCreees ReferenceCommunautaire[]
+  // F-CIT-13 : demandes de rectification routees vers ce professionnel car
+  // auteur de la confirmation contestee (voir DemandeRectification).
+  demandesRectificationRecues DemandeRectification[]
   vaccinations Vaccination[]
   prisesEnChargeInfirmieres PriseEnChargeInfirmiere[]
   delivrances Delivrance[]
@@ -319,6 +322,7 @@ model Patient {
   jetonsCarteSante JetonCarteSante[]
   // F-CIT-04 : historique versionne des informations declarees, voir le modele ci-dessous.
   informationsDeclarees InformationDeclaree[]
+  demandesRectification DemandeRectification[]
   @@index([dateNaissance])
   @@schema("public")
 }
@@ -351,8 +355,42 @@ model InformationDeclaree {
   dateRetrait      DateTime?
   motifRetrait     String?
   dateCreation     DateTime  @default(now())
+  demandesRectification DemandeRectification[]
 
   @@index([patientId, categorie])
+  @@schema("public")
+}
+
+// F-CIT-13 du pack ("Exercer ses droits sur ses donnees"), type 2
+// ("Rectification"). RG-CIT-30 : une information declaree CONFIRMEE par un
+// professionnel ne peut pas etre retiree par le patient (voir
+// InformationDeclaree ci-dessus, retirerInformationDeclareeAction) ; le
+// patient peut seulement "Signaler une erreur", ce qui cree une ligne ici.
+// Quand informationDeclareeId reference un element confirme
+// (statut="confirme", confirmeParId non nul), la demande est routee vers ce
+// professionnel (professionnelDestinataireId, notifie) ; sinon (demande
+// generale, sans element precis) elle reste visible par admin_national via
+// JournalAudit uniquement, comme avant ce modele (aucun changement pour ce
+// cas). Sans reponse sous 30 jours, escaladee automatiquement (statut
+// "escaladee", voir src/modules/patient/rectification-escalade.ts).
+model DemandeRectification {
+  id                    String    @id @default(cuid())
+  patientId             String
+  patient               Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  description           String
+  informationDeclareeId String?
+  informationDeclaree   InformationDeclaree? @relation(fields: [informationDeclareeId], references: [id], onDelete: SetNull)
+  professionnelDestinataireId String?
+  professionnelDestinataire   ProfessionnelSante? @relation(fields: [professionnelDestinataireId], references: [id])
+  // en_attente | traitee | escaladee
+  statut                String    @default("en_attente")
+  reponseProfessionnel  String?
+  dateTraitement        DateTime?
+  dateEscalade          DateTime?
+  dateCreation          DateTime  @default(now())
+
+  @@index([professionnelDestinataireId, statut])
+  @@index([statut, dateCreation])
   @@schema("public")
 }
 

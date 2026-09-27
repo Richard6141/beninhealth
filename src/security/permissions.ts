@@ -115,6 +115,10 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     // terrain), jamais un dossier Patient complet.
     'read:reference_communautaire',
     'update:reference_communautaire',
+    // F-CIT-13 : demande de rectification routee vers ce professionnel,
+    // car auteur de la confirmation contestee par le patient (RG-CIT-30).
+    'read:demande_rectification',
+    'update:demande_rectification',
   ]),
 
   infirmier: new Set<Permission>([
@@ -137,6 +141,9 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     // F-COM-03 : voir le commentaire equivalent chez medecin ci-dessus.
     'read:reference_communautaire',
     'update:reference_communautaire',
+    // F-CIT-13 : voir le commentaire equivalent chez medecin ci-dessus.
+    'read:demande_rectification',
+    'update:demande_rectification',
   ]),
 
   agent_communautaire: new Set<Permission>([

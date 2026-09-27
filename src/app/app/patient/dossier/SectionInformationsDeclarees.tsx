@@ -9,11 +9,15 @@ import {
   type InformationDeclareeActionState,
   type InformationDeclareeResume,
 } from "@/modules/patient/informations-declarees";
+import { demanderRectificationAction } from "@/modules/patient/droits-donnees";
+import type { PatientActionState } from "@/modules/patient/actions";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { TextField } from "@/components/ui/TextField";
 
 const etatInitial: InformationDeclareeActionState = { error: null, success: false };
+const etatInitialRectification: PatientActionState = { error: null, success: false };
+const LONGUEUR_MIN_DESCRIPTION_RECTIFICATION = 20;
 
 function formaterDate(date: string): string {
   try {
@@ -32,8 +36,13 @@ function formaterDate(date: string): string {
  */
 function LigneInformation({ information }: { information: InformationDeclareeResume }) {
   const [state, formAction, pending] = useActionState(retirerInformationDeclareeAction, etatInitial);
+  const [etatRectification, formActionRectification, pendingRectification] = useActionState(
+    demanderRectificationAction,
+    etatInitialRectification
+  );
   const router = useRouter();
   const [motifOuvert, setMotifOuvert] = useState(false);
+  const [rectificationOuverte, setRectificationOuverte] = useState(false);
 
   useEffect(() => {
     if (state.success) {
@@ -65,10 +74,7 @@ function LigneInformation({ information }: { information: InformationDeclareeRes
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-[14px] text-encre">{information.libelle}</span>
         {information.statut === "confirme" ? (
-          <span
-            className="text-[12px] font-semibold text-encre-attenuee"
-            title="Confirmée par un professionnel de santé : utilisez « Signaler une erreur » ci-dessous pour demander une correction."
-          >
+          <span className="text-[12px] font-semibold text-encre-attenuee">
             Confirmée
             {information.dateConfirmation ? ` le ${formaterDate(information.dateConfirmation)}` : ""}
           </span>
@@ -98,6 +104,53 @@ function LigneInformation({ information }: { information: InformationDeclareeRes
           </Button>
         )}
       </div>
+
+      {information.statut === "confirme" ? (
+        etatRectification.success ? (
+          <Alert level="success" title="Signalement envoyé" className="text-[13px]">
+            Votre demande a été transmise au professionnel qui a confirmé cette information.
+          </Alert>
+        ) : rectificationOuverte ? (
+          <form
+            action={formActionRectification}
+            className="flex flex-col gap-2"
+            onSubmit={() => setRectificationOuverte(false)}
+          >
+            {etatRectification.error ? (
+              <Alert level="critical" title="Envoi impossible" className="text-[13px]">
+                {etatRectification.error}
+              </Alert>
+            ) : null}
+            <input type="hidden" name="informationDeclareeId" value={information.id} />
+            <textarea
+              name="description"
+              rows={3}
+              required
+              minLength={LONGUEUR_MIN_DESCRIPTION_RECTIFICATION}
+              placeholder="Décrivez l'erreur (au moins 20 caractères)..."
+              className="w-full resize-y rounded-champ border border-bordure-forte bg-surface px-3 py-2 text-[13px] text-encre focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+            />
+            <div className="flex gap-2">
+              <Button type="submit" variant="secondary" size="sm" disabled={pendingRectification}>
+                {pendingRectification ? "Envoi..." : "Envoyer le signalement"}
+              </Button>
+              <Button type="button" variant="secondary" size="sm" onClick={() => setRectificationOuverte(false)}>
+                Annuler
+              </Button>
+            </div>
+          </form>
+        ) : (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="w-fit"
+            onClick={() => setRectificationOuverte(true)}
+          >
+            Signaler une erreur
+          </Button>
+        )
+      ) : null}
     </li>
   );
 }

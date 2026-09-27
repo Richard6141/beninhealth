@@ -9,6 +9,7 @@ import {
   ClipboardList,
   CreditCard,
   FileText,
+  FileWarning,
   FlaskConical,
   FolderOpen,
   Gauge,
@@ -164,6 +165,11 @@ const navigationMedecin: ElementNavigation[] = [
     icon: <ArrowRightLeft size={tailleIconeNav} aria-hidden="true" />,
   },
   {
+    label: "Rectifications",
+    href: "/app/medecin/rectifications",
+    icon: <FileWarning size={tailleIconeNav} aria-hidden="true" />,
+  },
+  {
     label: "Accès d'urgence",
     href: "/app/medecin/urgence",
     icon: <ShieldAlert size={tailleIconeNav} aria-hidden="true" />,
@@ -192,6 +198,11 @@ const navigationInfirmier: ElementNavigation[] = [
     label: "Consultations",
     href: "/app/medecin/consultations",
     icon: <ClipboardList size={tailleIconeNav} aria-hidden="true" />,
+  },
+  {
+    label: "Rectifications",
+    href: "/app/medecin/rectifications",
+    icon: <FileWarning size={tailleIconeNav} aria-hidden="true" />,
   },
   {
     label: "Accès d'urgence",

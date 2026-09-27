@@ -12,15 +12,17 @@
  *
  * Adaptations documentees, decidees avec l'utilisateur (voir
  * docs/coordination-agents.md, point F-CIT-13) :
- * - La fiche du pack route une demande de rectification vers le
- *   professionnel auteur puis, sans reponse sous 30 jours, vers un role
- *   "AUDITOR" absent de ce depot. Routee directement vers admin_national ici,
- *   via une entree JournalAudit dediee (meme principe que
- *   signalerAccesSuspectAction : pas de nouveau modele), visible depuis
- *   l'ecran de recherche d'audit existant (/app/ministere/audit), dont le
- *   filtre par action est deja peuple dynamiquement depuis les actions
- *   distinctes en base (voir getActionsDisponibles dans ./actions... en
- *   realite src/modules/audit/actions.ts).
+ * - Corrige le 2026-09-28 : une demande de rectification liee a un element
+ *   CONFIRME (RG-CIT-30, DemandeRectification.informationDeclareeId) est
+ *   desormais routee vers le professionnel confirmant (confirmeParId),
+ *   notifie, avec un ecran dedie pour repondre
+ *   (/app/medecin/rectifications). Sans reponse sous 30 jours, escaladee
+ *   automatiquement (voir ./rectification-escalade.ts) : role "AUDITOR" du
+ *   pack absent de ce depot, escalade vers admin_national via la meme entree
+ *   JournalAudit qu'avant ce correctif. Une demande GENERALE (sans element
+ *   precis, formulaire de /app/patient/droits) garde le comportement
+ *   d'origine, inchange : seule une entree JournalAudit, visible depuis
+ *   l'ecran de recherche d'audit existant (/app/ministere/audit).
  * - La fiche demande un lien de telechargement de la copie de mes donnees
  *   valide 7 jours. Simplification assumee : ce depot regenere le contenu a
  *   la demande a partir des donnees courantes plutot que de figer et stocker
@@ -39,6 +41,8 @@ import { prisma } from "@/lib/prisma";
 import { destroySession, getSession } from "@/lib/session";
 import { enregistrerEvenement, limiteAtteinte } from "@/lib/limite-debit";
 import { journaliser } from "@/modules/audit/journaliser";
+import { creerNotification } from "@/modules/notification/creer";
+import { can } from "@/security/permissions";
 import { getMonProfil } from "@/modules/identity/actions";
 import { getMesConsultations } from "@/modules/clinical/actions";
 import { getMesRendezVous } from "@/modules/facility/actions";
@@ -71,7 +75,26 @@ const schemaRectification = z.object({
       LONGUEUR_MIN_DESCRIPTION_RECTIFICATION,
       `Merci de decrire l'erreur en au moins ${LONGUEUR_MIN_DESCRIPTION_RECTIFICATION} caracteres.`
     ),
+  // Present uniquement depuis le bouton "Signaler une erreur" d'un element
+  // confirme (RG-CIT-30, SectionInformationsDeclarees.tsx) ; absent pour une
+  // demande generale depuis /app/patient/droits.
+  informationDeclareeId: z.string().trim().optional().default(""),
 });
+
+const schemaReponseRectification = z.object({
+  id: z.string().trim().min(1, "La demande est obligatoire."),
+  reponse: z.string().trim().min(1, "La reponse est obligatoire."),
+});
+
+/** Demande de rectification (F-CIT-13) adressee a un professionnel, prete a afficher. */
+export interface DemandeRectificationResume {
+  id: string;
+  description: string;
+  elementConteste: string | null;
+  statut: "en_attente" | "traitee" | "escaladee";
+  reponseProfessionnel: string | null;
+  dateCreation: string; // ISO
+}
 
 const schemaMotDePasse = z.object({
   motDePasse: z.string().min(1, "Votre mot de passe est obligatoire pour confirmer."),
@@ -107,11 +130,17 @@ async function patientDeLaSessionCourante() {
 
 /**
  * Type "rectification" de F-CIT-13 : le patient signale une information
- * qu'il estime incorrecte, en texte libre (aucun champ specifique de ce
- * depot n'a aujourd'hui de distinction declare/confirme par un professionnel
- * a rectifier via un mecanisme dedie, voir docs/audit-cote-patient.md,
- * F-CIT-04). Cree une entree JournalAudit exploitable par admin_national
- * plutot qu'un ecran sans effet.
+ * qu'il estime incorrecte. Deux cas : (1) demande generale depuis
+ * /app/patient/droits (informationDeclareeId absent) : comportement
+ * d'origine inchange, seule une entree JournalAudit, exploitable par
+ * admin_national ; (2) "Signaler une erreur" sur un element CONFIRME
+ * (RG-CIT-30, SectionInformationsDeclarees.tsx, informationDeclareeId
+ * fourni) : cree en plus une ligne DemandeRectification routee vers le
+ * professionnel confirmant (confirmeParId), notifie. Aucun ecran de ce
+ * depot n'ecrit encore le statut "confirme" (voir la limite deja documentee
+ * dans src/modules/patient/informations-declarees.ts) : ce second cas est
+ * donc deja applique et teste, mais jamais declenche en usage reel pour
+ * l'instant.
  */
 export async function demanderRectificationAction(
   prevState: PatientActionState,
@@ -125,6 +154,7 @@ export async function demanderRectificationAction(
 
   const validation = schemaRectification.safeParse({
     description: texte(formData, "description"),
+    informationDeclareeId: texte(formData, "informationDeclareeId"),
   });
 
   if (!validation.success) {
@@ -134,17 +164,172 @@ export async function demanderRectificationAction(
     };
   }
 
+  const { description, informationDeclareeId } = validation.data;
   const adresseTechnique = await adresseTechniqueCourante();
 
-  await journaliser({
-    utilisateurId: patient.userId,
-    action: "demande_rectification",
-    donneeConcernee: `patient:${patient.id}`,
-    adresseTechnique,
-    justification: validation.data.description,
+  let professionnelDestinataireId: string | null = null;
+
+  if (informationDeclareeId) {
+    const element = await prisma.informationDeclaree.findUnique({ where: { id: informationDeclareeId } });
+
+    if (!element || element.patientId !== patient.id) {
+      return { error: "Cet element est introuvable.", success: false };
+    }
+
+    if (element.statut !== "confirme") {
+      return { error: "Cet element n'est pas confirme par un professionnel.", success: false };
+    }
+
+    professionnelDestinataireId = element.confirmeParId;
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.demandeRectification.create({
+      data: {
+        patientId: patient.id,
+        description,
+        informationDeclareeId: informationDeclareeId || null,
+        professionnelDestinataireId,
+      },
+    });
+
+    if (professionnelDestinataireId) {
+      const professionnel = await tx.professionnelSante.findUnique({ where: { id: professionnelDestinataireId } });
+      if (professionnel) {
+        await creerNotification(
+          professionnel.userId,
+          "N-CIT-RECTIFICATION-RECUE",
+          "Un patient signale une erreur sur une information que vous avez confirmee.",
+          "/app/medecin/rectifications"
+        );
+      }
+    }
+
+    await journaliser(
+      {
+        utilisateurId: patient.userId,
+        action: "demande_rectification",
+        donneeConcernee: `patient:${patient.id}`,
+        adresseTechnique,
+        justification: description,
+      },
+      tx
+    );
   });
 
   return { error: null, success: true };
+}
+
+/**
+ * Demandes de rectification (F-CIT-13) adressees au professionnel connecte
+ * (confirmeParId de l'element conteste), les plus recentes d'abord. Jamais
+ * de dossier Patient complet : seuls la description et l'element conteste
+ * (libelle deja compose de InformationDeclaree) sont exposes.
+ */
+export async function getMesDemandesRectificationRecues(): Promise<DemandeRectificationResume[]> {
+  const session = await getSession();
+  if (!session) return [];
+
+  if (!session.roles.some((role) => can(role, "read", "demande_rectification"))) {
+    return [];
+  }
+
+  const professionnel = await prisma.professionnelSante.findUnique({ where: { userId: session.userId } });
+  if (!professionnel) return [];
+
+  const demandes = await prisma.demandeRectification.findMany({
+    where: { professionnelDestinataireId: professionnel.id },
+    include: { informationDeclaree: true },
+    orderBy: [{ statut: "asc" }, { dateCreation: "desc" }],
+  });
+
+  return demandes.map((demande) => ({
+    id: demande.id,
+    description: demande.description,
+    elementConteste: demande.informationDeclaree?.valeur ?? null,
+    statut: demande.statut as "en_attente" | "traitee" | "escaladee",
+    reponseProfessionnel: demande.reponseProfessionnel,
+    dateCreation: demande.dateCreation.toISOString(),
+  }));
+}
+
+/**
+ * Reponse du professionnel a une demande de rectification qui lui est
+ * adressee (F-CIT-13). Reserve au professionnel destinataire (jamais
+ * confiance dans le seul id transmis). Ne modifie jamais l'element conteste
+ * lui-meme : c'est au professionnel de le corriger separement s'il donne
+ * raison au patient (retirerInformationDeclareeAction reste une action
+ * distincte, hors de ce module).
+ */
+export async function repondreRectificationAction(
+  prevState: PatientActionState,
+  formData: FormData
+): Promise<PatientActionState> {
+  const session = await getSession();
+  if (!session) {
+    return { error: "Session expiree. Veuillez vous reconnecter.", success: false };
+  }
+
+  if (!session.roles.some((role) => can(role, "update", "demande_rectification"))) {
+    return { error: "Action reservee au professionnel concerne.", success: false };
+  }
+
+  const validation = schemaReponseRectification.safeParse({
+    id: texte(formData, "id"),
+    reponse: texte(formData, "reponse"),
+  });
+
+  if (!validation.success) {
+    return {
+      error: validation.error.issues[0]?.message ?? "Reponse invalide.",
+      success: false,
+    };
+  }
+
+  try {
+    const professionnel = await prisma.professionnelSante.findUnique({ where: { userId: session.userId } });
+    if (!professionnel) {
+      return { error: "Aucun profil professionnel associe a ce compte.", success: false };
+    }
+
+    const demande = await prisma.demandeRectification.findUnique({ where: { id: validation.data.id } });
+    if (!demande || demande.professionnelDestinataireId !== professionnel.id) {
+      return { error: "Demande introuvable.", success: false };
+    }
+
+    if (demande.statut !== "en_attente") {
+      return { error: "Cette demande a deja ete traitee.", success: false };
+    }
+
+    const adresseTechnique = await adresseTechniqueCourante();
+
+    await prisma.$transaction(async (tx) => {
+      await tx.demandeRectification.update({
+        where: { id: demande.id },
+        data: {
+          statut: "traitee",
+          reponseProfessionnel: validation.data.reponse,
+          dateTraitement: new Date(),
+        },
+      });
+
+      await journaliser(
+        {
+          utilisateurId: session.userId,
+          action: "reponse_demande_rectification",
+          donneeConcernee: `demande_rectification:${demande.id}`,
+          adresseTechnique,
+          justification: validation.data.reponse,
+        },
+        tx
+      );
+    });
+
+    return { error: null, success: true };
+  } catch (erreur) {
+    console.error("Erreur lors de la reponse a une demande de rectification :", erreur);
+    return { error: "Une erreur est survenue. Veuillez reessayer.", success: false };
+  }
 }
 
 /**
