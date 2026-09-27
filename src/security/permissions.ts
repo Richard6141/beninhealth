@@ -282,6 +282,14 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     // patient : seuls des compteurs et des taux sont lus.
     'read:gouvernance_ia',
     'update:gouvernance_ia',
+    // F-ADM-02 : referentiel national des etablissements (modifier n'importe
+    // quel etablissement, le suspendre ou le fermer), voir
+    // src/modules/administration/etablissements.ts. Ressource dediee : la
+    // permission etablissement_sanitaire est aussi detenue par admin_etablissement
+    // pour SA propre fiche (facility/gestion-fiche.ts), elle ne suffit donc pas
+    // ici (un administrateur d'etablissement ne doit jamais fermer un autre etablissement).
+    'read:referentiel_etablissement',
+    'update:referentiel_etablissement',
     // F-IA-04 : analyse assistee des agregats de pilotage (tendances, valeurs
     // atypiques), voir src/modules/ai/analyse-lecture.ts. Agregats seulement.
     'read:analyse_agregats',

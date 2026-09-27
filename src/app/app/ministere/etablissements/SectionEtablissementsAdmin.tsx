@@ -17,6 +17,8 @@ import { Card } from "@/components/ui/Card";
 import { Modal, type ModalHandle } from "@/components/ui/Modal";
 import { SelectField } from "@/components/ui/SelectField";
 import { TextField } from "@/components/ui/TextField";
+import { ChampTextarea } from "../ChampTextarea";
+import { OPTIONS_TYPE_ETABLISSEMENT } from "../lib";
 
 const TONE_STATUT: Record<string, "neutral" | "good" | "warning" | "critical"> = {
   brouillon: "neutral",
@@ -134,6 +136,52 @@ function ModaleReferentiel({
         ) : null}
 
         <div className="grid gap-4 sm:grid-cols-2">
+          <TextField label="Nom officiel" name="nom" required defaultValue={etablissement.nom} maxLength={150} />
+          <SelectField
+            label="Type"
+            name="type"
+            required
+            options={OPTIONS_TYPE_ETABLISSEMENT}
+            defaultValue={etablissement.type}
+            hint="Ne peut plus changer pour un laboratoire qui a reçu des examens ou une pharmacie qui a délivré des ordonnances."
+          />
+          <TextField
+            label="Capacité (lits ou places)"
+            name="capacite"
+            type="number"
+            inputMode="numeric"
+            min={0}
+            max={100000}
+            required
+            defaultValue={String(etablissement.capacite)}
+          />
+          <TextField
+            label="Latitude"
+            name="latitude"
+            type="number"
+            step="any"
+            required
+            defaultValue={String(etablissement.latitude)}
+            hint="Entre 6,1 et 12,5 (Bénin). Point décimal."
+          />
+          <TextField
+            label="Longitude"
+            name="longitude"
+            type="number"
+            step="any"
+            required
+            defaultValue={String(etablissement.longitude)}
+            hint="Entre 0,7 et 3,95 (Bénin)."
+          />
+          <div className="sm:col-span-2">
+            <ChampTextarea
+              label="Services disponibles"
+              name="services"
+              rows={4}
+              defaultValue={etablissement.services.join("\n")}
+              hint="Un service par ligne."
+            />
+          </div>
           <TextField label="Sigle" name="sigle" defaultValue={etablissement.sigle ?? ""} />
           <SelectField
             label="Niveau de pyramide"
