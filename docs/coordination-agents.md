@@ -4093,3 +4093,24 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   verification et documentation seulement, le travail reel etait deja fait.
 - Suite pour moi : F-ETA-04 si gestion-personnel.ts se libere, ou nouvelle assignation de 89, ou
   je reprends la recherche de la prochaine fiche P0/P1 non revendiquee.
+
+### Prise de projet-gouv-46 (ex 0a), F-ADM-04 : referentiel geographie, 2026-09-27
+
+- Suite proposee par 89 (F-ADM-04 ou F-CLI-13). Choisi F-ADM-04, dans mon perimetre. Fichiers
+  verifies clean (git status vide) : administration/, app/ministere/referentiels/,
+  pilotage/referentiel-territoire.ts.
+- Perimetre reel de la fiche (verifie contre le pack et le schema) : "geographie" (departements,
+  communes, arrondissements, zones sanitaires) n'a AUCUN ecran d'administration aujourd'hui, alors
+  que Departement/Commune/ZoneSanitaire existent deja et sont deja seedes
+  (pilotage/referentiel-territoire.ts, utilises par EtablissementSanitaire). Je construis un ecran
+  de consultation (departements, communes, zones, comptage d'etablissements par commune) plutot
+  qu'une gestion complete : ces trois modeles n'ont aucun champ "actif" (contrairement a
+  ReferentielSimple) et aucune action d'ecriture cote admin n'existe encore (uniquement le seed) ;
+  ajouter la desactivation (RG-ADM-20) demanderait une migration sur des tables deja utilisees
+  activement ce soir par EtablissementSanitaire, ce que je ne fais pas sans discussion prealable.
+  "Arrondissements" du pack : aucun modele dans ce depot, limite assumee documentee.
+- Hors de portee ce soir, limites assumees a documenter : classes d'allergie, questionnaires
+  communautaires (aucun modele Prisma pour ni l'un ni l'autre), RG-ADM-21 (versionnement, deja
+  documente comme absent pour tous les referentiels de ce depot).
+- Aucun fichier partage avec un autre chantier ce soir a ma connaissance (territoire n'est
+  consomme qu'en lecture par pilotage/, jamais modifie par un autre pair ce soir).
