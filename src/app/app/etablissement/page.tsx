@@ -163,6 +163,11 @@ function SectionIndicateurs({
   );
 }
 
+/** F-ETA-04 du pack ("date de début", "dernière connexion") : null seulement pour "dernière connexion" (jamais connecté). */
+function formaterDateCourte(iso: string | null): string {
+  return iso ? new Date(iso).toLocaleDateString("fr-FR") : "Jamais connecté";
+}
+
 function SectionPersonnel({ personnel }: { personnel: MembrePersonnel[] }) {
   return (
     <div className="flex flex-col gap-4">
@@ -236,6 +241,18 @@ function SectionPersonnel({ personnel }: { personnel: MembrePersonnel[] }) {
                     scope="col"
                     className="border-b border-bordure px-3 py-2 text-left font-semibold text-encre-secondaire"
                   >
+                    Depuis le
+                  </th>
+                  <th
+                    scope="col"
+                    className="border-b border-bordure px-3 py-2 text-left font-semibold text-encre-secondaire"
+                  >
+                    Dernière connexion
+                  </th>
+                  <th
+                    scope="col"
+                    className="border-b border-bordure px-3 py-2 text-left font-semibold text-encre-secondaire"
+                  >
                     Agenda
                   </th>
                   <th
@@ -288,6 +305,12 @@ function SectionPersonnel({ personnel }: { personnel: MembrePersonnel[] }) {
                       </td>
                       <td className="border-b border-bordure px-3 py-2 text-encre-secondaire">
                         {membre.email}
+                      </td>
+                      <td className="chiffres border-b border-bordure px-3 py-2 text-encre-secondaire">
+                        {formaterDateCourte(membre.dateDebut)}
+                      </td>
+                      <td className="chiffres border-b border-bordure px-3 py-2 text-encre-secondaire">
+                        {formaterDateCourte(membre.derniereConnexion)}
                       </td>
                       <td className="border-b border-bordure px-3 py-2">
                         <Link

@@ -91,6 +91,12 @@ export interface MembrePersonnel {
   ordreVerifieLe: string | null;
   validationDecision: string | null;
   validationMessage: string | null;
+  // F-ETA-04 du pack ("Colonnes : ... services, date de début, dernière
+  // connexion") : deja en base (AffiliationProfessionnelle, User.derniereConnexion),
+  // simplement pas encore lus ici avant ce jour.
+  service: string | null;
+  dateDebut: string;
+  derniereConnexion: string | null;
 }
 
 const ROUNDS_BCRYPT = 12;
@@ -493,24 +499,33 @@ export async function listPersonnelEtablissement(): Promise<MembrePersonnel[]> {
       etablissementId: adminProfil.etablissementId,
       specialite: { not: SPECIALITE_ADMINISTRATION },
     },
-    include: { user: { include: { roles: true } } },
+    include: {
+      user: { include: { roles: true } },
+      affiliations: { where: { etablissementId: adminProfil.etablissementId }, orderBy: { dateDebut: "desc" }, take: 1 },
+    },
     orderBy: { user: { nom: "asc" } },
   });
 
-  return personnel.map((professionnel) => ({
-    userId: professionnel.userId,
-    nomComplet: `${professionnel.user.prenom} ${professionnel.user.nom}`,
-    role: professionnel.user.roles.map((role) => role.nom).join(", "),
-    specialite: professionnel.specialite,
-    numeroProfessionnel: professionnel.numeroProfessionnel,
-    statutValidation: professionnel.statutValidation,
-    email: professionnel.user.email,
-    statutCompte: professionnel.user.statut,
-    numeroOrdre: professionnel.numeroOrdre,
-    ordreVerifieLe: professionnel.ordreVerifieLe?.toISOString() ?? null,
-    validationDecision: professionnel.validationDecision,
-    validationMessage: professionnel.validationMessage,
-  }));
+  return personnel.map((professionnel) => {
+    const affiliation = professionnel.affiliations[0];
+    return {
+      userId: professionnel.userId,
+      nomComplet: `${professionnel.user.prenom} ${professionnel.user.nom}`,
+      role: professionnel.user.roles.map((role) => role.nom).join(", "),
+      specialite: professionnel.specialite,
+      numeroProfessionnel: professionnel.numeroProfessionnel,
+      statutValidation: professionnel.statutValidation,
+      email: professionnel.user.email,
+      statutCompte: professionnel.user.statut,
+      numeroOrdre: professionnel.numeroOrdre,
+      ordreVerifieLe: professionnel.ordreVerifieLe?.toISOString() ?? null,
+      validationDecision: professionnel.validationDecision,
+      validationMessage: professionnel.validationMessage,
+      service: affiliation?.service ?? null,
+      dateDebut: (affiliation?.dateDebut ?? professionnel.user.dateCreation).toISOString(),
+      derniereConnexion: professionnel.user.derniereConnexion?.toISOString() ?? null,
+    };
+  });
 }
 
 /**

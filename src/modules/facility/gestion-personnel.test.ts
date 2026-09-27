@@ -19,6 +19,7 @@ vi.mock("@/lib/prisma", () => {
     rendezVous: { count: vi.fn() },
     user: { updateMany: vi.fn(), update: vi.fn(), findUnique: vi.fn(), findMany: vi.fn() },
     sessionActive: { deleteMany: vi.fn() },
+    affiliationProfessionnelle: { updateMany: vi.fn() },
     $transaction: vi.fn(),
   };
   prisma.$transaction.mockImplementation(async (rappel: (tx: unknown) => unknown) => rappel(prisma));
@@ -29,12 +30,14 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { journaliser } from "@/modules/audit/journaliser";
 import { creerNotification } from "@/modules/notification/creer";
-import { reactiverPersonnelAction, renseignerNumeroOrdreAction, suspendrePersonnelAction } from "./gestion-personnel";
+import { reactiverPersonnelAction, renseignerNumeroOrdreAction, suspendrePersonnelAction, terminerAffiliationAction } from "./gestion-personnel";
 
 const prismaMock = prisma as unknown as {
   professionnelSante: { findUnique: Mock; findFirst: Mock; updateMany: Mock };
-  user: { updateMany: Mock; findUnique: Mock; findMany: Mock };
+  rendezVous: { count: Mock };
+  user: { updateMany: Mock; update: Mock; findUnique: Mock; findMany: Mock };
   sessionActive: { deleteMany: Mock };
+  affiliationProfessionnelle: { updateMany: Mock };
 };
 const creerNotificationMock = creerNotification as unknown as Mock;
 const getSessionMock = getSession as unknown as Mock;
@@ -67,6 +70,10 @@ describe("suspendrePersonnelAction", () => {
     expect(resultat).toEqual({ error: null, success: true });
     expect(prismaMock.user.updateMany).toHaveBeenCalledWith({ where: { id: "user-cible", statut: "actif" }, data: { statut: "suspendu" } });
     expect(prismaMock.sessionActive.deleteMany).toHaveBeenCalledWith({ where: { userId: "user-cible" } });
+    expect(prismaMock.affiliationProfessionnelle.updateMany).toHaveBeenCalledWith({
+      where: { professionnelId: "pro-cible", etablissementId: "etab-1", statut: "active" },
+      data: { statut: "suspendue" },
+    });
     expect(journaliserMock).toHaveBeenCalledTimes(1);
   });
 
@@ -88,6 +95,10 @@ describe("reactiverPersonnelAction", () => {
 
     expect(resultat).toEqual({ error: null, success: true });
     expect(prismaMock.user.updateMany).toHaveBeenCalledWith({ where: { id: "user-cible", statut: "suspendu" }, data: { statut: "actif" } });
+    expect(prismaMock.affiliationProfessionnelle.updateMany).toHaveBeenCalledWith({
+      where: { professionnelId: "pro-cible", etablissementId: "etab-1", statut: "suspendue" },
+      data: { statut: "active" },
+    });
     expect(journaliserMock).toHaveBeenCalledTimes(1);
   });
 
@@ -135,6 +146,73 @@ describe("reactiverPersonnelAction", () => {
 
     expect(resultat.success).toBe(false);
     expect(prismaMock.user.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("terminerAffiliationAction (depart, RG-ETA-31)", () => {
+  beforeEach(() => {
+    prismaMock.rendezVous.count.mockResolvedValue(0);
+    prismaMock.user.update.mockResolvedValue({});
+  });
+
+  it("termine l'affiliation d'un professionnel sans rendez-vous futur, ferme ses sessions et journalise", async () => {
+    const resultat = await terminerAffiliationAction(ETAT, formulaire({ userId: "user-cible", motif: MOTIF }));
+
+    expect(resultat).toEqual({ error: null, success: true });
+    expect(prismaMock.rendezVous.count).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ professionnelId: "pro-cible" }) })
+    );
+    expect(prismaMock.user.update).toHaveBeenCalledWith({ where: { id: "user-cible" }, data: { statut: "termine" } });
+    expect(prismaMock.sessionActive.deleteMany).toHaveBeenCalledWith({ where: { userId: "user-cible" } });
+    expect(prismaMock.affiliationProfessionnelle.updateMany).toHaveBeenCalledWith({
+      where: { professionnelId: "pro-cible", etablissementId: "etab-1", statut: { not: "terminee" } },
+      data: { statut: "terminee", dateFin: expect.any(Date) },
+    });
+    expect(journaliserMock).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "fin_affiliation_personnel" }),
+      expect.anything()
+    );
+  });
+
+  it("RG-ETA-31 : refuse et donne le nombre de rendez-vous futurs encore affectes, sans rien modifier", async () => {
+    prismaMock.rendezVous.count.mockResolvedValue(3);
+
+    const resultat = await terminerAffiliationAction(ETAT, formulaire({ userId: "user-cible", motif: MOTIF }));
+
+    expect(resultat.success).toBe(false);
+    expect(resultat.error).toContain("3 rendez-vous");
+    expect(prismaMock.user.update).not.toHaveBeenCalled();
+    expect(prismaMock.sessionActive.deleteMany).not.toHaveBeenCalled();
+    expect(journaliserMock).not.toHaveBeenCalled();
+  });
+
+  it("refuse un appelant qui n'est pas administrateur d'etablissement", async () => {
+    getSessionMock.mockResolvedValue({ userId: "user-x", roles: ["medecin"] });
+
+    const resultat = await terminerAffiliationAction(ETAT, formulaire({ userId: "user-cible", motif: MOTIF }));
+
+    expect(resultat.success).toBe(false);
+    expect(prismaMock.user.update).not.toHaveBeenCalled();
+  });
+
+  it("refuse un membre d'un autre etablissement", async () => {
+    prismaMock.professionnelSante.findUnique.mockImplementation(async ({ where }: { where: { userId: string } }) =>
+      where.userId === "admin-1"
+        ? { id: "pro-admin", userId: "admin-1", etablissementId: "etab-1", specialite: "Administration", statutValidation: "valide" }
+        : { id: "pro-cible", userId: "user-cible", etablissementId: "etab-2", specialite: "Médecine générale", statutValidation: "valide" }
+    );
+
+    const resultat = await terminerAffiliationAction(ETAT, formulaire({ userId: "user-cible", motif: MOTIF }));
+
+    expect(resultat.success).toBe(false);
+    expect(prismaMock.user.update).not.toHaveBeenCalled();
+  });
+
+  it("un motif de moins de 10 caracteres est refuse avant toute lecture", async () => {
+    const resultat = await terminerAffiliationAction(ETAT, formulaire({ userId: "user-cible", motif: "court" }));
+
+    expect(resultat.success).toBe(false);
+    expect(prismaMock.rendezVous.count).not.toHaveBeenCalled();
   });
 });
 

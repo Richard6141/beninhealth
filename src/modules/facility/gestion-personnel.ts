@@ -114,6 +114,11 @@ export async function suspendrePersonnelAction(
       const modifies = await tx.user.updateMany({ where: { id: validation.data.userId, statut: "actif" }, data: { statut: "suspendu" } });
       if (modifies.count !== 1) return false;
       await tx.sessionActive.deleteMany({ where: { userId: validation.data.userId } });
+      // Best-effort : un compte cree avant F-AUTH-05 (donnees de demonstration) n'a pas toujours de ligne d'affiliation.
+      await tx.affiliationProfessionnelle.updateMany({
+        where: { professionnelId: cible.id, etablissementId: cible.etablissementId, statut: "active" },
+        data: { statut: "suspendue" },
+      });
 
       await journaliser(
         {
@@ -181,6 +186,10 @@ export async function reactiverPersonnelAction(
     const reactive = await prisma.$transaction(async (tx) => {
       const modifies = await tx.user.updateMany({ where: { id: validation.data.userId, statut: "suspendu" }, data: { statut: "actif" } });
       if (modifies.count !== 1) return false;
+      await tx.affiliationProfessionnelle.updateMany({
+        where: { professionnelId: cible.id, etablissementId: cible.etablissementId, statut: "suspendue" },
+        data: { statut: "active" },
+      });
 
       await journaliser(
         {
@@ -261,6 +270,10 @@ export async function terminerAffiliationAction(
     await prisma.$transaction(async (tx) => {
       await tx.user.update({ where: { id: validation.data.userId }, data: { statut: "termine" } });
       await tx.sessionActive.deleteMany({ where: { userId: validation.data.userId } });
+      await tx.affiliationProfessionnelle.updateMany({
+        where: { professionnelId: cible.id, etablissementId: cible.etablissementId, statut: { not: "terminee" } },
+        data: { statut: "terminee", dateFin: new Date() },
+      });
 
       await journaliser(
         {
