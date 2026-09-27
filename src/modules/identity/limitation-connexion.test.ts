@@ -163,3 +163,49 @@ describe("limitation-connexion : second facteur", () => {
     expect(mfaBloquee("u-1")).toBe(false);
   });
 });
+
+describe("10 echecs en 24 heures (F-AUTH-02)", () => {
+  beforeEach(() => {
+    viderCompteursDebit();
+    vi.useFakeTimers();
+  });
+
+  it("verrouille le compte meme si les echecs sont etales sur plusieurs fenetres de 15 minutes", () => {
+    const debut = Date.now();
+
+    for (const decalageMinutes of [0, 16, 32]) {
+      vi.setSystemTime(debut + decalageMinutes * 60 * 1000);
+      const nombre = decalageMinutes === 32 ? 2 : 4;
+      for (let i = 0; i < nombre; i++) {
+        expect(connexionBloquee("a@exemple.bj", null)).toBe(false);
+        enregistrerEchecConnexion("a@exemple.bj", null);
+      }
+    }
+
+    // 10 echecs en 32 minutes : chaque fenetre de 15 minutes est sous son plafond de 5, mais le plafond de 24 h est atteint.
+    expect(connexionBloquee("a@exemple.bj", null)).toBe(true);
+
+    vi.setSystemTime(debut + 23 * 60 * 60 * 1000);
+    expect(connexionBloquee("a@exemple.bj", null)).toBe(true);
+
+    vi.setSystemTime(debut + 25 * 60 * 60 * 1000);
+    expect(connexionBloquee("a@exemple.bj", null)).toBe(false);
+    vi.useRealTimers();
+  });
+
+  it("9 echecs en 24 heures ne verrouillent pas", () => {
+    const debut = Date.now();
+
+    for (const decalageMinutes of [0, 16, 32]) {
+      vi.setSystemTime(debut + decalageMinutes * 60 * 1000);
+      for (let i = 0; i < 3; i++) enregistrerEchecConnexion("b@exemple.bj", null);
+    }
+
+    expect(connexionBloquee("b@exemple.bj", null)).toBe(false);
+    vi.useRealTimers();
+  });
+
+  it("le message de verrouillage propose la reinitialisation du mot de passe", () => {
+    expect(MESSAGE_TROP_DE_TENTATIVES).toBe("Trop de tentatives. Réessayez dans 15 minutes ou réinitialisez votre mot de passe.");
+  });
+});

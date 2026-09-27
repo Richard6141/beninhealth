@@ -30,6 +30,8 @@ import { SignJWT, jwtVerify } from "jose";
 import { cookies, headers } from "next/headers";
 import { getEnv } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
+import { nomCookieSession } from "@/lib/nom-cookie-session";
+import { reglesDeSession, sessionExpiree } from "@/lib/regles-session";
 import { rolesEffectifs } from "@/modules/identity/espaces-regles";
 import type { NomRole } from "@/types";
 
@@ -54,11 +56,8 @@ export interface SessionActivationMfa extends SessionPayload {
 /** Cle du drapeau qui rend le second facteur obligatoire pour tous les roles sauf patient (F-AUTH-06). */
 const CLE_DRAPEAU_MFA_OBLIGATOIRE = "securite.mfa_obligatoire";
 
-const NOM_COOKIE_SESSION = "session";
-const DUREE_SESSION = "7d";
-const DUREE_SESSION_EN_SECONDES = 60 * 60 * 24 * 7;
-/** Throttle de la mise a jour de "derniere activite" : evite une ecriture en base a chaque navigation. */
-const INTERVALLE_MISE_A_JOUR_ACTIVITE_MS = 5 * 60 * 1000;
+/** Throttle de la mise a jour de "derniere activite" : evite une ecriture en base a chaque navigation (precision de la limite d'inactivite : 1 minute). */
+const INTERVALLE_MISE_A_JOUR_ACTIVITE_MS = 60 * 1000;
 
 function cleSecrete(): Uint8Array {
   return new TextEncoder().encode(getEnv().NEXTAUTH_SECRET);
@@ -115,32 +114,46 @@ async function contexteRequeteCourante(): Promise<{ userAgent: string; adresseIp
   }
 }
 
+/** Appareil et navigateur de la requete courante (User-Agent), pour l'affichage et la detection d'un nouvel appareil. */
+export async function appareilCourant(): Promise<{ appareil: string; navigateur: string }> {
+  const { userAgent } = await contexteRequeteCourante();
+  return analyserAppareil(userAgent);
+}
+
 /**
- * Signe un JWT de session et le pose dans un cookie httpOnly ("session").
- * Cree aussi la ligne SessionActive correspondante (F-AUTH-09), a partir du
- * User-Agent et de l'adresse IP de la requete courante.
+ * Signe un JWT de session et le pose dans un cookie httpOnly. Cree aussi la
+ * ligne SessionActive correspondante (F-AUTH-09), a partir du User-Agent et de
+ * l'adresse IP de la requete courante. La duree maximale du JWT et la nature
+ * du cookie suivent les regles du profil (regles-session.ts, F-AUTH-02) : sur
+ * un appareil partage, le cookie disparait a la fermeture du navigateur.
  */
-export async function createSession(payload: { userId: string; roles: NomRole[] }): Promise<void> {
+export async function createSession(payload: {
+  userId: string;
+  roles: NomRole[];
+  appareilPartage?: boolean;
+}): Promise<void> {
   const { userAgent, adresseIp } = await contexteRequeteCourante();
   const { appareil, navigateur } = analyserAppareil(userAgent);
+  const appareilPartage = payload.appareilPartage === true;
+  const regles = reglesDeSession(payload.roles, appareilPartage);
 
   const sessionActive = await prisma.sessionActive.create({
-    data: { userId: payload.userId, appareil, navigateur, adresseIp },
+    data: { userId: payload.userId, appareil, navigateur, adresseIp, appareilPartage },
   });
 
   const jeton = await new SignJWT({ userId: payload.userId, roles: payload.roles, sessionId: sessionActive.id })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setExpirationTime(DUREE_SESSION)
+    .setExpirationTime(Math.floor(Date.now() / 1000) + regles.dureeMaxSecondes)
     .sign(cleSecrete());
 
   const magasinCookies = await cookies();
-  magasinCookies.set(NOM_COOKIE_SESSION, jeton, {
+  magasinCookies.set(nomCookieSession(), jeton, {
     httpOnly: true,
     secure: getEnv().NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
-    maxAge: DUREE_SESSION_EN_SECONDES,
+    ...(regles.cookiePersistant ? { maxAge: regles.dureeMaxSecondes } : {}),
   });
 }
 
@@ -154,7 +167,7 @@ export async function createSession(payload: { userId: string; roles: NomRole[] 
  */
 const lireSessionComplete = cache(async (): Promise<SessionActivationMfa | null> => {
   const magasinCookies = await cookies();
-  const jeton = magasinCookies.get(NOM_COOKIE_SESSION)?.value;
+  const jeton = magasinCookies.get(nomCookieSession())?.value;
 
   if (!jeton) {
     return null;
@@ -183,6 +196,18 @@ const lireSessionComplete = cache(async (): Promise<SessionActivationMfa | null>
         include: { user: { select: { statut: true, mfaActif: true } } },
       });
       if (!sessionActive || sessionActive.userId !== payload.userId) {
+        return null;
+      }
+      // F-AUTH-02 : duree maximale et inactivite selon le profil (regles-session.ts).
+      if (
+        sessionExpiree({
+          creeeLe: sessionActive.dateCreation,
+          derniereActivite: sessionActive.derniereActivite,
+          roles,
+          appareilPartage: sessionActive.appareilPartage,
+        })
+      ) {
+        await prisma.sessionActive.delete({ where: { id: sessionId } }).catch(() => {});
         return null;
       }
       statutCompte = sessionActive.user.statut;
@@ -248,8 +273,8 @@ export const getSessionPourActivationMfa = lireSessionComplete;
 /** Supprime le cookie "session" (deconnexion) et la SessionActive correspondante. */
 export async function destroySession(): Promise<void> {
   const magasinCookies = await cookies();
-  const jeton = magasinCookies.get(NOM_COOKIE_SESSION)?.value;
-  magasinCookies.delete(NOM_COOKIE_SESSION);
+  const jeton = magasinCookies.get(nomCookieSession())?.value;
+  magasinCookies.delete(nomCookieSession());
 
   if (!jeton) return;
 

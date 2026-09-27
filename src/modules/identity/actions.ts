@@ -21,11 +21,13 @@ import { SignJWT, jwtVerify } from "jose";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/modules/audit/journaliser";
-import { createSession, getSession, destroySession } from "@/lib/session";
+import { appareilCourant, createSession, getSession, destroySession } from "@/lib/session";
 import { codeAfficheALEcran } from "@/lib/demo";
 import { getEnv } from "@/lib/env";
 import { televerserImageCloudinary } from "@/lib/cloudinary";
 import { verifierSecondFacteur } from "@/modules/identity/mfa-totp";
+import { enregistrerAppareilEtAlerter } from "@/modules/identity/appareils";
+import { alerterSecurite } from "@/modules/identity/alertes-securite";
 import {
   MESSAGE_TROP_DE_TENTATIVES,
   adresseDeLaRequete,
@@ -107,7 +109,8 @@ function redirigerSelonRoles(roles: NomRole[]): never {
 async function finaliserConnexion(
   userId: string,
   roles: NomRole[],
-  justification: string
+  justification: string,
+  appareilPartage = false
 ): Promise<void> {
   const adresseTechnique = await adresseTechniqueCourante();
 
@@ -125,7 +128,9 @@ async function finaliserConnexion(
     }),
   ]);
 
-  await createSession({ userId, roles });
+  await createSession({ userId, roles, appareilPartage });
+  // Nouvel appareil d'un compte professionnel : notification et SMS (F-AUTH-02).
+  await enregistrerAppareilEtAlerter(userId, roles, await appareilCourant());
 }
 
 const ROUNDS_BCRYPT = 12;
@@ -440,6 +445,9 @@ export async function loginAction(
     return { error: MESSAGE_ERREUR_GENERIQUE };
   }
 
+  // RG-AUTH-12 : "Appareil partage" (cookie de session, 30 minutes d'inactivite).
+  const appareilPartage = formData.get("appareilPartage") === "on";
+
   const { email, motDePasse } = validation.data;
 
   // Verrouillage apres 5 echecs en 15 minutes (par compte, et par adresse pour
@@ -470,6 +478,16 @@ export async function loginAction(
     if (!motDePasseValide) {
       enregistrerEchecConnexion(email, adresse);
       await journaliserEchecAuthentification(utilisateur.id, "connexion_echec", adresse, "Mot de passe incorrect.");
+
+      // Le compte vient de se verrouiller : alerte au titulaire (notification et SMS, sans lien).
+      if (connexionBloquee(email, adresse)) {
+        await alerterSecurite(utilisateur.id, {
+          type: "connexion_verrouillee",
+          message: "Plusieurs tentatives de connexion à votre compte ont échoué : il est verrouillé quelques minutes. Si ce n'est pas vous, changez votre mot de passe.",
+          messageSms: "Plusieurs tentatives de connexion a votre compte ont echoue. Si ce n'est pas vous, changez votre mot de passe.",
+        });
+      }
+
       return { error: MESSAGE_ERREUR_GENERIQUE };
     }
 
@@ -489,7 +507,7 @@ export async function loginAction(
     return { error: MESSAGE_ERREUR_GENERIQUE };
   }
 
-  const preAuthToken = await new SignJWT({ userId, type: TYPE_JETON_PRE_AUTH_EMAIL })
+  const preAuthToken = await new SignJWT({ userId, type: TYPE_JETON_PRE_AUTH_EMAIL, appareilPartage })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(DUREE_PRE_AUTH)
@@ -527,6 +545,7 @@ export async function verifierCodeEmailEtConnecterAction(
   }
 
   let userId: string;
+  let appareilPartage = false;
 
   try {
     const { payload } = await jwtVerify(preAuthToken, cleSecretePreAuth());
@@ -536,6 +555,7 @@ export async function verifierCodeEmailEtConnecterAction(
     }
 
     userId = payload.userId;
+    appareilPartage = payload.appareilPartage === true;
   } catch {
     return { error: MESSAGE_ERREUR_GENERIQUE };
   }
@@ -564,7 +584,7 @@ export async function verifierCodeEmailEtConnecterAction(
     // d'etre valide : meme principe de jeton de pre-authentification courte
     // duree que ci-dessus, pour la troisieme etape (verifierMfaEtConnecterAction).
     if (utilisateur.mfaActif) {
-      const preAuthTokenMfa = await new SignJWT({ userId, type: TYPE_JETON_PRE_AUTH_MFA })
+      const preAuthTokenMfa = await new SignJWT({ userId, type: TYPE_JETON_PRE_AUTH_MFA, appareilPartage })
         .setProtectedHeader({ alg: "HS256" })
         .setIssuedAt()
         .setExpirationTime(DUREE_PRE_AUTH)
@@ -573,7 +593,7 @@ export async function verifierCodeEmailEtConnecterAction(
       return { error: null, mfaRequis: true, preAuthToken: preAuthTokenMfa };
     }
 
-    await finaliserConnexion(userId, roles, "Connexion reussie (code e-mail valide)");
+    await finaliserConnexion(userId, roles, "Connexion reussie (code e-mail valide)", appareilPartage);
   } catch (erreur) {
     console.error("Erreur lors de la validation du code e-mail :", erreur);
     return { error: MESSAGE_ERREUR_GENERIQUE };
@@ -602,6 +622,7 @@ export async function verifierMfaEtConnecterAction(
   }
 
   let userId: string;
+  let appareilPartageMfa = false;
 
   try {
     const { payload } = await jwtVerify(preAuthToken, cleSecretePreAuth());
@@ -611,6 +632,7 @@ export async function verifierMfaEtConnecterAction(
     }
 
     userId = payload.userId;
+    appareilPartageMfa = payload.appareilPartage === true;
   } catch {
     return { error: MESSAGE_ERREUR_GENERIQUE };
   }
@@ -652,7 +674,8 @@ export async function verifierMfaEtConnecterAction(
       roles,
       moyenSecondFacteur === "secours"
         ? "Connexion reussie (code de secours de la double authentification utilise)"
-        : "Connexion reussie (double authentification validee)"
+        : "Connexion reussie (double authentification validee)",
+      appareilPartageMfa
     );
   } catch (erreur) {
     console.error("Erreur lors de la validation MFA :", erreur);

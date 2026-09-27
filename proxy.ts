@@ -16,8 +16,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { jwtVerify } from "jose";
-
-const NOM_COOKIE_SESSION = "session";
+import { nomCookieSession } from "./src/lib/nom-cookie-session";
 
 async function jetonDeSessionEstValide(jeton: string | undefined): Promise<boolean> {
   if (!jeton) {
@@ -39,7 +38,7 @@ async function jetonDeSessionEstValide(jeton: string | undefined): Promise<boole
 }
 
 export async function proxy(request: NextRequest) {
-  const jeton = request.cookies.get(NOM_COOKIE_SESSION)?.value;
+  const jeton = request.cookies.get(nomCookieSession())?.value;
 
   if (await jetonDeSessionEstValide(jeton)) {
     return NextResponse.next();

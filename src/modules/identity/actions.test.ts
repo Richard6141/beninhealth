@@ -45,7 +45,11 @@ vi.mock("@/lib/session", () => ({
   createSession: vi.fn(),
   getSession: vi.fn(),
   destroySession: vi.fn(),
+  appareilCourant: vi.fn(async () => ({ appareil: "Ordinateur", navigateur: "Chrome" })),
 }));
+
+vi.mock("@/modules/identity/appareils", () => ({ enregistrerAppareilEtAlerter: vi.fn() }));
+vi.mock("@/modules/identity/alertes-securite", () => ({ alerterSecurite: vi.fn() }));
 
 vi.mock("@/lib/mail", () => ({
   envoyerEmail: vi.fn(),
@@ -67,6 +71,8 @@ import { createSession } from "@/lib/session";
 import { envoyerEmail } from "@/lib/mail";
 import bcrypt from "bcryptjs";
 import { redirect } from "next/navigation";
+import { enregistrerAppareilEtAlerter } from "@/modules/identity/appareils";
+import { alerterSecurite } from "@/modules/identity/alertes-securite";
 import {
   loginAction,
   verifierCodeEmailEtConnecterAction,
@@ -84,6 +90,8 @@ const createSessionMock = createSession as unknown as Mock;
 const envoyerEmailMock = envoyerEmail as unknown as Mock;
 const bcryptMock = bcrypt as unknown as { compare: Mock; hash: Mock };
 const redirectMock = redirect as unknown as Mock;
+const enregistrerAppareilEtAlerterMock = enregistrerAppareilEtAlerter as unknown as Mock;
+const alerterSecuriteMock = alerterSecurite as unknown as Mock;
 
 const ETAT_INITIAL: AuthActionState = { error: null };
 
@@ -310,7 +318,13 @@ describe("verifierCodeEmailEtConnecterAction", () => {
     expect(createSessionMock).toHaveBeenCalledWith({
       userId: "utilisateur-1",
       roles: ["patient"],
+      appareilPartage: false,
     });
+    expect(enregistrerAppareilEtAlerterMock).toHaveBeenCalledWith(
+      "utilisateur-1",
+      ["patient"],
+      { appareil: "Ordinateur", navigateur: "Chrome" }
+    );
     expect(redirectMock).toHaveBeenCalledWith("/app/patient");
   });
 
@@ -340,5 +354,77 @@ describe("verifierCodeEmailEtConnecterAction", () => {
     expect(resultat.preAuthToken).not.toBe(preAuthToken);
     expect(createSessionMock).not.toHaveBeenCalled();
     expect(redirectMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("connexion : appareil partage, alerte de verrouillage (F-AUTH-02)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    viderCompteursDebit();
+  });
+
+  function utilisateurActif(roles = [{ nom: "patient" }]) {
+    return { id: "utilisateur-1", email: "a@exemple.bj", statut: "actif", mfaActif: false, motDePasseHash: "h", roles };
+  }
+
+  async function connecter(appareilPartage: boolean) {
+    prismaMock.user.findUnique.mockResolvedValue(utilisateurActif());
+    bcryptMock.compare.mockResolvedValue(true);
+    prismaMock.codeVerificationEmail.deleteMany.mockResolvedValue({ count: 0 });
+    prismaMock.codeVerificationEmail.create.mockResolvedValue({});
+    prismaMock.$transaction.mockResolvedValue([{}, {}]);
+
+    const formulaire = buildFormData({ email: "a@exemple.bj", motDePasse: "x", ...(appareilPartage ? { appareilPartage: "on" } : {}) });
+    const etatEmail = await loginAction(ETAT_INITIAL, formulaire);
+
+    prismaMock.codeVerificationEmail.findFirst.mockResolvedValue({ id: "code-1", codeHash: "hash-du-code" });
+    prismaMock.codeVerificationEmail.update.mockResolvedValue({});
+    await verifierCodeEmailEtConnecterAction(ETAT_INITIAL, buildFormData({ preAuthToken: etatEmail.preAuthToken!, code: "123456" }));
+  }
+
+  it("la case 'Appareil partage' traverse les etapes de connexion jusqu'a la session", async () => {
+    await connecter(true);
+
+    expect(createSessionMock).toHaveBeenCalledWith(expect.objectContaining({ userId: "utilisateur-1", appareilPartage: true }));
+  });
+
+  it("sans la case, la session n'est pas partagee", async () => {
+    await connecter(false);
+
+    expect(createSessionMock).toHaveBeenCalledWith(expect.objectContaining({ appareilPartage: false }));
+  });
+
+  it("le cinquieme mot de passe faux verrouille le compte et alerte son titulaire (notification et SMS)", async () => {
+    prismaMock.user.findUnique.mockResolvedValue(utilisateurActif());
+    bcryptMock.compare.mockResolvedValue(false);
+
+    for (let i = 0; i < 4; i++) {
+      await loginAction(ETAT_INITIAL, buildFormData({ email: "a@exemple.bj", motDePasse: "faux" }));
+    }
+    expect(alerterSecuriteMock).not.toHaveBeenCalled();
+
+    await loginAction(ETAT_INITIAL, buildFormData({ email: "a@exemple.bj", motDePasse: "faux" }));
+
+    expect(alerterSecuriteMock).toHaveBeenCalledTimes(1);
+    expect(alerterSecuriteMock.mock.calls[0][0]).toBe("utilisateur-1");
+    expect(alerterSecuriteMock.mock.calls[0][1].messageSms).not.toMatch(/https?:/);
+
+    const suivant = await loginAction(ETAT_INITIAL, buildFormData({ email: "a@exemple.bj", motDePasse: "faux" }));
+    expect(suivant.error).toMatch(/Trop de tentatives/);
+    expect(alerterSecuriteMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("apres le verrouillage, meme le bon mot de passe est refuse (CA-3)", async () => {
+    prismaMock.user.findUnique.mockResolvedValue(utilisateurActif());
+    bcryptMock.compare.mockResolvedValue(false);
+    for (let i = 0; i < 5; i++) {
+      await loginAction(ETAT_INITIAL, buildFormData({ email: "a@exemple.bj", motDePasse: "faux" }));
+    }
+
+    bcryptMock.compare.mockResolvedValue(true);
+    const resultat = await loginAction(ETAT_INITIAL, buildFormData({ email: "a@exemple.bj", motDePasse: "bon" }));
+
+    expect(resultat.error).toMatch(/Trop de tentatives.*15 minutes/);
+    expect(resultat.emailCodeRequis).toBeUndefined();
   });
 });

@@ -71,6 +71,7 @@ model User {
   sessionsActives SessionActive[]
   codesSecoursMfa CodeSecoursMfa[]
   invitationsCompte InvitationCompte[]
+  appareilsConnus AppareilConnu[]
   revuesAccesUrgence RevueAccesUrgence[]
   alertesRevues HealthAlertReview[]
   traitementsDemandesPersonnes TraitementDemandePersonne[]
@@ -1459,7 +1460,29 @@ model SessionActive {
   // n'a ete fait (tous les roles du compte s'appliquent, comme avant).
   espaceActif      String?
 
+  // F-AUTH-02 (RG-AUTH-12) : session ouverte depuis un appareil partage, fermee a la
+  // fermeture du navigateur et apres 30 minutes d'inactivite.
+  appareilPartage  Boolean   @default(false)
+
   @@index([userId])
+  @@schema("public")
+}
+
+// F-AUTH-02 : appareils avec lesquels un compte s'est deja connecte. Une connexion
+// d'un compte professionnel depuis un appareil inconnu declenche l'alerte
+// "nouvelle connexion" (notification interne et SMS). Seule l'empreinte HMAC de
+// l'appareil est conservee, avec de quoi l'afficher (appareil, navigateur).
+model AppareilConnu {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  empreinte      String
+  appareil       String
+  navigateur     String
+  premiereFoisLe DateTime @default(now())
+  derniereFoisLe DateTime @default(now())
+
+  @@unique([userId, empreinte])
   @@schema("public")
 }
 

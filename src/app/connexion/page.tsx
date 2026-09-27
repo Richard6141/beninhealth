@@ -172,6 +172,12 @@ export default function ConnexionPage() {
                 autoComplete="current-password"
                 required
               />
+              <label className="flex items-start gap-2 text-[13px] text-encre">
+                <input type="checkbox" name="appareilPartage" className="mt-0.5" />
+                <span>
+                  Appareil partagé : se déconnecter à la fermeture du navigateur et après 30 minutes d&apos;inactivité.
+                </span>
+              </label>
               <Link
                 href="/mot-de-passe-oublie"
                 className="w-fit text-[13px] font-semibold text-accent hover:underline"

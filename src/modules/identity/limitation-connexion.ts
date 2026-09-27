@@ -15,11 +15,14 @@ import { headers } from "next/headers";
 import { enregistrerEvenement, limiteAtteinte } from "@/lib/limite-debit";
 
 const FENETRE_MS = 15 * 60 * 1000;
+const FENETRE_24H_MS = 24 * 60 * 60 * 1000;
 export const ECHECS_MAX_PAR_COMPTE = 5;
+/** F-AUTH-02 : 10 echecs en 24 h verrouillent le compte pour 24 h. */
+export const ECHECS_MAX_PAR_COMPTE_24H = 10;
 export const ECHECS_MAX_PAR_ADRESSE = 30;
 export const ECHECS_MFA_MAX_PAR_COMPTE = 5;
 
-export const MESSAGE_TROP_DE_TENTATIVES = "Trop de tentatives. Réessayez dans 15 minutes.";
+export const MESSAGE_TROP_DE_TENTATIVES = "Trop de tentatives. Réessayez dans 15 minutes ou réinitialisez votre mot de passe.";
 
 export async function adresseDeLaRequete(): Promise<string | null> {
   try {
@@ -35,6 +38,10 @@ function cleCompte(email: string): string {
   return `connexion:compte:${email.trim().toLowerCase()}`;
 }
 
+function cleCompte24h(email: string): string {
+  return `connexion:compte24h:${email.trim().toLowerCase()}`;
+}
+
 function cleAdresse(adresse: string): string {
   return `connexion:adresse:${adresse}`;
 }
@@ -42,12 +49,14 @@ function cleAdresse(adresse: string): string {
 export function connexionBloquee(email: string, adresse: string | null): boolean {
   return (
     limiteAtteinte(cleCompte(email), ECHECS_MAX_PAR_COMPTE, FENETRE_MS) ||
+    limiteAtteinte(cleCompte24h(email), ECHECS_MAX_PAR_COMPTE_24H, FENETRE_24H_MS) ||
     (adresse !== null && limiteAtteinte(cleAdresse(adresse), ECHECS_MAX_PAR_ADRESSE, FENETRE_MS))
   );
 }
 
 export function enregistrerEchecConnexion(email: string, adresse: string | null): void {
   enregistrerEvenement(cleCompte(email), FENETRE_MS);
+  enregistrerEvenement(cleCompte24h(email), FENETRE_24H_MS);
   if (adresse !== null) {
     enregistrerEvenement(cleAdresse(adresse), FENETRE_MS);
   }
