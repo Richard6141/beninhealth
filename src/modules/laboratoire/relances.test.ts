@@ -12,7 +12,11 @@ vi.mock("@/modules/notification/creer", () => ({ creerNotification: vi.fn() }));
 
 import { prisma } from "@/lib/prisma";
 import { creerNotification } from "@/modules/notification/creer";
-import { escaladerResultatsCritiquesNonLus, relancerAnnoncesEnRetard } from "@/modules/laboratoire/relances";
+import {
+  escaladerResultatsCritiquesNonLus,
+  expirerDemandesExamenNonPrisesEnCharge,
+  relancerAnnoncesEnRetard,
+} from "@/modules/laboratoire/relances";
 
 const p = prisma as unknown as {
   notification: { findMany: Mock; updateMany: Mock };
@@ -135,6 +139,41 @@ describe("relancerAnnoncesEnRetard (N-LAB-ANNOUNCE-OVERDUE)", () => {
     p.examenMedical.updateMany.mockResolvedValue({ count: 0 });
 
     expect(await relancerAnnoncesEnRetard(maintenant)).toBe(0);
+    expect(creerNotificationMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("expirerDemandesExamenNonPrisesEnCharge (RG-LAB-03, N-LAB-ORDER-EXPIRED)", () => {
+  it("ne cherche que les demandes jamais prises en charge, de plus de 30 jours", async () => {
+    p.examenMedical.findMany.mockResolvedValue([]);
+
+    await expirerDemandesExamenNonPrisesEnCharge(maintenant);
+
+    expect(p.examenMedical.findMany).toHaveBeenCalledWith({
+      where: { statut: "demande", date: { lte: new Date("2026-08-28T12:00:00.000Z") } },
+      select: { id: true, demandeur: { select: { userId: true } } },
+    });
+  });
+
+  it("expire la demande, previent le demandeur sans detail clinique, et reclame de facon conditionnelle", async () => {
+    const expirees = await expirerDemandesExamenNonPrisesEnCharge(maintenant);
+
+    expect(expirees).toBe(1);
+    expect(p.examenMedical.updateMany).toHaveBeenCalledWith({
+      where: { id: "ex-1", statut: "demande" },
+      data: { statut: "expire" },
+    });
+    const [destinataire, type, message, , options] = creerNotificationMock.mock.calls[0];
+    expect(destinataire).toBe("user-medecin");
+    expect(type).toBe("examen_expire");
+    expect(options).toEqual({ codeCatalogue: "N-LAB-ORDER-EXPIRED" });
+    expect(message).not.toMatch(/vih|serologie|glyc|patient/i);
+  });
+
+  it("n'expire pas deux fois si la demande a deja ete prise en charge entre-temps", async () => {
+    p.examenMedical.updateMany.mockResolvedValue({ count: 0 });
+
+    expect(await expirerDemandesExamenNonPrisesEnCharge(maintenant)).toBe(0);
     expect(creerNotificationMock).not.toHaveBeenCalled();
   });
 });

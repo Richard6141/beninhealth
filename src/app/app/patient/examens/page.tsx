@@ -17,6 +17,8 @@ function libelleStatut(statut: string): { texte: string; tone: BadgeTone } {
   }
   if (cle === "termine") return { texte: "Termine", tone: "good" };
   if (cle === "annule") return { texte: "Annule", tone: "critical" };
+  // RG-LAB-03 : demande non prise en charge par le laboratoire sous 30 jours.
+  if (cle === "expire") return { texte: "Expiree", tone: "critical" };
   return { texte: statut, tone: "neutral" };
 }
 

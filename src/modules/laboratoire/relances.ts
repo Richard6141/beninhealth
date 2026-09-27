@@ -13,6 +13,16 @@ import { suivreExecution } from "@/modules/administration/executions-taches";
  *   pas ete annonce au patient sous 30 jours declenche un rappel au
  *   prescripteur. Le pack cite aussi l'auditeur : ce role n'existe pas dans ce
  *   depot, seul le prescripteur est prevenu.
+ * - RG-LAB-03 / N-LAB-ORDER-EXPIRED (F-LAB-01, ajoute le 2026-09-27) : une
+ *   demande jamais prise en charge par le laboratoire (statut "demande",
+ *   jamais passee par un prelevement) expire 30 jours apres sa creation. Le
+ *   diagramme d'etats du pack (12.1) ne fait sortir "EXPIRED" que de
+ *   REQUESTED : une demande deja prelevee (statut "en_cours" ou au-dela) n'est
+ *   jamais concernee, meme si l'echantillon a ensuite ete rejete et que la
+ *   demande est repassee a "demande" pour un nouveau prelevement (limite
+ *   assumee : le depot reutilise le meme statut "demande" pour ce cas plutot
+ *   que le REJECTED distinct du pack, voir rejeterEchantillonAction plus haut
+ *   dans ce module) - la date de creation d'origine reste le seul repere.
  *
  * Module pur (pas de "use server") : aucune de ces fonctions n'est un point
  * d'entree. Chaque relance est reclamee par une mise a jour conditionnelle
@@ -22,6 +32,7 @@ import { suivreExecution } from "@/modules/administration/executions-taches";
 
 const DELAI_ESCALADE_MS = 2 * 60 * 60 * 1000;
 const JOURS_AVANT_RAPPEL_ANNONCE = 30;
+const JOURS_AVANT_EXPIRATION_DEMANDE = 30;
 const INTERVALLE_VERIFICATION_MS = 15 * 60 * 1000;
 
 declare global {
@@ -117,15 +128,48 @@ export async function relancerAnnoncesEnRetard(maintenant: Date = new Date()): P
   return rappels;
 }
 
+/** Expire les demandes jamais prises en charge (statut "demande") depuis plus de 30 jours (RG-LAB-03). Retourne le nombre expire. */
+export async function expirerDemandesExamenNonPrisesEnCharge(maintenant: Date = new Date()): Promise<number> {
+  const seuil = new Date(maintenant.getTime() - JOURS_AVANT_EXPIRATION_DEMANDE * 24 * 60 * 60 * 1000);
+
+  const candidates = await prisma.examenMedical.findMany({
+    where: { statut: "demande", date: { lte: seuil } },
+    select: { id: true, demandeur: { select: { userId: true } } },
+  });
+
+  let expirees = 0;
+  for (const examen of candidates) {
+    const reclamation = await prisma.examenMedical.updateMany({
+      where: { id: examen.id, statut: "demande" },
+      data: { statut: "expire" },
+    });
+    if (reclamation.count !== 1) continue;
+
+    await creerNotification(
+      examen.demandeur.userId,
+      "examen_expire",
+      "Une demande d'examen que vous avez faite n'a pas été prise en charge par le laboratoire sous 30 jours et a expiré.",
+      "/app/medecin/examens",
+      { codeCatalogue: "N-LAB-ORDER-EXPIRED" }
+    );
+    expirees += 1;
+  }
+
+  return expirees;
+}
+
 async function executerRelancesAvecJournal(): Promise<void> {
   try {
     await suivreExecution("relances_laboratoire", async () => {
       const escalades = await escaladerResultatsCritiquesNonLus();
       const rappels = await relancerAnnoncesEnRetard();
-      if (escalades > 0 || rappels > 0) {
-        console.log(`[laboratoire] relances : ${escalades} escalade(s) de resultat critique, ${rappels} rappel(s) d'annonce`);
+      const expirees = await expirerDemandesExamenNonPrisesEnCharge();
+      if (escalades > 0 || rappels > 0 || expirees > 0) {
+        console.log(
+          `[laboratoire] relances : ${escalades} escalade(s) de resultat critique, ${rappels} rappel(s) d'annonce, ${expirees} demande(s) expiree(s)`
+        );
       }
-      return escalades + rappels;
+      return escalades + rappels + expirees;
     });
   } catch (erreur) {
     console.error("[laboratoire] echec des relances planifiees", erreur);

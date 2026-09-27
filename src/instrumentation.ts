@@ -8,7 +8,8 @@
  * src/modules/notification/purge.ts) et rappels de rendez-vous (F-RDV-07,
  * voir src/modules/facility/rappels-rendez-vous.ts) et remise des SMS differes
  * a 7h00 (F-NOT-02, RG-NOT-04, voir src/modules/notification/sms/remise-differes.ts),
- * relances du laboratoire (F-LAB-05, voir src/modules/laboratoire/relances.ts) et
+ * relances du laboratoire (F-LAB-05, expiration des demandes F-LAB-01/RG-LAB-03,
+ * voir src/modules/laboratoire/relances.ts) et
  * detection d'anomalies d'acces (F-AUD-03, voir src/modules/audit/detection-anomalies.ts).
  */
 export async function register(): Promise<void> {

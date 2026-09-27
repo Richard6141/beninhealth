@@ -4334,6 +4334,13 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   portee raisonnable ce soir, signale par 89, je n'y touche pas sans budget dedie.
 - Je commence par la lecture du code existant avant toute modification.
 
+### Prise de projet-gouv-8c, laboratoire F-LAB-01/02/03/05, 2026-09-27
+
+- Assigne par 89 (file vide de mon cote apres F-ETA-05). git status verifie propre sur `src/modules/laboratoire/`, `app/medecin/laboratoire/`, `app/patient/examens/` avant de commencer.
+- F-LAB-03 (signale par 89 comme "bug bloquant deja identifie") : verifie d'abord contre le code reel avant de coder. **Deja corrige**, le 2026-09-26, commit `0d49c58` (`fix(security): ... saisie de laboratoire`), avec 7 tests de regression (`saisie-resultat.test.ts`). `parametresJson` est bien transmis (`actions.ts:1338`), parse dans un `try/catch` (message clair si invalide), le formulaire (`FormulaireResultat.tsx:37`) le peuple deja via un input cache mis a jour a chaque frappe. Le tableau principal de `reste-a-faire.md` (ligne F-LAB-03) etait reste "PARTIEL" alors que le journal "Corrige depuis cette verification" plus haut dans le meme fichier documentait deja la correction : affirmation perimee, corrigee (voir plus bas), aucun code touche pour cette fiche.
+- Verifie aussi le referentiel : 4 examens (GLYCEMIE, CREATININE, TAUX_HEMOGLOBINE, TRANSAMINASES), 5 parametres, confirme a jour dans `referentiel-parametres-examens.ts`.
+- Je continue vers F-LAB-05 (RG-LAB-41, contradiction reelle signalee par 89 : le patient voit "resultat disponible" avant l'annonce du medecin pour un examen sensible), puis F-LAB-01/F-LAB-02 si le temps le permet.
+
 ### Point projet-gouv-46 (ex 0a), F-PRE-01 livre : posologie enrichie et quantite calculee, 2026-09-27
 
 - Perimetre precise dans la note de prise plus haut, reconfirme apres coup : 11 unites et 12 voies
@@ -4365,3 +4372,17 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
 - Commits : `33001a2` code, `c094cfe` doc.
 - Suite pour moi : je cherche la prochaine fiche P0/P1 non revendiquee, ou j'attends une
   assignation de 89.
+
+### Livraison projet-gouv-8c, laboratoire F-LAB-01/03/05 : documentation perimee corrigee, RG-LAB-03 ajoute, 2026-09-27
+
+- F-LAB-03 : deja corrige le 2026-09-26 (commit `0d49c58`), ligne du tableau passee en FAIT (ecarts mineurs). Aucun code touche.
+- F-LAB-05 : deja largement implemente (RG-LAB-41/RG-CIT-20 tenues, escalade 2h RG-LAB-21, rappel 30 jours), ligne du tableau passee en FAIT (ecarts mineurs). Aucun code touche. Reste reel : la notification critique cite le libellé et la valeur du parametre (RG-LAB-42, a confirmer si le pack l'interdit vraiment) ; pas de niveau de priorite distinct sur `Notification`.
+- F-LAB-01 : deux affirmations perimees corrigees (numero `LB-XXXX-XXXX` deja present, notification du laboratoire a la creation deja presente). **Ajoute** : RG-LAB-03 (expiration a 30 jours d'une demande jamais prise en charge) :
+  - `src/modules/laboratoire/relances.ts` : nouvelle `expirerDemandesExamenNonPrisesEnCharge` (meme patron que les 2 fonctions existantes du fichier : reclamation conditionnelle par `updateMany`, jamais deux fois), branchee dans la meme tache planifiee (15 min), prescripteur prevenu (`N-LAB-ORDER-EXPIRED`).
+  - Limite assumee documentee dans le code : seul le statut `demande` expire (correspond a REQUESTED du diagramme d'etats 12.1 du pack) ; une demande deja prelevee puis rejetee et repassee a `demande` pour un nouveau prelevement (limite deja assumee ailleurs dans ce fichier, meme statut reutilise) n'est PAS distinguee : la date de creation d'origine reste le seul repere, comportement le plus proche du texte du pack sans introduire un statut REJECTED distinct.
+  - Etiquette "Expiree" ajoutee aux 3 ecrans qui affichent un statut d'examen (`app/patient/examens/page.tsx`, `app/medecin/examens/page.tsx`, `ListeExamensLaboratoire.tsx`, dont l'onglet "Historique" et son compteur, qui excluaient silencieusement ce nouveau statut).
+  - Reste reellement manquant sur F-LAB-01, verifie avant de conclure : QR, signature, renseignements cliniques (200 caracteres), laboratoire "au choix du patient" (`laboratoireId` reste obligatoire aujourd'hui) ; consultation facultative alors que RG-LAB-01 l'exige liee ; patient non notifie a la creation.
+- F-LAB-02, verifie mais non code : ses manques (recherche numero+annee, QR, base `ASSIGNMENT`, RG-LAB-10 liberation motivee) dependent tous de la meme fondation manquante que F-LAB-01 ("laboratoire au choix du patient") : pas de petit lot possible ici sans d'abord construire cette fondation partagee, plus gros chantier, laisse pour une session avec le budget dedie. RG-LAB-10 elle-meme est sans objet tant que cette fondation n'existe pas (rien a liberer si une seule demande n'est jamais partagee entre plusieurs laboratoires).
+- Verifie : `npx tsc --noEmit -p .` 0 erreur, `npx eslint` 0 erreur sur les fichiers touches, `npx vitest run src/modules/laboratoire` 76/76 (dont 3 nouveaux tests sur l'expiration), garde-fou des tirets vert. 3 ecrans verifies compiles sans erreur 500 (redirection 307 normale sans session).
+- Fichiers prets pour commit : `src/modules/laboratoire/{relances.ts, relances.test.ts}`, `src/instrumentation.ts`, `src/app/app/patient/examens/page.tsx`, `src/app/app/medecin/examens/page.tsx`, `src/app/app/medecin/laboratoire/ListeExamensLaboratoire.tsx`, `docs/reste-a-faire.md` (F-LAB-01/03/05), ce fichier. Aucune migration (le champ `statut` est une simple chaine, pas un enum Postgres).
+- Je committe rien moi-meme : prets pour 21/89.

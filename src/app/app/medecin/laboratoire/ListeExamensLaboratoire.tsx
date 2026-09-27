@@ -24,6 +24,8 @@ function libelleStatut(statut: string): { texte: string; tone: BadgeTone } {
   if (cle === "resultat_saisi") return { texte: "En attente de validation", tone: "warning" };
   if (cle === "termine") return { texte: "Terminé", tone: "good" };
   if (cle === "annule") return { texte: "Annulé", tone: "critical" };
+  // RG-LAB-03 : demande non prise en charge par le laboratoire sous 30 jours.
+  if (cle === "expire") return { texte: "Expirée", tone: "critical" };
   return { texte: statut, tone: "neutral" };
 }
 
@@ -66,7 +68,9 @@ function correspondAuFiltreStatut(examen: ExamenResume, filtre: FiltreStatut): b
   if (filtre === "tous") return true;
   if (filtre === "a-saisir") return STATUTS_A_SAISIR.has(examen.statut);
   if (filtre === "validation") return examen.statut === "resultat_saisi";
-  return examen.statut === "termine" || examen.statut === "annule";
+  // "expire" (RG-LAB-03) rejoint l'historique, meme traitement qu'"annule" :
+  // etat terminal, plus rien a faire dessus.
+  return examen.statut === "termine" || examen.statut === "annule" || examen.statut === "expire";
 }
 
 const styleEnTete =
@@ -132,7 +136,7 @@ export function ListeExamensLaboratoire({
       "a-saisir": examens.filter((examen) => STATUTS_A_SAISIR.has(examen.statut)).length,
       validation: examens.filter((examen) => examen.statut === "resultat_saisi").length,
       historique: examens.filter(
-        (examen) => examen.statut === "termine" || examen.statut === "annule"
+        (examen) => examen.statut === "termine" || examen.statut === "annule" || examen.statut === "expire"
       ).length,
     }),
     [examens]
