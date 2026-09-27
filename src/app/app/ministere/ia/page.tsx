@@ -37,7 +37,7 @@ export default async function GouvernanceIaPage() {
     );
   }
 
-  const { statistiques } = gouvernance;
+  const { statistiques, statistiquesAssistant } = gouvernance;
   const iaActive = gouvernance.fonctionnalites.some((fonctionnalite) => fonctionnalite.actif);
 
   return (
@@ -78,7 +78,7 @@ export default async function GouvernanceIaPage() {
             <p>
               Dernière évaluation :{" "}
               {gouvernance.derniereEvaluation
-                ? `${formaterDate(gouvernance.derniereEvaluation.date)}, ${gouvernance.derniereEvaluation.conformes}/${gouvernance.derniereEvaluation.total} dossiers conformes`
+                ? `${formaterDate(gouvernance.derniereEvaluation.date)}, ${gouvernance.derniereEvaluation.conformes}/${gouvernance.derniereEvaluation.total} cas conformes`
                 : "jamais rejouée depuis cet écran"}
             </p>
           </div>
@@ -111,6 +111,29 @@ export default async function GouvernanceIaPage() {
           </Card>
           <Card description="Temps de réponse moyen">
             <p className="text-[28px] font-bold text-encre">{statistiques.dureeMoyenneMs === null ? "aucune donnée" : `${statistiques.dureeMoyenneMs} ms`}</p>
+          </Card>
+        </div>
+      </section>
+
+      <section aria-labelledby="titre-suivi-assistant" className="flex flex-col gap-4">
+        <h2 id="titre-suivi-assistant" className="text-[20px] font-bold text-encre">
+          Suivi de l&apos;assistant citoyen ({gouvernance.joursSuivi} derniers jours)
+        </h2>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Card description="Questions">
+            <p className="text-[28px] font-bold text-encre">{statistiquesAssistant.appels}</p>
+            <p className="text-[13px] text-encre-secondaire">Le texte des questions n&apos;est jamais conservé.</p>
+          </Card>
+          <Card description="Réponses trouvées">
+            <p className="text-[28px] font-bold text-encre">{statistiquesAssistant.ok}</p>
+          </Card>
+          <Card description="Questions de santé redirigées">
+            <p className="text-[28px] font-bold text-encre">{statistiquesAssistant.symptomes}</p>
+            <p className="text-[13px] text-encre-secondaire">Réponse fixe vers les secours, aucun avis médical.</p>
+          </Card>
+          <Card description="Sans réponse">
+            <p className="text-[28px] font-bold text-encre">{statistiquesAssistant.sansReponse}</p>
+            <p className="text-[13px] text-encre-secondaire">Sujets à ajouter à la base validée.</p>
           </Card>
         </div>
       </section>

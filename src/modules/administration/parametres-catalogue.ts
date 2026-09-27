@@ -11,6 +11,7 @@ export const CLES_PARAMETRES = [
   "reference.duree_acces_jours",
   "urgence.limite_acces_24h",
   "partage.code_duree_minutes",
+  "urgence.numero_appel",
 ] as const;
 
 export type CleParametre = (typeof CLES_PARAMETRES)[number];
@@ -55,6 +56,14 @@ export const PARAMETRES_PAR_DEFAUT: readonly DefinitionParametre[] = [
     borneMax: 60,
     description:
       "Duree de validite du code de partage temporaire du dossier patient (lu a chaque generation par src/modules/partage/actions.ts).",
+  },
+  {
+    cle: "urgence.numero_appel",
+    valeurDefaut: 0,
+    borneMin: 0,
+    borneMax: 99999999,
+    description:
+      "Numero d'urgence cite par l'assistant citoyen (0 = non renseigne : l'assistant renvoie alors vers les secours de la region et le centre de sante le plus proche). A renseigner par le ministere, jamais deduit (lu a chaque question par src/modules/ai/assistant-actions.ts).",
   },
 ];
 

@@ -12,11 +12,13 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { journaliser } from "@/modules/audit/journaliser";
 import { can } from "@/security/permissions";
-import { fournisseurConfigure, nomFournisseurConfigure } from "./configuration";
+import { nomFournisseurConfigure } from "./configuration";
+import { evaluerToutesLesFonctionnalitesIa } from "./evaluation";
 import { FICHES_IA, type FicheIa } from "./fiches";
-import { executerJeuEvaluation, type EchecEvaluation } from "./jeu-evaluation";
-import { FONCTIONNALITE_RESUME, statistiquesAppelsIa, type StatistiquesIa } from "./journal";
+import type { EchecEvaluation } from "./jeu-evaluation";
+import { FONCTIONNALITE_ASSISTANT, FONCTIONNALITE_RESUME, statistiquesAppelsIa, type StatistiquesIa } from "./journal";
 import { VERSION_CONSIGNE_RESUME } from "./regles";
+import { VERSION_BASE_ASSISTANT } from "./assistant";
 
 const JOURS_SUIVI = 30;
 const ACTION_EVALUATION = "evaluation_ia_rejouee";
@@ -36,6 +38,7 @@ export interface GouvernanceIa {
   fonctionnalites: FonctionnaliteIaVue[];
   fiches: FicheIa[];
   statistiques: StatistiquesIa;
+  statistiquesAssistant: StatistiquesIa;
   joursSuivi: number;
   derniereEvaluation: { date: string; conformes: number; total: number } | null;
 }
@@ -60,13 +63,14 @@ export async function getGouvernanceIa(): Promise<GouvernanceIa | null> {
   if (!(await obtenirSessionGouvernance("read"))) return null;
 
   const depuis = new Date(Date.now() - JOURS_SUIVI * 24 * 60 * 60 * 1000);
-  const [lignes, statistiques, derniere] = await Promise.all([
+  const [lignes, statistiques, statistiquesAssistant, derniere] = await Promise.all([
     prisma.fonctionnaliteActivable.findMany({ where: { cle: { in: [...CLES_IA] } }, select: { cle: true, actif: true } }),
     statistiquesAppelsIa(FONCTIONNALITE_RESUME, depuis),
+    statistiquesAppelsIa(FONCTIONNALITE_ASSISTANT, depuis),
     prisma.journalAudit.findFirst({ where: { action: ACTION_EVALUATION }, orderBy: { date: "desc" }, select: { date: true, justification: true } }),
   ]);
 
-  const correspondance = derniere?.justification.match(/(\d+)\/(\d+) dossiers/);
+  const correspondance = derniere?.justification.match(/(\d+)\/(\d+) (?:dossiers|cas)/);
 
   return {
     fournisseur: nomFournisseurConfigure(),
@@ -74,6 +78,7 @@ export async function getGouvernanceIa(): Promise<GouvernanceIa | null> {
     fonctionnalites: CLES_IA.map((cle) => ({ cle, actif: lignes.find((ligne) => ligne.cle === cle)?.actif ?? false })),
     fiches: [...FICHES_IA],
     statistiques,
+    statistiquesAssistant,
     joursSuivi: JOURS_SUIVI,
     derniereEvaluation:
       derniere && correspondance ? { date: derniere.date.toISOString(), conformes: Number(correspondance[1]), total: Number(correspondance[2]) } : null,
@@ -90,20 +95,20 @@ export interface EvaluationIaEtat {
 
 const ETAT_EVALUATION_VIDE: EvaluationIaEtat = { error: null, success: false, conformes: 0, total: 0, echecs: [] };
 
-/** Rejoue le jeu de 20 dossiers fictifs avec le fournisseur et la consigne actuels (RG-IA-20). */
+/** Rejoue les jeux d'evaluation (20 dossiers fictifs du resume, questions de l'assistant) avec le fournisseur et la base actuels (RG-IA-20). */
 export async function rejouerJeuEvaluationAction(): Promise<EvaluationIaEtat> {
   const session = await obtenirSessionGouvernance("update");
   if (!session) return { ...ETAT_EVALUATION_VIDE, error: "Action réservée à l'administration nationale." };
 
   try {
-    const resultat = await executerJeuEvaluation(fournisseurConfigure());
+    const resultat = await evaluerToutesLesFonctionnalitesIa();
 
     await journaliser({
       utilisateurId: session.userId,
       action: ACTION_EVALUATION,
       donneeConcernee: "ia:resume_dossier",
       adresseTechnique: await adresseTechniqueCourante(),
-      justification: `${resultat.conformes}/${resultat.total} dossiers conformes (fournisseur ${nomFournisseurConfigure()}, consigne ${VERSION_CONSIGNE_RESUME}).`,
+      justification: `${resultat.conformes}/${resultat.total} cas conformes (fournisseur ${nomFournisseurConfigure()}, consigne ${VERSION_CONSIGNE_RESUME}, base assistant ${VERSION_BASE_ASSISTANT}).`,
     });
 
     return { error: null, success: resultat.echecs.length === 0, conformes: resultat.conformes, total: resultat.total, echecs: resultat.echecs };

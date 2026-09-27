@@ -29,8 +29,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
-import { fournisseurConfigure } from "@/modules/ai/configuration";
-import { executerJeuEvaluation } from "@/modules/ai/jeu-evaluation";
+import { estFonctionnaliteIa, evaluerFonctionnaliteIa } from "@/modules/ai/evaluation";
 import { can } from "@/security/permissions";
 import { PARAMETRES_PAR_DEFAUT } from "./parametres-catalogue";
 import {
@@ -167,9 +166,9 @@ export async function basculerFonctionnaliteAction(
 
     const actuelle = await prisma.fonctionnaliteActivable.findUniqueOrThrow({ where: { cle } });
 
-    // RG-IA-20 : le resume IA ne s'allume que si le jeu d'evaluation passe, avec le fournisseur et la consigne actuels.
-    if (cle === "ai.summary" && !actuelle.actif) {
-      const evaluation = await executerJeuEvaluation(fournisseurConfigure());
+    // RG-IA-20 : une fonctionnalite d'IA ne s'allume que si son jeu d'evaluation passe, avec le fournisseur et la base actuels.
+    if (estFonctionnaliteIa(cle) && !actuelle.actif) {
+      const evaluation = await evaluerFonctionnaliteIa(cle);
       if (evaluation.echecs.length > 0) {
         return {
           error: `Activation refusée : le jeu d'évaluation de l'IA échoue (${evaluation.conformes}/${evaluation.total} dossiers conformes). Voir la gouvernance de l'IA.`,

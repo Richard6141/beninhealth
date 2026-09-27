@@ -76,16 +76,17 @@ describe("getGouvernanceIa", () => {
     expect(gouvernance?.fournisseur).toBe("regles_locales");
     expect(gouvernance?.fiches.length).toBeGreaterThan(0);
     expect(gouvernance?.statistiques.appels).toBe(0);
+    expect(gouvernance?.statistiquesAssistant.appels).toBe(0);
     expect(gouvernance?.derniereEvaluation).toBeNull();
   });
 
   it("relit la derniere evaluation depuis le journal d'audit", async () => {
-    p.journalAudit.findFirst.mockResolvedValue({ date: new Date("2026-09-27T10:00:00.000Z"), justification: "20/20 dossiers conformes (fournisseur regles_locales, consigne resume-v1)." });
+    p.journalAudit.findFirst.mockResolvedValue({ date: new Date("2026-09-27T10:00:00.000Z"), justification: "56/56 cas conformes (fournisseur regles_locales, consigne resume-v1, base assistant faq-v1)." });
     p.fonctionnaliteActivable.findMany.mockResolvedValue([{ cle: "ai.summary", actif: true }]);
 
     const gouvernance = await getGouvernanceIa();
 
-    expect(gouvernance?.derniereEvaluation).toEqual({ date: "2026-09-27T10:00:00.000Z", conformes: 20, total: 20 });
+    expect(gouvernance?.derniereEvaluation).toEqual({ date: "2026-09-27T10:00:00.000Z", conformes: 56, total: 56 });
     expect(gouvernance?.fonctionnalites[0]).toEqual({ cle: "ai.summary", actif: true });
   });
 });
@@ -94,10 +95,12 @@ describe("rejouerJeuEvaluationAction (RG-IA-20)", () => {
   it("reussit avec les regles locales et journalise le resultat sans aucun texte de dossier", async () => {
     const resultat = await rejouerJeuEvaluationAction();
 
-    expect(resultat).toMatchObject({ error: null, success: true, conformes: 20, total: 20, echecs: [] });
+    expect(resultat).toMatchObject({ error: null, success: true, echecs: [] });
+    expect(resultat.total).toBeGreaterThan(20);
+    expect(resultat.conformes).toBe(resultat.total);
     const journal = journaliserMock.mock.calls[0][0];
     expect(journal.action).toBe("evaluation_ia_rejouee");
-    expect(journal.justification).toContain("20/20 dossiers conformes");
+    expect(journal.justification).toContain(`${resultat.total}/${resultat.total} cas conformes`);
     for (const dossier of JEU_EVALUATION) expect(JSON.stringify(journal)).not.toContain(dossier.identite.nom);
   });
 

@@ -18,6 +18,7 @@ import {
   Lock,
   MapPin,
   Merge,
+  MessageCircleQuestion,
   MessageSquare,
   Pill,
   Settings,
@@ -405,6 +406,15 @@ export default async function EspaceAuthentifieLayout({
     "lab.module": laboratoireActif,
     "community.module": communautaireActif,
   });
+
+  // F-IA-02 : l'assistant citoyen n'apparait dans le menu que si sa fonctionnalite est active (relue en base a chaque rendu).
+  if (session.roles[0] === "patient" && (await estFonctionnaliteActive("ai.citizen_assistant"))) {
+    navigation.push({
+      label: "Assistant",
+      href: "/app/patient/assistant",
+      icon: <MessageCircleQuestion size={tailleIconeNav} aria-hidden="true" />,
+    });
+  }
 
   return (
     <div className="flex h-screen overflow-hidden">

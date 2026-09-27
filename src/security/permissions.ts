@@ -66,6 +66,9 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     // espace (voir src/modules/transfert/demandes-patient.ts).
     'read:demande_acces_recue',
     'update:demande_acces_recue',
+    // F-IA-02 : assistant d'orientation, voir src/modules/ai/assistant-actions.ts.
+    // Ressource dediee : elle ne donne aucun acces au dossier.
+    'create:assistant_citoyen',
   ]),
 
   medecin: new Set<Permission>([

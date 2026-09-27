@@ -71,7 +71,8 @@ describe("catalogue des parametres", () => {
       expect(Number.isInteger(definition.valeurDefaut)).toBe(true);
       expect(definition.borneMin).toBeLessThanOrEqual(definition.valeurDefaut);
       expect(definition.valeurDefaut).toBeLessThanOrEqual(definition.borneMax);
-      expect(definition.borneMin).toBeGreaterThan(0);
+      // 0 est admis quand il signifie "non renseigne" (numero d'urgence), jamais un negatif.
+      expect(definition.borneMin).toBeGreaterThanOrEqual(0);
     }
   });
 

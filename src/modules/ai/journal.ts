@@ -9,6 +9,7 @@ import { JOURS_CONSERVATION_COMMENTAIRE_RETOUR } from "./regles";
  */
 
 export const FONCTIONNALITE_RESUME = "resume_dossier";
+export const FONCTIONNALITE_ASSISTANT = "assistant_citoyen";
 
 const UNE_HEURE_MS = 60 * 60 * 1000;
 const UN_JOUR_MS = 24 * 60 * 60 * 1000;
@@ -38,8 +39,11 @@ export async function ouvrirAppelIa(ouverture: OuvertureAppel): Promise<string> 
   return ligne.id;
 }
 
+/** Resume : ok, indisponible, bloque, erreur. Assistant citoyen : ok (reponse trouvee), symptome (question de sante redirigee), inconnu (sans reponse). */
+export type StatutAppel = "ok" | "indisponible" | "bloque" | "erreur" | "symptome" | "inconnu";
+
 export interface ResultatAppel {
-  statut: "ok" | "indisponible" | "bloque" | "erreur";
+  statut: StatutAppel;
   modele: string;
   nombreSources: number;
   pucesLues: number;
@@ -49,6 +53,11 @@ export interface ResultatAppel {
 
 export async function cloreAppelIa(id: string, resultat: ResultatAppel): Promise<void> {
   await prisma.appelIa.update({ where: { id }, data: resultat });
+}
+
+/** Ecrit un appel deja termine en une seule operation (fonctionnalites sans phase d'attente, comme l'assistant citoyen). */
+export async function enregistrerAppelTermine(ouverture: OuvertureAppel, resultat: ResultatAppel): Promise<void> {
+  await prisma.appelIa.create({ data: { ...ouverture, ...resultat } });
 }
 
 /** RG-IA-08 : le commentaire de retour libre est efface au bout de 30 jours ; la ligne de journal (sans texte) est conservee. */
@@ -67,6 +76,9 @@ export interface StatistiquesIa {
   indisponibles: number;
   bloques: number;
   erreurs: number;
+  /** Assistant citoyen : questions de sante redirigees vers les secours, et questions sans reponse. */
+  symptomes: number;
+  sansReponse: number;
   retoursUtiles: number;
   retoursInexacts: number;
   /** Part des retours "inexact" parmi les retours donnes, null tant qu'aucun retour n'existe. */
@@ -103,6 +115,8 @@ export function assemblerStatistiques(entree: {
     indisponibles: compter(entree.parStatut, "indisponible"),
     bloques: compter(entree.parStatut, "bloque"),
     erreurs: compter(entree.parStatut, "erreur"),
+    symptomes: compter(entree.parStatut, "symptome"),
+    sansReponse: compter(entree.parStatut, "inconnu"),
     retoursUtiles,
     retoursInexacts,
     tauxInexact: retours === 0 ? null : retoursInexacts / retours,

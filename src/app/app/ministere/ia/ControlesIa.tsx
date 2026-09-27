@@ -60,7 +60,7 @@ export function ControlesIa({ iaActive }: { iaActive: boolean }) {
       {evaluation && !evaluation.error ? (
         <Alert level={evaluation.success ? "success" : "critical"} title={evaluation.success ? "Jeu d'évaluation réussi" : "Jeu d'évaluation en échec : ne pas déployer (RG-IA-20)"}>
           <p>
-            {evaluation.conformes} dossier(s) conforme(s) sur {evaluation.total}.
+            {evaluation.conformes} cas conforme(s) sur {evaluation.total} (dossiers fictifs du résumé et questions de l&apos;assistant).
           </p>
           {evaluation.echecs.length > 0 ? (
             <ul className="mt-2 flex list-disc flex-col gap-1 pl-4 text-[13px]">
