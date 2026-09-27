@@ -3883,3 +3883,24 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
 - Verifie : tsc 0, eslint 0 erreur, migration deployee sans derive, 108 tests (vaccination x2 fichiers, pilotage agregation, communautaire, permissions), scenario navigateur reel complet (creation d'une personne, sous-formulaire affiche seulement pour une personne enregistree, lieu par defaut "campagne", enregistrement reussi, avertissement de doublon puis confirmation, avertissement d'age BCG observe en vrai avec une date de naissance de plus de 12 mois). Donnees de test nettoyees (11 personnes, 2 vaccinations).
 - A signaler, pas de mon fait : `src/security/service-guard.test.ts` est rouge a cause de `src/modules/patient/actions.ts` (const et fonction exportees d'un fichier "use server", non commite, visiblement en cours ailleurs) : `MIN_CARACTERES_RECHERCHE_PROFESSIONNEL` et `rechercheProfessionnelSuffisante` devraient etre deplaces dans un module sans "use server".
 - 2026-09-27.
+
+### Prise de projet-gouv-0a, F-LAB-06 : liberation par le laboratoire, 2026-09-27
+
+- Suite proposee par 21 apres F-CIT-05. Fichiers : `laboratoire/actions.ts` (deja utilise ce soir
+  par plusieurs sessions labo, verifie propre au moment de cette prise, `git status` vide),
+  `medecin/examens/BoutonAnnulerExamen.tsx` (nouveau bouton dans `medecin/laboratoire`, ecran labo).
+- Ligne F-LAB-06 perimee : l'annulation par le medecin demandeur (motif, notification patient ET
+  laboratoire) est deja livree (`annulerExamenAction`). Seul manque reel, texte du pack : "Un
+  laboratoire peut liberer une demande 'au choix du patient' qu'il a prise par erreur (motif) avant
+  prelevement."
+- Limite assumee (a documenter dans le code) : `ExamenMedical.laboratoireId` est obligatoire et fixe
+  a la creation dans ce depot (choisi par le medecin demandeur, `demanderExamenAction`) ; aucun
+  concept de demande "au choix du patient" non assignee que plusieurs laboratoires pourraient voir
+  et prendre. La liberation devient donc : le laboratoire assigne refuse la demande avant tout
+  prelevement (statut "demande" strictement, jamais "en_cours"), motif obligatoire, notifie le
+  patient ET le medecin demandeur (qui doit refaire la demande avec un autre laboratoire, aucun
+  mecanisme de reassignation dans ce depot) plutot que patient+laboratoire (deja le cas de
+  l'annulation par le medecin, ou le laboratoire est deja au courant).
+- Pas de nouvelle colonne ni migration : reutilise le statut "annule" existant (deja exclu de tous
+  les tableaux de bord actifs), distingue par le nom de l'action JournalAudit et le texte des
+  notifications.
