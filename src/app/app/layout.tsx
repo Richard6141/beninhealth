@@ -16,6 +16,7 @@ import {
   LayoutDashboard,
   HeartPulse,
   Lock,
+  Map,
   MapPin,
   Merge,
   MessageCircleQuestion,
@@ -313,6 +314,11 @@ const navigationAdminNational: ElementNavigation[] = [
     label: "Diagnostics CIM-10",
     href: "/app/ministere/referentiels/cim10",
     icon: <Stethoscope size={tailleIconeNav} aria-hidden="true" />,
+  },
+  {
+    label: "Référentiel géographie",
+    href: "/app/ministere/referentiels/geographie",
+    icon: <Map size={tailleIconeNav} aria-hidden="true" />,
   },
   {
     label: "Validation des professionnels",

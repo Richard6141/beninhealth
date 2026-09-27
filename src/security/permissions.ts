@@ -255,6 +255,11 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     'read:referentiel_cim10',
     'create:referentiel_cim10',
     'update:referentiel_cim10',
+    // F-ADM-04 (partie 7) : referentiel geographie (departements, communes,
+    // zones sanitaires, voir src/modules/administration/referentiel-geographie.ts).
+    // Lecture seule : ces trois tables n'ont ni champ "actif" ni action
+    // d'ecriture cote admin (limite assumee, voir ce module).
+    'read:referentiel_geographie',
     // F-NOT-02 : boite d'envoi SMS simulee, consultable et testable (voir
     // src/modules/notification/sms/dev.ts).
     'read:envoi_sms',
