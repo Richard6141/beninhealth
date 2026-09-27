@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ShieldAlert } from "lucide-react";
 import type { FiltresJournalAudit, ResultatJournalAudit } from "@/modules/audit/actions";
 import { Card } from "@/components/ui/Card";
+import { ExportCsvJournalAudit } from "./ExportCsvJournalAudit";
 
 function formaterDateHeure(date: string): string {
   try {
@@ -163,7 +164,7 @@ export function ListeJournalAudit({
         ) : null}
       </form>
 
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <span className="text-[13px] font-semibold text-encre-secondaire">
           {resultat.total} {resultat.total > 1 ? "entrées" : "entrée"}
         </span>
@@ -173,6 +174,8 @@ export function ListeJournalAudit({
           </span>
         ) : null}
       </div>
+
+      {resultat.total > 0 ? <ExportCsvJournalAudit filtres={filtres} /> : null}
 
       {resultat.entrees.length === 0 ? (
         <Card>

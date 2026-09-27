@@ -47,11 +47,14 @@
 
 import { headers } from "next/headers";
 import { createHash } from "node:crypto";
+import bcrypt from "bcryptjs";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
 import { creerNotification } from "@/modules/notification/creer";
 import { journaliser } from "./journaliser";
+import { creerJetonExportAudit, jetonExportAuditValide } from "./jeton-export-audit";
 import type { NomRole } from "@/types";
 
 const TAILLE_PAGE = 50;
@@ -103,6 +106,11 @@ function nomCompletActeur(utilisateur: { nom: string; prenom: string }): string 
   return `${utilisateur.prenom} ${utilisateur.nom}`;
 }
 
+function texte(formData: FormData, cle: string): string {
+  const valeur = formData.get(cle);
+  return typeof valeur === "string" ? valeur : "";
+}
+
 function differenceEnJours(debut: Date, fin: Date): number {
   return Math.ceil((fin.getTime() - debut.getTime()) / (24 * 60 * 60 * 1000));
 }
@@ -149,35 +157,42 @@ async function clesDonneeConcerneePourPatient(identifiantSante: string): Promise
   return clesDonneeConcerneePourPatientId(patient.id);
 }
 
+type ContexteRechercheAudit =
+  | { statut: "refuse" }
+  | { statut: "vide"; etablissementImpose: { id: string; nom: string } | null }
+  | {
+      statut: "ok";
+      role: NomRole;
+      where: Record<string, unknown>;
+      etablissementImpose: { id: string; nom: string } | null;
+    };
+
 /**
- * F-AUD-01 : recherche dans le journal d'audit. Retourne null si la session
- * est absente ou si le role connecte n'a pas read:journal_audit (Zero
- * Trust : jamais une liste partielle silencieuse).
+ * Logique commune a rechercherJournalAudit (F-AUD-01, pagine) et a l'export
+ * CSV (meme fiche, toutes les lignes de la periode) : session, role
+ * read:journal_audit, fenetre de 31 jours au plus, portee imposee a
+ * admin_etablissement, et construction du `where` Prisma (acteur, action,
+ * patient). Ni pagination ni journalisation ici, propres a chaque appelant.
  */
-export async function rechercherJournalAudit(
-  filtres: FiltresJournalAudit
-): Promise<ResultatJournalAudit | null> {
-  const session = await getSession();
-
-  if (!session) {
-    return null;
-  }
-
+async function construireContexteRechercheAudit(
+  session: { userId: string; roles: NomRole[] },
+  filtres: Pick<FiltresJournalAudit, "dateDebut" | "dateFin" | "acteur" | "patientIdentifiantSante" | "action" | "etablissementId">
+): Promise<ContexteRechercheAudit> {
   const role = session.roles.find((r) => can(r, "read", "journal_audit"));
 
   if (!role) {
-    return null;
+    return { statut: "refuse" };
   }
 
   const dateDebut = new Date(`${filtres.dateDebut}T00:00:00.000Z`);
   const dateFin = new Date(`${filtres.dateFin}T23:59:59.999Z`);
 
   if (Number.isNaN(dateDebut.getTime()) || Number.isNaN(dateFin.getTime()) || dateFin < dateDebut) {
-    return null;
+    return { statut: "refuse" };
   }
 
   if (differenceEnJours(dateDebut, dateFin) > NOMBRE_JOURS_MAX) {
-    return null;
+    return { statut: "refuse" };
   }
 
   let etablissementImpose: { id: string; nom: string } | null = null;
@@ -189,7 +204,7 @@ export async function rechercherJournalAudit(
     });
 
     if (!admin) {
-      return null;
+      return { statut: "refuse" };
     }
 
     etablissementImpose = { id: admin.etablissementId, nom: admin.etablissement.nom };
@@ -228,19 +243,48 @@ export async function rechercherJournalAudit(
     const cles = await clesDonneeConcerneePourPatient(filtres.patientIdentifiantSante.trim());
 
     if (cles === null) {
-      return {
-        entrees: [],
-        total: 0,
-        page: 1,
-        nombreDePages: 1,
-        actionsDisponibles: [],
-        etablissementsDisponibles: [],
-        etablissementImpose: etablissementImpose?.nom ?? null,
-      };
+      return { statut: "vide", etablissementImpose };
     }
 
     where.donneeConcernee = { in: cles };
   }
+
+  return { statut: "ok", role, where, etablissementImpose };
+}
+
+/**
+ * F-AUD-01 : recherche dans le journal d'audit. Retourne null si la session
+ * est absente ou si le role connecte n'a pas read:journal_audit (Zero
+ * Trust : jamais une liste partielle silencieuse).
+ */
+export async function rechercherJournalAudit(
+  filtres: FiltresJournalAudit
+): Promise<ResultatJournalAudit | null> {
+  const session = await getSession();
+
+  if (!session) {
+    return null;
+  }
+
+  const contexte = await construireContexteRechercheAudit(session, filtres);
+
+  if (contexte.statut === "refuse") {
+    return null;
+  }
+
+  if (contexte.statut === "vide") {
+    return {
+      entrees: [],
+      total: 0,
+      page: 1,
+      nombreDePages: 1,
+      actionsDisponibles: [],
+      etablissementsDisponibles: [],
+      etablissementImpose: contexte.etablissementImpose?.nom ?? null,
+    };
+  }
+
+  const { role, where, etablissementImpose } = contexte;
 
   const [total, actionsDistinctes, etablissements] = await Promise.all([
     prisma.journalAudit.count({ where }),
@@ -293,6 +337,169 @@ export async function rechercherJournalAudit(
     etablissementsDisponibles: etablissements,
     etablissementImpose: etablissementImpose?.nom ?? null,
   };
+}
+
+const LONGUEUR_MIN_MOTIF_EXPORT_AUDIT = 10;
+
+export interface ExportCsvAuditActionState {
+  error: string | null;
+  success: boolean;
+  jeton?: string;
+}
+
+const schemaExportCsvAudit = z.object({
+  motDePasse: z.string().min(1, "Votre mot de passe est obligatoire pour confirmer."),
+  motif: z
+    .string()
+    .trim()
+    .min(LONGUEUR_MIN_MOTIF_EXPORT_AUDIT, `Le motif doit contenir au moins ${LONGUEUR_MIN_MOTIF_EXPORT_AUDIT} caractères.`),
+  dateDebut: z.string().trim().min(1),
+  dateFin: z.string().trim().min(1),
+});
+
+/**
+ * Re-authentification avant export CSV du journal d'audit (meme patron que
+ * verifierMotDePasseExportAction, F-CIT-13, src/modules/patient/droits-donnees.ts) :
+ * la session seule ne suffit pas pour un export en masse. Motif obligatoire
+ * (RG-AUD, trace explicitement pourquoi le journal a ete exporte), verifie
+ * ici mot de passe reconfirme, delivre un jeton signe de 5 minutes qui
+ * n'autorise qu'une re-authentification recente, jamais un contenu ni une
+ * portee particuliere (la portee reelle est re-derivee a chaque telechargement
+ * a partir de la session, comme rechercherJournalAudit).
+ */
+export async function verifierMotDePasseExportCsvAuditAction(
+  prevState: ExportCsvAuditActionState,
+  formData: FormData
+): Promise<ExportCsvAuditActionState> {
+  const session = await getSession();
+
+  if (!session) {
+    return { error: "Session expirée. Veuillez vous reconnecter.", success: false };
+  }
+
+  const role = session.roles.find((r) => can(r, "read", "journal_audit"));
+
+  if (!role) {
+    return { error: "Action réservée aux comptes autorisés à consulter le journal d'audit.", success: false };
+  }
+
+  const validation = schemaExportCsvAudit.safeParse({
+    motDePasse: texte(formData, "motDePasse"),
+    motif: texte(formData, "motif"),
+    dateDebut: texte(formData, "dateDebut"),
+    dateFin: texte(formData, "dateFin"),
+  });
+
+  if (!validation.success) {
+    return {
+      error: validation.error.issues[0]?.message ?? "Données invalides.",
+      success: false,
+    };
+  }
+
+  const utilisateur = await prisma.user.findUnique({ where: { id: session.userId } });
+
+  if (!utilisateur) {
+    return { error: "Compte introuvable.", success: false };
+  }
+
+  const motDePasseValide = await bcrypt.compare(validation.data.motDePasse, utilisateur.motDePasseHash);
+
+  if (!motDePasseValide) {
+    return { error: "Mot de passe incorrect.", success: false };
+  }
+
+  const adresseTechnique = await adresseTechniqueCourante();
+
+  await journaliser({
+    utilisateurId: session.userId,
+    action: "export_journal_audit_demande",
+    donneeConcernee: `periode:${validation.data.dateDebut}_${validation.data.dateFin}`,
+    adresseTechnique,
+    justification: `Export CSV du journal d'audit demandé, ré-authentification réussie. Motif : ${validation.data.motif}`,
+  });
+
+  return { error: null, success: true, jeton: creerJetonExportAudit(session.userId) };
+}
+
+function champCsv(valeur: string): string {
+  if (/[",\n\r]/.test(valeur)) {
+    return `"${valeur.replace(/"/g, '""')}"`;
+  }
+  return valeur;
+}
+
+const ENTETES_CSV_AUDIT = ["Date", "Acteur", "Rôle", "Établissement", "Action", "Concerne", "Justification"];
+
+/**
+ * F-AUD-01 : genere le CSV complet (aucune pagination, la fenetre de 31
+ * jours au plus reste la seule limite) des entrees du journal d'audit
+ * correspondant aux memes filtres et a la meme portee que
+ * rechercherJournalAudit. Exige un jeton valide (voir
+ * verifierMotDePasseExportCsvAuditAction ci-dessus) en plus de la session :
+ * sans lui, un simple GET avec le cookie de session ne suffirait pas a
+ * declencher l'export, meme principe que /api/patient/export/*.
+ */
+export async function genererCsvJournalAudit(
+  filtres: FiltresJournalAudit,
+  jeton: string | null
+): Promise<{ contenu: string } | { error: string }> {
+  const session = await getSession();
+
+  if (!session) {
+    return { error: "Authentification requise." };
+  }
+
+  if (!jetonExportAuditValide(jeton, session.userId)) {
+    return { error: "Confirmation du mot de passe requise ou expirée." };
+  }
+
+  const contexte = await construireContexteRechercheAudit(session, filtres);
+
+  if (contexte.statut === "refuse") {
+    return { error: "Période invalide (31 jours au plus) ou droits insuffisants." };
+  }
+
+  const lignes: string[][] = [];
+
+  if (contexte.statut === "ok") {
+    const entrees = await prisma.journalAudit.findMany({
+      where: contexte.where,
+      include: {
+        utilisateur: { include: { roles: true, professionnel: { include: { etablissement: true } } } },
+      },
+      orderBy: { date: "desc" },
+    });
+
+    for (const entree of entrees) {
+      lignes.push([
+        entree.date.toISOString(),
+        nomCompletActeur(entree.utilisateur),
+        entree.utilisateur.roles[0]?.nom ?? "",
+        entree.utilisateur.professionnel?.etablissement.nom ?? "",
+        entree.action,
+        entree.donneeConcernee,
+        entree.justification,
+      ]);
+    }
+  }
+
+  const adresseTechnique = await adresseTechniqueCourante();
+
+  // RG-AUD-01 : l'export lui-meme est une consultation du journal, tracee comme telle.
+  await journaliser({
+    utilisateurId: session.userId,
+    action: "export_journal_audit_telecharge",
+    donneeConcernee: `periode:${filtres.dateDebut}_${filtres.dateFin}`,
+    adresseTechnique,
+    justification: `Export CSV du journal d'audit téléchargé (${lignes.length} ligne(s)).`,
+  });
+
+  const corps = [ENTETES_CSV_AUDIT, ...lignes].map((ligne) => ligne.map(champCsv).join(",")).join("\r\n");
+
+  // BOM UTF-8 : Excel (encore tres utilise au Benin) n'affiche pas correctement
+  // les caracteres accentues d'un CSV UTF-8 sans cet indicateur.
+  return { contenu: `﻿${corps}` };
 }
 
 const DUREE_ACCES_URGENCE_MS = 4 * 60 * 60 * 1000;
