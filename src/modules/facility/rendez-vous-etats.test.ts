@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 import { Prisma } from "@prisma/client";
 import {
+  STATUTS_QUI_LIBERENT_LE_CRENEAU,
   STATUTS_RENDEZ_VOUS,
   TRANSITIONS,
   estConflitDeCreneau,
@@ -26,10 +27,13 @@ describe("table de transitions", () => {
   // Matrice attendue, ecrite en dur (et non deduite de TRANSITIONS) pour que toute modification soit revue.
   const ATTENDU: Record<EvenementRendezVous, string[]> = {
     confirmer: ["demande"],
+    refuser: ["demande"],
+    expirer: ["demande"],
     annuler: ["demande", "confirme"],
     enregistrer_arrivee: ["demande", "confirme", "absent"],
     marquer_absent: ["confirme"],
-    terminer: ["demande", "confirme", "absent"],
+    demarrer_consultation: ["demande", "confirme", "absent"],
+    terminer: ["demande", "confirme", "absent", "en_consultation"],
   };
 
   for (const evenement of Object.keys(ATTENDU) as EvenementRendezVous[]) {
@@ -41,10 +45,24 @@ describe("table de transitions", () => {
     }
   }
 
-  it("un rendez-vous termine ou annule ne peut plus changer de statut", () => {
+  it("un rendez-vous termine, annule, refuse ou expire ne peut plus changer de statut", () => {
     for (const evenement of Object.keys(TRANSITIONS) as EvenementRendezVous[]) {
-      expect(transitionAutorisee("termine", evenement)).toBe(false);
-      expect(transitionAutorisee("annule", evenement)).toBe(false);
+      for (const statutFinal of ["termine", "annule", "refuse", "expire"]) {
+        expect(transitionAutorisee(statutFinal, evenement)).toBe(false);
+      }
+    }
+  });
+
+  it("un rendez-vous en consultation ne peut ni etre annule, ni refuse, ni marque absent", () => {
+    for (const evenement of ["annuler", "refuser", "expirer", "marquer_absent", "confirmer"] as EvenementRendezVous[]) {
+      expect(transitionAutorisee("en_consultation", evenement)).toBe(false);
+    }
+  });
+
+  it("annule, refuse et expire liberent le creneau, pas les autres statuts", () => {
+    expect([...STATUTS_QUI_LIBERENT_LE_CRENEAU].sort()).toEqual(["annule", "expire", "refuse"]);
+    for (const statut of ["demande", "confirme", "en_consultation", "termine", "absent"]) {
+      expect(STATUTS_QUI_LIBERENT_LE_CRENEAU).not.toContain(statut);
     }
   });
 

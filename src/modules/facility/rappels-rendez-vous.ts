@@ -69,7 +69,8 @@ export async function envoyerRappelsDus(
 
   const candidats = await prisma.rendezVous.findMany({
     where: {
-      statut: { not: "annule" },
+      // F-RDV-07 : seuls les rendez-vous confirmes sont rappeles (jamais une demande en attente, refusee ou expiree).
+      statut: "confirme",
       date: { gt: maintenant, lt: borneRecherche },
       OR: [{ rappelVeilleEnvoyeLe: null }, { rappelDeuxHeuresEnvoyeLe: null }],
     },

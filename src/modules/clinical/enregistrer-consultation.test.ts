@@ -318,7 +318,7 @@ describe("validation (CA-1, RG-CLI-61)", () => {
 
     await enregistrerConsultationAction(ETAT, formulaire({ ...valider, rendezVousId: "rdv-1" }));
     expect(prismaMock.rendezVous.updateMany).toHaveBeenCalledWith({
-      where: { id: "rdv-1", statut: { in: ["demande", "confirme", "absent"] } },
+      where: { id: "rdv-1", statut: { in: ["demande", "confirme", "absent", "en_consultation"] } },
       data: { statut: "termine" },
     });
 
@@ -328,12 +328,26 @@ describe("validation (CA-1, RG-CLI-61)", () => {
     expect(resultat).toMatchObject({ success: true, valide: true });
   });
 
-  it("un brouillon simple ne touche pas au rendez-vous", async () => {
+  it("un brouillon simple met le rendez-vous en consultation (IN_CARE), sans jamais le terminer ni bloquer le brouillon", async () => {
     prismaMock.consultation.create.mockResolvedValue({ id: "c-new", rendezVousId: "rdv-1", date: MAINTENANT, etablissementId: "etab-1" });
     prismaMock.rendezVous.findUnique.mockResolvedValue({ id: "rdv-1", patientId: "pat-1", professionnelId: "pro-1" });
 
     await enregistrerConsultationAction(ETAT, formulaire({ rendezVousId: "rdv-1" }));
 
+    expect(prismaMock.rendezVous.updateMany).toHaveBeenCalledTimes(1);
+    expect(prismaMock.rendezVous.updateMany).toHaveBeenCalledWith({
+      where: { id: "rdv-1", statut: { in: ["demande", "confirme", "absent"] } },
+      data: { statut: "en_consultation" },
+    });
+
+    // Rendez-vous deja annule : la transition est refusee, le brouillon est cree quand meme.
+    prismaMock.rendezVous.updateMany.mockResolvedValue({ count: 0 });
+    const resultat = await enregistrerConsultationAction(ETAT, formulaire({ rendezVousId: "rdv-1" }));
+    expect(resultat).toMatchObject({ success: true, valide: false });
+  });
+
+  it("un brouillon sans rendez-vous ne touche a aucun rendez-vous", async () => {
+    await enregistrerConsultationAction(ETAT, formulaire());
     expect(prismaMock.rendezVous.updateMany).not.toHaveBeenCalled();
   });
 });

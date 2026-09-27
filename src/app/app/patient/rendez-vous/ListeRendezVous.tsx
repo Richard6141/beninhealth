@@ -3,12 +3,15 @@
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { Building2, CalendarClock, CalendarX2, Search, TriangleAlert, X } from "lucide-react";
+import { Building2, CalendarClock, CalendarX2, Phone, Search, TriangleAlert, X } from "lucide-react";
 import {
   annulerRendezVousAction,
+  deplacerRendezVousAction,
   type FacilityActionState,
   type RendezVousResume,
 } from "@/modules/facility/actions";
+import { DELAI_ANNULATION_PATIENT_MS, MAX_DEPLACEMENTS } from "@/modules/facility/regles-rendez-vous";
+import { TextField } from "@/components/ui/TextField";
 import { Alert } from "@/components/ui/Alert";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
@@ -27,8 +30,12 @@ function libelleStatut(statut: string): { texte: string; tone: BadgeTone } {
   const cle = statut.trim().toLowerCase();
   if (cle === "demande") return { texte: "Demande envoyée", tone: "info" };
   if (cle === "confirme") return { texte: "Confirmé", tone: "good" };
+  if (cle === "en_consultation") return { texte: "En consultation", tone: "info" };
   if (cle === "termine") return { texte: "Terminé", tone: "neutral" };
   if (cle === "annule") return { texte: "Annulé", tone: "critical" };
+  if (cle === "refuse") return { texte: "Refusé", tone: "critical" };
+  if (cle === "expire") return { texte: "Expiré", tone: "neutral" };
+  if (cle === "absent") return { texte: "Absent", tone: "warning" };
   return { texte: statut, tone: "neutral" };
 }
 
@@ -150,18 +157,20 @@ function TableauRendezVous({ rendezVous }: { rendezVous: RendezVousResume[] }) {
 
 type FiltreStatut = "tous" | "a-venir" | "termines" | "annules";
 
+const STATUTS_ANNULES_OU_REFUSES = new Set(["annule", "refuse", "expire"]);
+
 const OPTIONS_FILTRE_STATUT: { id: FiltreStatut; label: string }[] = [
   { id: "tous", label: "Tous" },
   { id: "a-venir", label: "À venir" },
   { id: "termines", label: "Terminés" },
-  { id: "annules", label: "Annulés" },
+  { id: "annules", label: "Annulés ou refusés" },
 ];
 
 function correspondAuFiltreStatut(rendezVous: RendezVousResume, filtre: FiltreStatut): boolean {
   if (filtre === "tous") return true;
   if (filtre === "a-venir") return STATUTS_A_VENIR.has(rendezVous.statut);
   if (filtre === "termines") return rendezVous.statut === "termine";
-  return rendezVous.statut === "annule";
+  return STATUTS_ANNULES_OU_REFUSES.has(rendezVous.statut);
 }
 
 /**
@@ -181,7 +190,7 @@ export function ListeRendezVous({ rendezVous }: ListeRendezVousProps) {
       tous: rendezVous.length,
       "a-venir": rendezVous.filter((rdv) => STATUTS_A_VENIR.has(rdv.statut)).length,
       termines: rendezVous.filter((rdv) => rdv.statut === "termine").length,
-      annules: rendezVous.filter((rdv) => rdv.statut === "annule").length,
+      annules: rendezVous.filter((rdv) => STATUTS_ANNULES_OU_REFUSES.has(rdv.statut)).length,
     }),
     [rendezVous]
   );
@@ -276,11 +285,23 @@ function LigneRendezVous({ rendezVous }: { rendezVous: RendezVousResume }) {
     annulerRendezVousAction,
     etatInitial
   );
+  const [stateDeplacement, formActionDeplacement, pendingDeplacement] = useActionState(
+    deplacerRendezVousAction,
+    etatInitial
+  );
   const detailsModalRef = useRef<ModalHandle>(null);
   const annulationModalRef = useRef<ModalHandle>(null);
+  const deplacementModalRef = useRef<ModalHandle>(null);
   const router = useRouter();
   const statut = libelleStatut(rendezVous.statut);
-  const peutAnnuler = STATUTS_A_VENIR.has(rendezVous.statut);
+  const aVenir = STATUTS_A_VENIR.has(rendezVous.statut);
+  // RG-RDV-10 : annulation et deplacement jusqu'a 2 h avant (le serveur reste l'autorite).
+  const [maintenant] = useState(() => Date.now());
+  const delaiRespecte = new Date(rendezVous.date).getTime() - maintenant >= DELAI_ANNULATION_PATIENT_MS;
+  const peutAnnuler = aVenir && delaiRespecte;
+  const appelerEtablissement = aVenir && !delaiRespecte;
+  // RG-RDV-11 : deux deplacements au plus.
+  const peutDeplacer = peutAnnuler && rendezVous.nombreDeplacements < MAX_DEPLACEMENTS;
 
   useEffect(() => {
     if (state.success) {
@@ -289,9 +310,21 @@ function LigneRendezVous({ rendezVous }: { rendezVous: RendezVousResume }) {
     }
   }, [state.success, router]);
 
+  useEffect(() => {
+    if (stateDeplacement.success) {
+      deplacementModalRef.current?.close();
+      router.refresh();
+    }
+  }, [stateDeplacement.success, router]);
+
   function ouvrirAnnulation() {
     detailsModalRef.current?.close();
     annulationModalRef.current?.showModal();
+  }
+
+  function ouvrirDeplacement() {
+    detailsModalRef.current?.close();
+    deplacementModalRef.current?.showModal();
   }
 
   return (
@@ -350,6 +383,12 @@ function LigneRendezVous({ rendezVous }: { rendezVous: RendezVousResume }) {
             onClick={() => annulationModalRef.current?.showModal()}
           />
         ) : null}
+        {appelerEtablissement ? (
+          <span className="ml-auto flex w-fit items-center gap-1.5 text-[12px] text-encre-attenuee">
+            <Phone size={12} aria-hidden="true" />
+            Appeler l&apos;établissement
+          </span>
+        ) : null}
 
         <Modal ref={detailsModalRef} icon={CalendarClock} title="Détails du rendez-vous">
           <div className="flex flex-col gap-5">
@@ -397,10 +436,28 @@ function LigneRendezVous({ rendezVous }: { rendezVous: RendezVousResume }) {
               <span className="text-[14px] text-encre">{rendezVous.motif}</span>
             </TuileDetail>
 
+            {rendezVous.statut === "refuse" && rendezVous.motifRefus ? (
+              <Alert level="critical" title="Demande refusée par l'établissement">
+                {rendezVous.motifRefus}
+              </Alert>
+            ) : null}
+
+            {appelerEtablissement ? (
+              <Alert level="info" title="Moins de 2 heures avant le rendez-vous">
+                L&apos;annulation et le déplacement ne sont plus possibles en ligne. Appelez l&apos;établissement
+                {rendezVous.etablissementTelephone ? ` au ${rendezVous.etablissementTelephone}` : ""}.
+              </Alert>
+            ) : null}
+
             <div className="flex justify-end gap-2 border-t border-bordure pt-4">
               <Button type="button" variant="secondary" onClick={() => detailsModalRef.current?.close()}>
                 Fermer
               </Button>
+              {peutDeplacer ? (
+                <Button type="button" variant="secondary" onClick={ouvrirDeplacement}>
+                  Déplacer
+                </Button>
+              ) : null}
               {peutAnnuler ? (
                 <Button type="button" variant="danger" onClick={ouvrirAnnulation}>
                   Annuler ce rendez-vous
@@ -408,6 +465,35 @@ function LigneRendezVous({ rendezVous }: { rendezVous: RendezVousResume }) {
               ) : null}
             </div>
           </div>
+        </Modal>
+
+        <Modal
+          ref={deplacementModalRef}
+          icon={CalendarClock}
+          title="Déplacer ce rendez-vous"
+          description={`Rendez-vous du ${formaterDateHeure(rendezVous.date)} à ${rendezVous.etablissementNom}. Déplacements restants : ${MAX_DEPLACEMENTS - rendezVous.nombreDeplacements}.`}
+        >
+          <form action={formActionDeplacement} className="flex flex-col gap-4">
+            <input type="hidden" name="rendezVousId" value={rendezVous.id} />
+            {stateDeplacement.error ? (
+              <Alert level="critical" title="Déplacement impossible">
+                {stateDeplacement.error}
+              </Alert>
+            ) : null}
+            <TextField label="Nouvelle date et heure" name="date" type="datetime-local" required />
+            <p className="text-[13px] text-encre-secondaire">
+              Le nouveau rendez-vous est créé avant l&apos;annulation de l&apos;ancien : s&apos;il échoue, l&apos;ancien
+              est conservé. Il devra être confirmé de nouveau par l&apos;établissement.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="secondary" onClick={() => deplacementModalRef.current?.close()}>
+                Revenir
+              </Button>
+              <Button type="submit" variant="primary" disabled={pendingDeplacement}>
+                {pendingDeplacement ? "Déplacement en cours..." : "Confirmer le déplacement"}
+              </Button>
+            </div>
+          </form>
         </Modal>
 
         <Modal

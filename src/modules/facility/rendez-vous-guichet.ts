@@ -51,7 +51,8 @@ import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
 import { dateDepuisChaineLocaleBenin } from "@/lib/fuseau-horaire";
 import { dateDansUnCreneauDisponible } from "./creneau-disponible";
-import { estConflitDeCreneau } from "./rendez-vous-etats";
+import { STATUTS_QUI_LIBERENT_LE_CRENEAU, estConflitDeCreneau } from "./rendez-vous-etats";
+import { verifierReglesReservation } from "./regles-reservation";
 
 async function adresseTechniqueCourante(): Promise<string> {
   try {
@@ -266,6 +267,19 @@ export async function creerRendezVousGuichetAction(
     const dateRendezVous = dateDepuisChaineLocaleBenin(date);
     const professionnelIdNettoye = professionnelId.trim();
 
+    // RG-RDV-01 (sans delai minimum au guichet, 90 jours au plus), RG-RDV-02
+    // (3 rendez-vous futurs), un seul rendez-vous par jour et par etablissement.
+    const refusRegles = await verifierReglesReservation({
+      patientId,
+      etablissementId: admin.etablissementId,
+      date: dateRendezVous,
+      guichet: true,
+    });
+
+    if (refusRegles) {
+      return { error: refusRegles, success: false };
+    }
+
     if (professionnelIdNettoye.length > 0) {
       const professionnel = await prisma.professionnelSante.findUnique({
         where: { id: professionnelIdNettoye },
@@ -294,7 +308,7 @@ export async function creerRendezVousGuichetAction(
         where: {
           professionnelId: professionnelIdNettoye,
           date: dateRendezVous,
-          statut: { not: "annule" },
+          statut: { notIn: [...STATUTS_QUI_LIBERENT_LE_CRENEAU] },
         },
       });
       if (dejaPris) {

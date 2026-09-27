@@ -39,24 +39,45 @@ Fonctions exposees (voir `actions.ts` pour la signature complete) :
   professionnel.
 - `annulerRendezVousProfessionnelAction` : annulation cote professionnel.
 
-Cycle de vie d'un `RendezVous` (cinq statuts : "demande", "confirme",
-"termine", "annule", "absent") : le statut ne s'ecrit QUE par
-`rendez-vous-etats.ts` (RG-RDV-00), qui conditionne chaque mise a jour au
-statut de depart dans la meme requete SQL. Transitions autorisees : confirmer
-depuis "demande" ; annuler depuis "demande" ou "confirme" ; arrivee depuis
-"demande", "confirme" ou "absent" (correction d'une absence marquee a tort) ;
-"absent" depuis "confirme" (tache planifiee, RG-RDV-40) ; "termine" depuis
-"demande", "confirme" ou "absent" (validation d'une consultation du module
-`clinical`, qui n'est jamais bloquee par un refus de transition). Un
-rendez-vous "termine" ou "annule" ne change plus de statut.
+Cycle de vie d'un `RendezVous` (huit statuts : "demande", "confirme",
+"en_consultation", "termine", "annule", "absent", "refuse", "expire") : le
+statut ne s'ecrit QUE par `rendez-vous-etats.ts` (RG-RDV-00), qui conditionne
+chaque mise a jour au statut de depart dans la meme requete SQL. Transitions :
+confirmer et refuser (avec motif) depuis "demande" ; expirer depuis "demande"
+(tache planifiee, RG-RDV-20 : 24 h apres la demande ou 1 h avant le creneau) ;
+annuler depuis "demande" ou "confirme" ; arrivee depuis "demande", "confirme"
+ou "absent" ; "absent" depuis "confirme" (tache planifiee, RG-RDV-40) ;
+"en_consultation" quand le medecin ouvre le brouillon lie (IN_CARE) ; "termine"
+depuis "demande", "confirme", "absent" ou "en_consultation" (validation d'une
+consultation du module `clinical`, jamais bloquee par un refus de
+transition). Un rendez-vous "termine", "annule", "refuse" ou "expire" ne
+change plus de statut.
+
+Regles de prise (`regles-rendez-vous.ts` pures, `regles-reservation.ts` avec
+la base) : reservable de 1 heure a 30 jours a l'avance (RG-RDV-01, 90 jours et
+sans delai minimum au guichet), 3 rendez-vous futurs actifs au maximum par
+personne, dossiers de personnes a charge comptes separement (RG-RDV-02), un
+seul rendez-vous par jour local et par etablissement, etablissement actif
+seulement. Annulation par le patient jusqu'a 2 heures avant, ensuite
+invitation a appeler l'etablissement (RG-RDV-10). Deplacement (RG-RDV-11) :
+deux fois au plus, le nouveau rendez-vous est cree AVANT l'annulation de
+l'ancien dans la meme transaction, et repart au statut "demande". Le patient
+est prevenu (notification) quand l'etablissement confirme, refuse (avec le
+motif), annule, ou quand une demande expire. L'accueil (administrateur
+d'etablissement) traite les demandes de tout l'etablissement, y compris sans
+praticien choisi (`demandes-accueil.ts`, ecran `/app/etablissement/demandes`).
+Seuls les rendez-vous confirmes sont rappeles (F-RDV-07).
 
 Double reservation (RG-RDV-03) : un index UNIQUE PARTIEL en base sur
-(professionnelId, date) pour les rendez-vous non annules garantit qu'un
-professionnel n'a jamais deux rendez-vous au meme instant, meme avec des
-demandes simultanees (la violation, code P2002, devient le message "creneau
-deja reserve"). Limite assumee : un rendez-vous sans professionnel n'est
-soumis a aucune contrainte ; pas de capacite superieure a 1 ni de creneaux
-physiques (voir F-ETA-05).
+(professionnelId, date) pour les rendez-vous qui ne sont ni annules, ni
+refuses, ni expires garantit qu'un professionnel n'a jamais deux rendez-vous
+au meme instant, meme avec des demandes simultanees (la violation, code P2002,
+devient le message "creneau deja reserve"). Limites assumees : un rendez-vous
+sans professionnel n'est soumis a aucune contrainte ; pas de capacite
+superieure a 1 ni de creneaux physiques (voir F-ETA-05) ; RG-RDV-05 (3
+absences) est satisfaite par construction pour le patient (toute demande
+part a "demande") ; pas de "parti sans etre vu" ni de fenetre d'arrivee
+RG-RDV-33.
 
 Hors perimetre conserve : aucun contenu clinique ici (voir module
 `clinical`), aucune verification de consentement a la prise de rendez-vous

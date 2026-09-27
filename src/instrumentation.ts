@@ -20,6 +20,9 @@ export async function register(): Promise<void> {
   const { demarrerMarquageAbsences } = await import("@/modules/facility/marquage-absences");
   demarrerMarquageAbsences();
 
+  const { demarrerExpirationDemandes } = await import("@/modules/facility/expiration-demandes");
+  demarrerExpirationDemandes();
+
   const { demarrerPurgeNotifications } = await import("@/modules/notification/purge");
   demarrerPurgeNotifications();
 

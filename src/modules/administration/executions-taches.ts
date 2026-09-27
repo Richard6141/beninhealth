@@ -23,6 +23,7 @@ export const LIBELLES_TACHES: Record<string, string> = {
   relances_laboratoire: "Relances du laboratoire",
   rappels_rendez_vous: "Rappels de rendez-vous",
   marquage_absences: "Marquage des absences",
+  expiration_demandes_rendez_vous: "Expiration des demandes de rendez-vous",
 };
 
 export const RETENTION_JOURS = 30;

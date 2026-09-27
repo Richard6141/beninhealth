@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarCheck, Clock, UserCheck, UserX } from "lucide-react";
+import { CalendarCheck, Clock, Stethoscope, UserCheck, UserX } from "lucide-react";
 import {
   enregistrerArriveeAction,
   type FileDuJourActionState,
@@ -121,8 +121,13 @@ export function SectionFileDuJour({ rendezVous }: { rendezVous: RendezVousFileDu
     );
   }
 
-  const attendus = rendezVous.filter((rdv) => !rdv.heureArrivee && rdv.statut !== "absent" && rdv.statut !== "termine");
-  const arrives = rendezVous.filter((rdv) => rdv.heureArrivee && rdv.statut !== "termine");
+  const enConsultation = rendezVous.filter((rdv) => rdv.statut === "en_consultation");
+  const attendus = rendezVous.filter(
+    (rdv) => !rdv.heureArrivee && rdv.statut !== "absent" && rdv.statut !== "termine" && rdv.statut !== "en_consultation"
+  );
+  const arrives = rendezVous.filter(
+    (rdv) => rdv.heureArrivee && rdv.statut !== "termine" && rdv.statut !== "en_consultation"
+  );
   const termines = rendezVous.filter((rdv) => rdv.statut === "termine");
   const absents = rendezVous.filter((rdv) => rdv.statut === "absent");
 
@@ -130,6 +135,7 @@ export function SectionFileDuJour({ rendezVous }: { rendezVous: RendezVousFileDu
     <div className="grid gap-4 lg:grid-cols-2">
       <GroupeStatut titre="Attendus" icon={Clock} tone="accent" rendezVous={attendus} afficherActionArrivee />
       <GroupeStatut titre="Arrivés / en attente" icon={UserCheck} tone="good" rendezVous={arrives} />
+      <GroupeStatut titre="En consultation" icon={Stethoscope} tone="accent" rendezVous={enConsultation} />
       <GroupeStatut titre="Terminés" icon={CalendarCheck} tone="neutral" rendezVous={termines} />
       <GroupeStatut titre="Absents" icon={UserX} tone="warning" rendezVous={absents} />
     </div>

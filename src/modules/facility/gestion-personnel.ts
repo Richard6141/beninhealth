@@ -24,6 +24,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { journaliser } from "@/modules/audit/journaliser";
 import { creerNotification } from "@/modules/notification/creer";
+import { STATUTS_QUI_LIBERENT_LE_CRENEAU } from "./rendez-vous-etats";
 import {
   normaliserNumeroOrdre,
   numeroOrdreValide,
@@ -244,7 +245,7 @@ export async function terminerAffiliationAction(
       where: {
         professionnelId: cible.id,
         date: { gte: new Date() },
-        statut: { notIn: ["annule"] },
+        statut: { notIn: [...STATUTS_QUI_LIBERENT_LE_CRENEAU] },
       },
     });
 

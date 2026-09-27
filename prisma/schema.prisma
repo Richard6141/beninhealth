@@ -368,15 +368,23 @@ model RendezVous {
   // libre ici) est pose automatiquement par la tache planifiee du meme
   // module quand l'heure est depassee de plus d'1h sans arrivee.
   heureArrivee              DateTime?
+  // RG-RDV-11 : nombre de deplacements successifs. Le rendez-vous qui remplace
+  // l'ancien herite de son compte + 1 ; au-dela de 2, il faut annuler et reprendre.
+  nombreDeplacements        Int       @default(0)
+  // F-RDV-03 : motif du refus par l'etablissement (statut "refuse"), transmis
+  // au patient. Null pour tous les autres statuts.
+  motifRefus                String?
 
   consultation Consultation?
   // RG-RDV-03 : index UNIQUE PARTIEL "RendezVous_professionnelId_date_actif_key"
-  // sur (professionnelId, date) WHERE professionnelId IS NOT NULL AND statut <> 'annule'
-  // (migration 20260926213000_unicite_rendez_vous_actif). Prisma ne sait pas
-  // l'exprimer : il n'apparait pas ici. Verifie apres application : `prisma
-  // migrate diff` reste vide et ne propose pas de le supprimer (le commentaire
-  // contraire de migration.sql est inexact, ce fichier n'est pas modifie car
-  // sa somme de controle est deja enregistree en base).
+  // sur (professionnelId, date) WHERE professionnelId IS NOT NULL AND statut NOT
+  // IN ('annule', 'refuse', 'expire') : un rendez-vous annule, refuse ou expire
+  // libere le creneau (migrations 20260926213000_unicite_rendez_vous_actif puis
+  // 20260927040000_regles_rendez_vous). Prisma ne sait pas l'exprimer : il
+  // n'apparait pas ici. Verifie : `prisma migrate diff` reste vide et ne
+  // propose pas de le supprimer (le commentaire contraire de la premiere
+  // migration est inexact, ce fichier n'est pas modifie car sa somme de
+  // controle est deja enregistree en base).
   // Le statut ne s'ecrit que par src/modules/facility/rendez-vous-etats.ts.
   @@schema("public")
 }

@@ -14,6 +14,7 @@ vi.mock("@/lib/session", () => ({ getSession: vi.fn() }));
 vi.mock("@/modules/audit/journaliser", () => ({ journaliser: vi.fn() }));
 vi.mock("bcryptjs", () => ({ default: { hash: vi.fn(async () => "empreinte-bcrypt") } }));
 vi.mock("@/modules/facility/creneau-disponible", () => ({ dateDansUnCreneauDisponible: vi.fn(async () => true) }));
+vi.mock("@/modules/facility/regles-reservation", () => ({ verifierReglesReservation: vi.fn(async () => null) }));
 
 vi.mock("@/lib/prisma", () => {
   const prisma = {
@@ -35,6 +36,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { journaliser } from "@/modules/audit/journaliser";
 import { dateDansUnCreneauDisponible } from "@/modules/facility/creneau-disponible";
+import { verifierReglesReservation } from "@/modules/facility/regles-reservation";
 import {
   creerPersonneAChargeAction,
   creerRendezVousPourProcheAction,
@@ -55,6 +57,7 @@ const prismaMock = prisma as unknown as {
 const getSessionMock = getSession as unknown as Mock;
 const journaliserMock = journaliser as unknown as Mock;
 const disponibiliteMock = dateDansUnCreneauDisponible as unknown as Mock;
+const reglesMock = verifierReglesReservation as unknown as Mock;
 
 const ETAT = { error: null, success: false };
 const MAINTENANT = new Date("2026-09-26T10:00:00.000Z");
@@ -82,7 +85,8 @@ beforeEach(() => {
   prismaMock.patient.count.mockResolvedValue(3);
   prismaMock.user.create.mockResolvedValue({ patient: { id: "pat-nouveau" } });
   prismaMock.consentement.create.mockResolvedValue({});
-  prismaMock.etablissementSanitaire.findUnique.mockResolvedValue({ id: "etab-1" });
+  prismaMock.etablissementSanitaire.findUnique.mockResolvedValue({ id: "etab-1", statut: "actif" });
+  reglesMock.mockResolvedValue(null);
   prismaMock.professionnelSante.findUnique.mockResolvedValue({ id: "pro-1", etablissementId: "etab-1", statutValidation: "valide" });
   prismaMock.rendezVous.findFirst.mockResolvedValue(null);
   prismaMock.rendezVous.create.mockResolvedValue({ id: "rdv-1" });
@@ -293,6 +297,18 @@ describe("creerRendezVousPourProcheAction", () => {
 
     prismaMock.professionnelSante.findUnique.mockResolvedValue({ id: "pro-1", etablissementId: "etab-1", statutValidation: "rejete" });
     expect((await cas()).success).toBe(false);
+
+    expect(prismaMock.rendezVous.create).not.toHaveBeenCalled();
+  });
+
+  it("refuse un etablissement qui ne prend pas de rendez-vous, et applique les regles de prise (fenetre, plafond, meme jour) par personne a charge", async () => {
+    prismaMock.etablissementSanitaire.findUnique.mockResolvedValue({ id: "etab-1", statut: "ferme" });
+    expect((await cas()).error).toContain("ne prend pas de rendez-vous");
+
+    prismaMock.etablissementSanitaire.findUnique.mockResolvedValue({ id: "etab-1", statut: "actif" });
+    reglesMock.mockResolvedValue("Vous avez déjà 3 rendez-vous prévus. Annulez-en un pour en prendre un nouveau.");
+    expect((await cas()).error).toContain("3 rendez-vous");
+    expect(reglesMock).toHaveBeenCalledWith({ patientId: "pat-enfant", etablissementId: "etab-1", date: new Date("2026-10-05T08:00:00.000Z") });
 
     expect(prismaMock.rendezVous.create).not.toHaveBeenCalled();
   });

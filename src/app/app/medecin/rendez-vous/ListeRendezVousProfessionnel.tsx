@@ -8,9 +8,13 @@ import { Building2, Calendar, Check, ClipboardList, Search, Stethoscope, Triangl
 import {
   annulerRendezVousProfessionnelAction,
   confirmerRendezVousAction,
+  refuserRendezVousAction,
   type FacilityActionState,
   type RendezVousResume,
 } from "@/modules/facility/actions";
+import { MOTIFS_REFUS_RENDEZ_VOUS } from "@/modules/facility/regles-rendez-vous";
+import { SelectField } from "@/components/ui/SelectField";
+import { TextField } from "@/components/ui/TextField";
 import { Alert } from "@/components/ui/Alert";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
@@ -27,8 +31,12 @@ function libelleStatut(statut: string): { texte: string; tone: BadgeTone } {
   const cle = statut.trim().toLowerCase();
   if (cle === "demande") return { texte: "En attente", tone: "warning" };
   if (cle === "confirme") return { texte: "Confirmé", tone: "good" };
+  if (cle === "en_consultation") return { texte: "En consultation", tone: "info" };
   if (cle === "termine") return { texte: "Terminé", tone: "neutral" };
   if (cle === "annule") return { texte: "Annulé", tone: "critical" };
+  if (cle === "refuse") return { texte: "Refusé", tone: "critical" };
+  if (cle === "expire") return { texte: "Expiré", tone: "neutral" };
+  if (cle === "absent") return { texte: "Absent", tone: "warning" };
   return { texte: statut, tone: "neutral" };
 }
 
@@ -72,7 +80,7 @@ const OPTIONS_FILTRE_STATUT: { id: FiltreStatut; label: string }[] = [
   { id: "attente", label: "En attente" },
   { id: "confirmes", label: "Confirmés" },
   { id: "termines", label: "Terminés" },
-  { id: "annules", label: "Annulés" },
+  { id: "annules", label: "Annulés ou refusés" },
 ];
 
 function correspondAuFiltreStatut(rendezVous: RendezVousResume, filtre: FiltreStatut): boolean {
@@ -80,7 +88,7 @@ function correspondAuFiltreStatut(rendezVous: RendezVousResume, filtre: FiltreSt
   if (filtre === "attente") return rendezVous.statut === "demande";
   if (filtre === "confirmes") return rendezVous.statut === "confirme";
   if (filtre === "termines") return rendezVous.statut === "termine";
-  return rendezVous.statut === "annule";
+  return rendezVous.statut === "annule" || rendezVous.statut === "refuse" || rendezVous.statut === "expire";
 }
 
 function TuileDetail({ label, children }: { label: string; children: ReactNode }) {
@@ -131,7 +139,7 @@ export function ListeRendezVousProfessionnel({
       attente: rendezVous.filter((rdv) => rdv.statut === "demande").length,
       confirmes: rendezVous.filter((rdv) => rdv.statut === "confirme").length,
       termines: rendezVous.filter((rdv) => rdv.statut === "termine").length,
-      annules: rendezVous.filter((rdv) => rdv.statut === "annule").length,
+      annules: rendezVous.filter((rdv) => rdv.statut === "annule" || rdv.statut === "refuse" || rdv.statut === "expire").length,
     }),
     [rendezVous]
   );
@@ -250,13 +258,15 @@ function LigneRendezVous({
     annulerRendezVousProfessionnelAction,
     etatInitial
   );
+  const [refusState, refusFormAction, refusPending] = useActionState(refuserRendezVousAction, etatInitial);
   const detailsModalRef = useRef<ModalHandle>(null);
   const annulationModalRef = useRef<ModalHandle>(null);
+  const refusModalRef = useRef<ModalHandle>(null);
   const router = useRouter();
   const statut = libelleStatut(rendezVous.statut);
   const enAttente = rendezVous.statut === "demande";
   const confirme = rendezVous.statut === "confirme";
-  const peutDemarrerCelui = confirme && peutDemarrerConsultation;
+  const peutDemarrerCelui = (confirme || rendezVous.statut === "en_consultation") && peutDemarrerConsultation;
   const lienConsultation = `/app/medecin/consultations/nouvelle?patientId=${encodeURIComponent(
     rendezVous.patientId
   )}&rendezVousId=${encodeURIComponent(rendezVous.id)}`;
@@ -267,6 +277,14 @@ function LigneRendezVous({
       router.refresh();
     }
   }, [confirmState.success, router]);
+
+  useEffect(() => {
+    if (refusState.success) {
+      refusModalRef.current?.close();
+      detailsModalRef.current?.close();
+      router.refresh();
+    }
+  }, [refusState.success, router]);
 
   useEffect(() => {
     if (annulerState.success) {
@@ -334,11 +352,19 @@ function LigneRendezVous({
               </form>
               <IconButton
                 icon={X}
-                label="Annuler ce rendez-vous"
+                label="Refuser cette demande"
                 danger
-                onClick={() => annulationModalRef.current?.showModal()}
+                onClick={() => refusModalRef.current?.showModal()}
               />
             </>
+          ) : null}
+          {confirme ? (
+            <IconButton
+              icon={X}
+              label="Annuler ce rendez-vous"
+              danger
+              onClick={() => annulationModalRef.current?.showModal()}
+            />
           ) : null}
           {peutDemarrerCelui ? (
             <Link
@@ -399,18 +425,29 @@ function LigneRendezVous({
               <span className="text-[14px] text-encre">{rendezVous.motif}</span>
             </TuileDetail>
 
+            {rendezVous.statut === "refuse" && rendezVous.motifRefus ? (
+              <Alert level="info" title="Motif du refus transmis au patient">
+                {rendezVous.motifRefus}
+              </Alert>
+            ) : null}
+
             <div className="flex flex-wrap justify-end gap-2 border-t border-bordure pt-4">
               <Button type="button" variant="secondary" onClick={() => detailsModalRef.current?.close()}>
                 Fermer
               </Button>
+              {confirme ? (
+                <Button type="button" variant="danger" onClick={() => annulationModalRef.current?.showModal()}>
+                  Annuler
+                </Button>
+              ) : null}
               {enAttente ? (
                 <>
                   <Button
                     type="button"
                     variant="danger"
-                    onClick={() => annulationModalRef.current?.showModal()}
+                    onClick={() => refusModalRef.current?.showModal()}
                   >
-                    Annuler
+                    Refuser
                   </Button>
                   <form action={confirmFormAction}>
                     <input type="hidden" name="rendezVousId" value={rendezVous.id} />
@@ -434,13 +471,49 @@ function LigneRendezVous({
         </Modal>
 
         <Modal
+          ref={refusModalRef}
+          icon={TriangleAlert}
+          title="Refuser cette demande ?"
+          description={
+            rendezVous.patientNomComplet
+              ? `La demande de ${rendezVous.patientNomComplet} sera refusée et le patient en sera informé avec le motif.`
+              : "Cette demande sera refusée et le patient en sera informé avec le motif."
+          }
+        >
+          <form action={refusFormAction} className="flex flex-col gap-4">
+            <input type="hidden" name="rendezVousId" value={rendezVous.id} />
+            {refusState.error ? (
+              <Alert level="critical" title="Refus impossible">
+                {refusState.error}
+              </Alert>
+            ) : null}
+            <SelectField
+              label="Motif du refus"
+              name="motif"
+              required
+              placeholder="Choisir un motif"
+              options={MOTIFS_REFUS_RENDEZ_VOUS.map((motif) => ({ value: motif.code, label: motif.libelle }))}
+            />
+            <TextField label="Précision" name="precision" hint="Facultative, sauf pour « Autre motif » (5 caractères minimum)." />
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="secondary" onClick={() => refusModalRef.current?.close()}>
+                Revenir
+              </Button>
+              <Button type="submit" variant="danger" disabled={refusPending}>
+                {refusPending ? "Refus en cours..." : "Confirmer le refus"}
+              </Button>
+            </div>
+          </form>
+        </Modal>
+
+        <Modal
           ref={annulationModalRef}
           icon={TriangleAlert}
           title="Annuler ce rendez-vous ?"
           description={
             rendezVous.patientNomComplet
-              ? `La demande de ${rendezVous.patientNomComplet} sera annulée. Cette action est immédiate.`
-              : "Cette demande de rendez-vous sera annulée. Cette action est immédiate."
+              ? `Le rendez-vous de ${rendezVous.patientNomComplet} sera annulé et le patient en sera informé. Cette action est immédiate.`
+              : "Ce rendez-vous sera annulé et le patient en sera informé. Cette action est immédiate."
           }
         >
           <form action={annulerFormAction} className="flex flex-col gap-4">

@@ -231,6 +231,11 @@ const navigationLaboratoire: ElementNavigation[] = [
 const navigationAdminEtablissement: ElementNavigation[] = [
   { label: "Tableau de bord", href: "/app/etablissement", icon: iconeTableauDeBord },
   {
+    label: "Demandes de rendez-vous",
+    href: "/app/etablissement/demandes",
+    icon: <ClipboardList size={tailleIconeNav} aria-hidden="true" />,
+  },
+  {
     label: "File du jour",
     href: "/app/etablissement/file-du-jour",
     icon: <CalendarClock size={tailleIconeNav} aria-hidden="true" />,

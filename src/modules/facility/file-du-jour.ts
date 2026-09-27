@@ -45,7 +45,8 @@ import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
-import { TRANSITIONS, transitionnerRendezVous } from "./rendez-vous-etats";
+import { STATUTS_QUI_LIBERENT_LE_CRENEAU, TRANSITIONS, transitionnerRendezVous } from "./rendez-vous-etats";
+import { bornesJourLocalBenin } from "./regles-rendez-vous";
 
 function nomComplet(utilisateur: { nom: string; prenom: string }): string {
   return `${utilisateur.prenom} ${utilisateur.nom}`;
@@ -96,18 +97,16 @@ export interface RendezVousFileDuJourResume {
   heureArrivee: string | null; // ISO
 }
 
+/** Jour civil de Porto-Novo (RG-ETA-43), jamais celui du fuseau du serveur. */
 function bornesJourCourant(): { debut: Date; fin: Date } {
-  const debut = new Date();
-  debut.setHours(0, 0, 0, 0);
-  const fin = new Date();
-  fin.setHours(23, 59, 59, 999);
-  return { debut, fin };
+  return bornesJourLocalBenin(new Date());
 }
 
 /**
  * File du jour de l'etablissement de la session courante (admin_etablissement
  * ou infirmier). Inclut "demande" dans le groupe "attendus" (encore
- * probable aujourd'hui) : seul "annule" est exclu, jamais affiche ici.
+ * probable aujourd'hui) : les rendez-vous annules, refuses ou expires sont
+ * exclus, jamais affiches ici.
  */
 export async function getFileDuJourEtablissement(): Promise<RendezVousFileDuJourResume[] | null> {
   const etablissementId = await etablissementAutorise();
@@ -121,8 +120,8 @@ export async function getFileDuJourEtablissement(): Promise<RendezVousFileDuJour
   const rendezVous = await prisma.rendezVous.findMany({
     where: {
       etablissementId,
-      date: { gte: debut, lte: fin },
-      statut: { not: "annule" },
+      date: { gte: debut, lt: fin },
+      statut: { notIn: [...STATUTS_QUI_LIBERENT_LE_CRENEAU] },
     },
     include: {
       patient: { include: { user: true } },

@@ -54,7 +54,9 @@ import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
 import { dateDepuisChaineLocaleBenin } from "@/lib/fuseau-horaire";
 import { dateDansUnCreneauDisponible } from "@/modules/facility/creneau-disponible";
-import { estConflitDeCreneau, MESSAGE_CRENEAU_PRIS } from "@/modules/facility/rendez-vous-etats";
+import { STATUTS_QUI_LIBERENT_LE_CRENEAU, estConflitDeCreneau, MESSAGE_CRENEAU_PRIS } from "@/modules/facility/rendez-vous-etats";
+import { MESSAGE_ETABLISSEMENT_INACTIF } from "@/modules/facility/regles-rendez-vous";
+import { verifierReglesReservation } from "@/modules/facility/regles-reservation";
 import { CODES_IDENTIFIANT_PAR_ROLE, prefixeIdentifiant, prochainIdentifiant } from "@/modules/identity/identifiants";
 
 const ROUNDS_BCRYPT = 12;
@@ -444,6 +446,17 @@ export async function creerRendezVousPourProcheAction(
       return { error: "Cet etablissement est introuvable.", success: false };
     }
 
+    if (etablissement.statut !== "actif") {
+      return { error: MESSAGE_ETABLISSEMENT_INACTIF, success: false };
+    }
+
+    // RG-RDV-01, RG-RDV-02 (compte par personne a charge) et regle du meme jour.
+    const refusRegles = await verifierReglesReservation({ patientId: procheId, etablissementId, date: dateRendezVous });
+
+    if (refusRegles) {
+      return { error: refusRegles, success: false };
+    }
+
     if (professionnelId.length > 0) {
       const professionnel = await prisma.professionnelSante.findUnique({
         where: { id: professionnelId },
@@ -468,7 +481,7 @@ export async function creerRendezVousPourProcheAction(
       }
 
       const dejaPris = await prisma.rendezVous.findFirst({
-        where: { professionnelId, date: dateRendezVous, statut: { not: "annule" } },
+        where: { professionnelId, date: dateRendezVous, statut: { notIn: [...STATUTS_QUI_LIBERENT_LE_CRENEAU] } },
       });
       if (dejaPris) {
         return { error: MESSAGE_CRENEAU_PRIS, success: false };

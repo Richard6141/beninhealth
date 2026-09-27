@@ -1379,6 +1379,11 @@ export async function enregistrerConsultationAction(
             });
           }
 
+          // F-RDV-05 : le rendez-vous lie passe "en consultation" (IN_CARE du pack), sans jamais bloquer le brouillon.
+          if (rendezVousIdValide) {
+            await transitionnerRendezVous(tx, rendezVousIdValide, "demarrer_consultation");
+          }
+
           cible = consultationCreee;
         }
       }
