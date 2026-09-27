@@ -71,8 +71,9 @@ import {
 import {
   UNITES_POSOLOGIE,
   VOIES_POSOLOGIE,
-  FREQUENCES_POSOLOGIE,
-  precisionAutreManquante,
+  MODES_FREQUENCE,
+  MOMENTS_POSOLOGIE,
+  frequenceIncomplete,
   composerPosologie,
 } from "./posologie";
 import { ageAnnees } from "@/modules/clinical/controles-constantes";
@@ -180,9 +181,15 @@ const schemaLigneSoumise = z.object({
     .positive("La dose doit etre strictement positive."),
   unite: z.enum(UNITES_POSOLOGIE, { message: "L'unite de dose est invalide." }),
   voie: z.enum(VOIES_POSOLOGIE, { message: "La voie d'administration est invalide." }),
-  voieAutre: z.string().trim().optional().default(""),
-  frequence: z.enum(FREQUENCES_POSOLOGIE, { message: "La frequence est invalide." }),
-  frequenceAutre: z.string().trim().optional().default(""),
+  // F-PRE-01 : frequence en 3 modes (voir posologie.ts), un seul des trois
+  // champs suivants est renseigne selon frequenceMode (frequenceIncomplete
+  // le revalide plus bas, Zero Trust).
+  frequenceMode: z.enum(MODES_FREQUENCE, { message: "Le mode de frequence est invalide." }),
+  frequenceFoisParJour: z.coerce.number().int().nullable().optional().default(null),
+  frequenceHeures: z.coerce.number().int().nullable().optional().default(null),
+  frequenceMaxParJour: z.coerce.number().int().nullable().optional().default(null),
+  // F-PRE-01 : moments de prise (matin/midi/soir/coucher), facultatif.
+  moments: z.array(z.enum(MOMENTS_POSOLOGIE)).optional().default([]),
   quantite: z.coerce
     .number({ message: "La quantite doit etre un nombre." })
     .int("La quantite doit etre un nombre entier.")
@@ -761,12 +768,12 @@ export async function creerPrescriptionAction(
     enregistrerReauthentificationReussie(session.userId);
   }
 
-  // F-PRE-03 : "voie" ou "frequence" a "autre" exige la precision en texte
-  // libre correspondante (deja verifie cote formulaire, revalide ici, Zero
-  // Trust).
-  if (lignes.some((ligne) => precisionAutreManquante(ligne))) {
+  // F-PRE-01 : le champ propre au mode de frequence choisi (nombre de fois
+  // par jour, heures, ou maximum par 24h pour "si besoin") doit etre
+  // renseigne (deja verifie cote formulaire, revalide ici, Zero Trust).
+  if (lignes.some((ligne) => frequenceIncomplete(ligne))) {
     return {
-      error: "Precisez la voie ou la frequence quand vous choisissez \"Autre\".",
+      error: "Completez la frequence de chaque ligne (nombre de fois par jour, heures, ou maximum par 24h).",
       success: false,
     };
   }

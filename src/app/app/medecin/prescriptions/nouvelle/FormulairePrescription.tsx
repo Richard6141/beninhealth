@@ -27,14 +27,21 @@ import {
 import {
   UNITES_POSOLOGIE,
   VOIES_POSOLOGIE,
-  FREQUENCES_POSOLOGIE,
+  MODES_FREQUENCE,
+  MOMENTS_POSOLOGIE,
+  LIBELLES_UNITE_POSOLOGIE,
   LIBELLES_VOIE_POSOLOGIE,
-  LIBELLES_FREQUENCE_POSOLOGIE,
-  precisionAutreManquante,
+  LIBELLES_MOMENT_POSOLOGIE,
+  RACCOURCIS_INSTRUCTIONS,
+  FOIS_PAR_JOUR_MIN,
+  FOIS_PAR_JOUR_MAX,
+  frequenceIncomplete,
   composerPosologie,
+  quantiteSuggeree,
   type UnitePosologie,
   type VoiePosologie,
-  type FrequencePosologie,
+  type ModeFrequence,
+  type MomentPosologie,
 } from "@/modules/prescription/posologie";
 import {
   AGE_POIDS_REQUIS_ANS,
@@ -61,25 +68,33 @@ const etatInitial: PrescriptionActionState = { error: null, success: false };
 type ChampLigne =
   | "medicamentId"
   | "dose"
-  | "voieAutre"
-  | "frequenceAutre"
+  | "frequenceFoisParJour"
+  | "frequenceHeures"
+  | "frequenceMaxParJour"
   | "quantite"
   | "dureeTraitementJours"
   | "motifNonSubstituable";
 
-// F-PRE-03, version reduite : options courtes plutot qu'un champ texte libre
-// pour la posologie (voir src/modules/prescription/posologie.ts).
+const LIBELLES_MODE_FREQUENCE: Record<ModeFrequence, string> = {
+  fois_par_jour: "Fois par jour",
+  toutes_les_x_heures: "Toutes les X heures",
+  si_besoin: "Si besoin",
+};
+
+// F-PRE-01 : options courtes plutot qu'un champ texte libre pour la
+// posologie (voir src/modules/prescription/posologie.ts, 11 unites et 12
+// voies du pack).
 const optionsUnite = UNITES_POSOLOGIE.map((code) => ({
   value: code,
-  label: code === "comprime" ? "comprimé" : code,
+  label: LIBELLES_UNITE_POSOLOGIE[code](1),
 }));
 const optionsVoie = VOIES_POSOLOGIE.map((code) => ({
   value: code,
-  label: code === "autre" ? "Autre" : LIBELLES_VOIE_POSOLOGIE[code],
+  label: LIBELLES_VOIE_POSOLOGIE[code],
 }));
-const optionsFrequence = FREQUENCES_POSOLOGIE.map((code) => ({
+const optionsModeFrequence = MODES_FREQUENCE.map((code) => ({
   value: code,
-  label: code === "autre" ? "Autre" : LIBELLES_FREQUENCE_POSOLOGIE[code],
+  label: LIBELLES_MODE_FREQUENCE[code],
 }));
 
 interface LigneFormulaire {
@@ -88,9 +103,11 @@ interface LigneFormulaire {
   dose: string;
   unite: UnitePosologie;
   voie: VoiePosologie;
-  voieAutre: string;
-  frequence: FrequencePosologie;
-  frequenceAutre: string;
+  frequenceMode: ModeFrequence;
+  frequenceFoisParJour: string;
+  frequenceHeures: string;
+  frequenceMaxParJour: string;
+  moments: MomentPosologie[];
   quantite: string;
   dureeTraitementJours: string;
   forcerAlerteAllergie: boolean;
@@ -110,9 +127,11 @@ function ligneVide(cle: number): LigneFormulaire {
     dose: "",
     unite: UNITES_POSOLOGIE[0],
     voie: VOIES_POSOLOGIE[0],
-    voieAutre: "",
-    frequence: FREQUENCES_POSOLOGIE[0],
-    frequenceAutre: "",
+    frequenceMode: MODES_FREQUENCE[0],
+    frequenceFoisParJour: "",
+    frequenceHeures: "",
+    frequenceMaxParJour: "",
+    moments: [],
     quantite: "",
     dureeTraitementJours: "",
     forcerAlerteAllergie: false,
@@ -137,31 +156,39 @@ function champsSansMedicament(ligne: LigneFormulaire) {
     dose: ligne.dose,
     unite: ligne.unite,
     voie: ligne.voie,
-    voieAutre: ligne.voieAutre,
-    frequence: ligne.frequence,
-    frequenceAutre: ligne.frequenceAutre,
+    frequenceMode: ligne.frequenceMode,
+    frequenceFoisParJour: ligne.frequenceFoisParJour,
+    frequenceHeures: ligne.frequenceHeures,
+    frequenceMaxParJour: ligne.frequenceMaxParJour,
+    moments: ligne.moments,
     quantite: ligne.quantite,
     dureeTraitementJours: ligne.dureeTraitementJours,
   };
 }
 
-/** Champs de posologie d'une ligne, avec dose convertie en nombre (NaN si vide/invalide). */
+/** Champs de posologie d'une ligne, avec dose et duree converties en nombre (NaN si vide/invalide). */
 function champsPosologie(ligne: LigneFormulaire) {
   return {
     dose: Number(ligne.dose),
     unite: ligne.unite,
     voie: ligne.voie,
-    voieAutre: ligne.voieAutre,
-    frequence: ligne.frequence,
-    frequenceAutre: ligne.frequenceAutre,
+    frequenceMode: ligne.frequenceMode,
+    frequenceFoisParJour: ligne.frequenceFoisParJour ? Number(ligne.frequenceFoisParJour) : null,
+    frequenceHeures: ligne.frequenceHeures ? Number(ligne.frequenceHeures) : null,
+    frequenceMaxParJour: ligne.frequenceMaxParJour ? Number(ligne.frequenceMaxParJour) : null,
+    moments: ligne.moments,
+    dureeTraitementJours: Number(ligne.dureeTraitementJours),
   };
 }
 
-/** Posologie composee si dose et precisions "autre" sont valides, sinon null (voir posologie.ts). */
+/** Posologie composee si dose, duree et frequence sont valides, sinon null (voir posologie.ts). */
 function apercuPosologie(ligne: LigneFormulaire): string | null {
   const champs = champsPosologie(ligne);
   if (!ligne.dose.trim() || Number.isNaN(champs.dose) || champs.dose <= 0) return null;
-  if (precisionAutreManquante(champs)) return null;
+  if (!ligne.dureeTraitementJours.trim() || Number.isNaN(champs.dureeTraitementJours) || champs.dureeTraitementJours <= 0) {
+    return null;
+  }
+  if (frequenceIncomplete(champs)) return null;
   return composerPosologie(champs);
 }
 
@@ -215,6 +242,7 @@ export function FormulairePrescription({
     etatInitial
   );
   const [lignes, setLignes] = useState<LigneFormulaire[]>([ligneVide(0)]);
+  const [instructions, setInstructions] = useState("");
   const [motDePasseSignature, setMotDePasseSignature] = useState("");
   const prochaineCleRef = useRef(1);
   const patientDateNaissance = new Date(patientDateNaissanceISO);
@@ -271,9 +299,40 @@ export function FormulairePrescription({
     );
   }
 
-  function modifierFrequence(cle: number, valeur: FrequencePosologie) {
+  function modifierFrequenceMode(cle: number, valeur: ModeFrequence) {
     setLignes((actuelles) =>
-      actuelles.map((ligne) => (ligne.cle === cle ? { ...ligne, frequence: valeur } : ligne))
+      actuelles.map((ligne) =>
+        ligne.cle === cle
+          ? {
+              ...ligne,
+              frequenceMode: valeur,
+              frequenceFoisParJour: "",
+              frequenceHeures: "",
+              frequenceMaxParJour: "",
+            }
+          : ligne
+      )
+    );
+  }
+
+  /** Ajoute ou retire un moment de prise (matin/midi/soir/coucher, F-PRE-01, facultatif). */
+  function basculerMoment(cle: number, moment: MomentPosologie, coche: boolean) {
+    setLignes((actuelles) =>
+      actuelles.map((ligne) =>
+        ligne.cle === cle
+          ? {
+              ...ligne,
+              moments: coche ? [...ligne.moments, moment] : ligne.moments.filter((m) => m !== moment),
+            }
+          : ligne
+      )
+    );
+  }
+
+  /** Reprend la quantite suggeree (dose x prises par jour x jours, arrondie au superieur) telle quelle : reste modifiable ensuite (texte du pack). */
+  function reprendreQuantiteSuggeree(cle: number, suggestion: number) {
+    setLignes((actuelles) =>
+      actuelles.map((ligne) => (ligne.cle === cle ? { ...ligne, quantite: String(suggestion) } : ligne))
     );
   }
 
@@ -430,9 +489,11 @@ export function FormulairePrescription({
         dose,
         unite,
         voie,
-        voieAutre,
-        frequence,
-        frequenceAutre,
+        frequenceMode,
+        frequenceFoisParJour,
+        frequenceHeures,
+        frequenceMaxParJour,
+        moments,
         quantite,
         dureeTraitementJours,
         forcerAlerteAllergie,
@@ -448,9 +509,11 @@ export function FormulairePrescription({
         dose,
         unite,
         voie,
-        voieAutre,
-        frequence,
-        frequenceAutre,
+        frequenceMode,
+        frequenceFoisParJour,
+        frequenceHeures,
+        frequenceMaxParJour,
+        moments,
         quantite,
         dureeTraitementJours,
         forcerAlerteAllergie,
@@ -579,51 +642,84 @@ export function FormulairePrescription({
                   />
                 </div>
 
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <SelectField
-                    label="Voie d'administration"
-                    required
-                    options={optionsVoie}
-                    value={ligne.voie}
-                    onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-                      modifierVoie(ligne.cle, event.target.value as VoiePosologie)
-                    }
-                  />
-                  {ligne.voie === "autre" ? (
-                    <TextField
-                      label="Précisez la voie"
-                      required
-                      placeholder="Ex. sous-cutanée"
-                      value={ligne.voieAutre}
-                      onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                        modifierLigne(ligne.cle, "voieAutre", event.target.value)
-                      }
-                    />
-                  ) : null}
-                </div>
+                <SelectField
+                  label="Voie d'administration"
+                  required
+                  options={optionsVoie}
+                  value={ligne.voie}
+                  onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+                    modifierVoie(ligne.cle, event.target.value as VoiePosologie)
+                  }
+                />
 
                 <div className="grid gap-4 sm:grid-cols-2">
                   <SelectField
                     label="Fréquence"
                     required
-                    options={optionsFrequence}
-                    value={ligne.frequence}
+                    options={optionsModeFrequence}
+                    value={ligne.frequenceMode}
                     onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-                      modifierFrequence(ligne.cle, event.target.value as FrequencePosologie)
+                      modifierFrequenceMode(ligne.cle, event.target.value as ModeFrequence)
                     }
                   />
-                  {ligne.frequence === "autre" ? (
+                  {ligne.frequenceMode === "fois_par_jour" ? (
                     <TextField
-                      label="Précisez la fréquence"
+                      label="Nombre de fois par jour"
+                      type="number"
+                      min={FOIS_PAR_JOUR_MIN}
+                      max={FOIS_PAR_JOUR_MAX}
                       required
-                      placeholder="Ex. toutes les 8 heures"
-                      value={ligne.frequenceAutre}
+                      value={ligne.frequenceFoisParJour}
                       onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                        modifierLigne(ligne.cle, "frequenceAutre", event.target.value)
+                        modifierLigne(ligne.cle, "frequenceFoisParJour", event.target.value)
+                      }
+                    />
+                  ) : null}
+                  {ligne.frequenceMode === "toutes_les_x_heures" ? (
+                    <TextField
+                      label="Toutes les combien d'heures"
+                      type="number"
+                      min={1}
+                      max={24}
+                      unit="heures"
+                      required
+                      value={ligne.frequenceHeures}
+                      onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                        modifierLigne(ligne.cle, "frequenceHeures", event.target.value)
+                      }
+                    />
+                  ) : null}
+                  {ligne.frequenceMode === "si_besoin" ? (
+                    <TextField
+                      label="Maximum par 24 h"
+                      type="number"
+                      min={1}
+                      required
+                      value={ligne.frequenceMaxParJour}
+                      onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                        modifierLigne(ligne.cle, "frequenceMaxParJour", event.target.value)
                       }
                     />
                   ) : null}
                 </div>
+
+                <fieldset className="flex flex-col gap-2">
+                  <legend className="mb-1 text-[13px] font-semibold text-encre">
+                    Moments de prise (facultatif)
+                  </legend>
+                  <div className="flex flex-wrap gap-4">
+                    {MOMENTS_POSOLOGIE.map((moment) => (
+                      <label key={moment} className="flex items-center gap-1.5 text-[13px] text-encre">
+                        <input
+                          type="checkbox"
+                          checked={ligne.moments.includes(moment)}
+                          onChange={(event) => basculerMoment(ligne.cle, moment, event.target.checked)}
+                        />
+                        {LIBELLES_MOMENT_POSOLOGIE[moment]}
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
 
                 {apercuPosologie(ligne) ? (
                   <p className="text-[13px] text-encre-secondaire">
@@ -634,16 +730,6 @@ export function FormulairePrescription({
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
-                <TextField
-                  label="Quantite"
-                  type="number"
-                  min={1}
-                  required
-                  value={ligne.quantite}
-                  onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                    modifierLigne(ligne.cle, "quantite", event.target.value)
-                  }
-                />
                 <TextField
                   label="Duree du traitement"
                   type="number"
@@ -656,6 +742,34 @@ export function FormulairePrescription({
                     modifierLigne(ligne.cle, "dureeTraitementJours", event.target.value)
                   }
                 />
+                <div className="flex flex-col gap-1">
+                  <TextField
+                    label="Quantité totale"
+                    type="number"
+                    min={1}
+                    required
+                    value={ligne.quantite}
+                    onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                      modifierLigne(ligne.cle, "quantite", event.target.value)
+                    }
+                  />
+                  {(() => {
+                    const champs = champsPosologie(ligne);
+                    if (Number.isNaN(champs.dose) || champs.dose <= 0) return null;
+                    if (!ligne.dureeTraitementJours.trim() || Number.isNaN(champs.dureeTraitementJours)) return null;
+                    const suggestion = quantiteSuggeree(champs);
+                    if (suggestion === null || String(suggestion) === ligne.quantite) return null;
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => reprendreQuantiteSuggeree(ligne.cle, suggestion)}
+                        className="w-fit text-left text-[12px] font-semibold text-accent hover:underline"
+                      >
+                        Quantité calculée : {suggestion} (cliquer pour reprendre)
+                      </button>
+                    );
+                  })()}
+                </div>
               </div>
 
               <div className="flex flex-col gap-3">
@@ -838,11 +952,37 @@ export function FormulairePrescription({
           </p>
         </div>
 
-        <TextField
-          label="Instructions"
-          name="instructions"
-          hint="Instructions generales pour le patient ou le pharmacien (facultatif)."
-        />
+        <div className="flex flex-col gap-2">
+          <TextField
+            label="Instructions"
+            name="instructions"
+            maxLength={200}
+            hint="Instructions generales pour le patient ou le pharmacien (facultatif)."
+            value={instructions}
+            onChange={(event: ChangeEvent<HTMLInputElement>) => setInstructions(event.target.value)}
+          />
+          {/*
+            F-PRE-01 : raccourcis d'instructions du pack. Limite assumee :
+            LignePrescription n'a pas de colonne instructions dediee, ce
+            champ reste au niveau de l'ordonnance entiere (voir posologie.ts).
+          */}
+          <div className="flex flex-wrap gap-2">
+            {RACCOURCIS_INSTRUCTIONS.map((raccourci) => (
+              <button
+                key={raccourci}
+                type="button"
+                onClick={() =>
+                  setInstructions((valeur) =>
+                    valeur.trim().length === 0 ? raccourci : `${valeur}, ${raccourci}`
+                  )
+                }
+                className="rounded-champ border border-bordure-forte px-2.5 py-1 text-[12px] font-semibold text-encre-secondaire hover:bg-surface-appui"
+              >
+                {raccourci}
+              </button>
+            ))}
+          </div>
+        </div>
 
         {/*
           RG-PRE-30 du pack : la signature exige une re-authentification,

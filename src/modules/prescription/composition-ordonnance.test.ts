@@ -92,7 +92,8 @@ function lignesSoumises(nombre: number, dureeJours = 7) {
     dose: 1,
     unite: "comprime",
     voie: "orale",
-    frequence: "1x/j",
+    frequenceMode: "fois_par_jour",
+    frequenceFoisParJour: 1,
     quantite: 7,
     dureeTraitementJours: dureeJours,
   }));
