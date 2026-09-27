@@ -18,6 +18,11 @@ function formaterDateHeure(date: string): string {
   }
 }
 
+/** Libelle lisible d'une action technique du journal d'audit (repli : la chaine brute, espaces a la place des tirets bas). */
+function libelleAction(action: string): string {
+  return action.replaceAll("_", " ");
+}
+
 /** Libelle + ton du badge de delai (objectif F-AUD-04 : reponse sous 30 jours). */
 function badgeDelai(demande: DemandePersonne): { texte: string; tone: "good" | "warning" | "critical" } {
   if (demande.traite) {
@@ -72,6 +77,21 @@ export function ListeDemandesPersonnes({ demandes }: { demandes: DemandePersonne
               <FileWarning size={16} className="mt-0.5 shrink-0 text-encre-attenuee" aria-hidden="true" />
               {demande.contenu}
             </p>
+
+            {demande.traceLiee ? (
+              <div className="rounded-champ border border-dashed border-bordure-forte bg-surface p-3">
+                <p className="mb-1 text-[12px] font-semibold uppercase tracking-[0.05em] text-encre-attenuee">
+                  Accès mis en cause
+                </p>
+                <p className="text-[13px] text-encre">
+                  <span className="font-semibold">{libelleAction(demande.traceLiee.action)}</span> par{" "}
+                  {demande.traceLiee.acteurNomComplet}, le {formaterDateHeure(demande.traceLiee.date)}
+                </p>
+                <p className="text-[12px] text-encre-attenuee">
+                  Adresse technique : {demande.traceLiee.adresseTechnique}
+                </p>
+              </div>
+            ) : null}
 
             {demande.traite ? (
               <div className="rounded-champ border border-bordure bg-plan p-3">

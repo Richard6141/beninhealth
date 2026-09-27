@@ -7,7 +7,9 @@
  * des notifications (F-NOT-01, conservation 90 jours, voir
  * src/modules/notification/purge.ts) et rappels de rendez-vous (F-RDV-07,
  * voir src/modules/facility/rappels-rendez-vous.ts) et remise des SMS differes
- * a 7h00 (F-NOT-02, RG-NOT-04, voir src/modules/notification/sms/remise-differes.ts).
+ * a 7h00 (F-NOT-02, RG-NOT-04, voir src/modules/notification/sms/remise-differes.ts),
+ * relances du laboratoire (F-LAB-05, voir src/modules/laboratoire/relances.ts) et
+ * detection d'anomalies d'acces (F-AUD-03, voir src/modules/audit/detection-anomalies.ts).
  */
 export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME !== "nodejs") {
@@ -34,4 +36,7 @@ export async function register(): Promise<void> {
 
   const { demarrerRelancesLaboratoire } = await import("@/modules/laboratoire/relances");
   demarrerRelancesLaboratoire();
+
+  const { demarrerDetectionAnomalies } = await import("@/modules/audit/detection-anomalies");
+  demarrerDetectionAnomalies();
 }

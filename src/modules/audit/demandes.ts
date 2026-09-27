@@ -23,6 +23,17 @@
  * RevueAccesUrgence, toujours traitee par le meme admin_etablissement que
  * celui de l'etablissement concerne) ; un transfert exigerait un champ de
  * destinataire et une notification dediee, non construits ce soir.
+ *
+ * "Consulter les traces liees" (texte du pack), ajoute ce soir pour
+ * signalement_acces_suspect : le patient signale un acces PRECIS (voir
+ * src/modules/patient/actions.ts, donneeConcernee = "journal_audit:<id>"),
+ * jamais son dossier en general. getDemandesPersonnes resout desormais cette
+ * reference vers l'entree JournalAudit d'origine (action, date, adresse
+ * technique, et l'identite de qui a fait l'acces conteste), pour que
+ * l'administrateur voie exactement ce qui est mis en cause avant de
+ * repondre. Sans objet pour demande_rectification (donneeConcernee =
+ * "patient:<id>", la personne rectifie ses propres informations, aucun
+ * acces tiers a examiner).
  */
 
 import { headers } from "next/headers";
@@ -81,6 +92,20 @@ export interface DemandePersonne {
    * depassement plutot que l'ecran le lui cache.
    */
   joursRestantsObjectif: number;
+  /**
+   * Pour un signalement d'acces suspect seulement : l'acces precis mis en
+   * cause (resolu depuis donneeConcernee = "journal_audit:<id>"). Null pour
+   * une demande de rectification, ou si la trace d'origine a disparu.
+   */
+  traceLiee: TraceLiee | null;
+}
+
+export interface TraceLiee {
+  action: string;
+  date: string; // ISO
+  acteurNomComplet: string;
+  adresseTechnique: string;
+  donneeConcernee: string;
 }
 
 /**
@@ -112,11 +137,29 @@ export async function getDemandesPersonnes(): Promise<DemandePersonne[] | null> 
     orderBy: { date: "desc" },
   });
 
+  const idsTracesLiees = entrees
+    .filter((entree) => entree.action === "signalement_acces_suspect" && entree.donneeConcernee.startsWith("journal_audit:"))
+    .map((entree) => entree.donneeConcernee.slice("journal_audit:".length));
+
+  const tracesLiees =
+    idsTracesLiees.length === 0
+      ? []
+      : await prisma.journalAudit.findMany({
+          where: { id: { in: idsTracesLiees } },
+          include: { utilisateur: true },
+        });
+  const traceParId = new Map(tracesLiees.map((trace) => [trace.id, trace]));
+
   const maintenant = new Date();
 
   return entrees.map((entree) => {
     const dateReference = entree.traitementDemande?.date ?? maintenant;
     const joursEcoules = (dateReference.getTime() - entree.date.getTime()) / (1000 * 60 * 60 * 24);
+
+    const idTraceLiee = entree.action === "signalement_acces_suspect" && entree.donneeConcernee.startsWith("journal_audit:")
+      ? entree.donneeConcernee.slice("journal_audit:".length)
+      : null;
+    const trace = idTraceLiee ? traceParId.get(idTraceLiee) : undefined;
 
     return {
       journalAuditId: entree.id,
@@ -129,6 +172,15 @@ export async function getDemandesPersonnes(): Promise<DemandePersonne[] | null> 
       traiteParNomComplet: entree.traitementDemande ? nomComplet(entree.traitementDemande.traitePar) : null,
       dateTraitement: entree.traitementDemande?.date.toISOString() ?? null,
       joursRestantsObjectif: Math.ceil(JOURS_OBJECTIF_REPONSE - joursEcoules),
+      traceLiee: trace
+        ? {
+            action: trace.action,
+            date: trace.date.toISOString(),
+            acteurNomComplet: nomComplet(trace.utilisateur),
+            adresseTechnique: trace.adresseTechnique,
+            donneeConcernee: trace.donneeConcernee,
+          }
+        : null,
     };
   });
 }
