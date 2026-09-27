@@ -6,6 +6,7 @@ vi.mock("@/lib/prisma", () => ({
     journalAudit: { findMany: vi.fn(async () => []) },
     user: { findMany: vi.fn(async () => []) },
     patient: { findMany: vi.fn(async () => []) },
+    demandeAccesDossier: { findMany: vi.fn(async () => []) },
     signalementAnomalieAcces: { findFirst: vi.fn(async () => null), create: vi.fn() },
   },
 }));
@@ -20,6 +21,7 @@ const p = prisma as unknown as {
   journalAudit: { findMany: Mock };
   user: { findMany: Mock };
   patient: { findMany: Mock };
+  demandeAccesDossier: { findMany: Mock };
   signalementAnomalieAcces: { findFirst: Mock; create: Mock };
 };
 const lireParametreMock = lireParametre as unknown as Mock;
@@ -32,11 +34,13 @@ beforeEach(() => {
     if (cle === "audit.seuil_acces_urgence_7j") return 3;
     if (cle === "audit.seuil_ip_multiples_1h") return 3;
     if (cle === "audit.seuil_dossiers_distincts_jour") return 60;
+    if (cle === "audit.seuil_recherches_sans_resultat_1h") return 30;
     throw new Error("parametre inattendu : " + cle);
   });
   p.journalAudit.findMany.mockResolvedValue([]);
   p.user.findMany.mockResolvedValue([]);
   p.patient.findMany.mockResolvedValue([]);
+  p.demandeAccesDossier.findMany.mockResolvedValue([]);
   p.signalementAnomalieAcces.findFirst.mockResolvedValue(null);
   p.signalementAnomalieAcces.create.mockResolvedValue({});
 });
@@ -48,6 +52,7 @@ describe("executerDetectionAnomalies : seuils administrables (RG-ADM-50)", () =>
     expect(lireParametreMock).toHaveBeenCalledWith("audit.seuil_acces_urgence_7j");
     expect(lireParametreMock).toHaveBeenCalledWith("audit.seuil_ip_multiples_1h");
     expect(lireParametreMock).toHaveBeenCalledWith("audit.seuil_dossiers_distincts_jour");
+    expect(lireParametreMock).toHaveBeenCalledWith("audit.seuil_recherches_sans_resultat_1h");
   });
 
   it("un seuil abaisse par l'administration declenche un signalement qui ne se serait pas produit avec le defaut", async () => {
@@ -117,6 +122,38 @@ describe("regle connexions_ip_multiples", () => {
     p.journalAudit.findMany.mockImplementation(async ({ where }: { where: { action: string } }) =>
       where.action === "connexion" ? Array.from({ length: 10 }, () => ({ utilisateurId: "u-1", adresseTechnique: "1.1.1.1" })) : []
     );
+
+    await executerDetectionAnomalies(MAINTENANT);
+
+    expect(p.signalementAnomalieAcces.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("regle recherches_sans_resultat (RG-CLI-12)", () => {
+  it("signale un professionnel au-dela du seuil de recherches sans resultat en 1 heure", async () => {
+    lireParametreMock.mockImplementation(async (cle: string) => (cle === "audit.seuil_recherches_sans_resultat_1h" ? 2 : 30));
+    p.demandeAccesDossier.findMany.mockResolvedValue([
+      { demandeurId: "u-1" },
+      { demandeurId: "u-1" },
+      { demandeurId: "u-1" },
+      { demandeurId: "u-rare" },
+    ]);
+
+    await executerDetectionAnomalies(MAINTENANT);
+
+    expect(p.demandeAccesDossier.findMany).toHaveBeenCalledWith({
+      where: { patientId: null, dateCreation: { gte: new Date(MAINTENANT.getTime() - 60 * 60 * 1000) } },
+      select: { demandeurId: true },
+    });
+    expect(p.signalementAnomalieAcces.create).toHaveBeenCalledTimes(1);
+    expect(p.signalementAnomalieAcces.create).toHaveBeenCalledWith({
+      data: { regle: "recherches_sans_resultat", utilisateurId: "u-1", detail: expect.stringContaining("3 recherches") },
+    });
+  });
+
+  it("ne signale rien a exactement le seuil ni en dessous", async () => {
+    lireParametreMock.mockImplementation(async (cle: string) => (cle === "audit.seuil_recherches_sans_resultat_1h" ? 3 : 30));
+    p.demandeAccesDossier.findMany.mockResolvedValue([{ demandeurId: "u-1" }, { demandeurId: "u-1" }, { demandeurId: "u-1" }]);
 
     await executerDetectionAnomalies(MAINTENANT);
 

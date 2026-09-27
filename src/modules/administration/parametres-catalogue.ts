@@ -15,6 +15,7 @@ export const CLES_PARAMETRES = [
   "audit.seuil_acces_urgence_7j",
   "audit.seuil_ip_multiples_1h",
   "audit.seuil_dossiers_distincts_jour",
+  "audit.seuil_recherches_sans_resultat_1h",
 ] as const;
 
 export type CleParametre = (typeof CLES_PARAMETRES)[number];
@@ -91,6 +92,14 @@ export const PARAMETRES_PAR_DEFAUT: readonly DefinitionParametre[] = [
     borneMax: 500,
     description:
       "F-AUD-03 : au-dela de ce nombre de dossiers patients distincts ouverts par un professionnel dans la journee, un signalement d'anomalie est cree.",
+  },
+  {
+    cle: "audit.seuil_recherches_sans_resultat_1h",
+    valeurDefaut: 30,
+    borneMin: 5,
+    borneMax: 200,
+    description:
+      "F-AUD-03 / RG-CLI-12 : au-dela de ce nombre de recherches de patient sans resultat par un professionnel en 1 heure, un signalement d'anomalie est cree. Ne peut se declencher tant que transfert/code-acces.ts bloque deja les demandes au-dela de 10 sur la meme base (voir la note dans detection-anomalies.ts) : releve ce blocage en meme temps si ce seuil doit redevenir atteignable.",
   },
 ];
 

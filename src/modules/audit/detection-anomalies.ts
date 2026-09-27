@@ -16,13 +16,26 @@
  * RG-ADM-50 : les 3 seuils sont administrables (parametres.ts), relus a
  * chaque execution, jamais mis en cache.
  *
- * 4 des 7 regles du pack sont implementees ici, celles calculables sans
+ * 5 des 7 regles du pack sont implementees ici, celles calculables sans
  * ajouter de journalisation dans un module hors de ce perimetre (limite
- * assumee, documentee dans docs/reste-a-faire.md) : les 3 autres (recherches
- * sans resultat, acces refuses au sens large, arrivees "sur piece") exigent
- * soit une instrumentation qui n'existe pas encore dans les modules
- * proprietaires (F-CLI-02, F-RDV-04), soit un champ Prisma absent (methode
- * de verification d'arrivee).
+ * assumee, documentee dans docs/reste-a-faire.md) : les 2 autres (acces
+ * refuses au sens large, arrivees "sur piece") exigent soit une
+ * instrumentation qui n'existe pas encore dans les modules proprietaires
+ * (F-RDV-04), soit un champ Prisma absent (methode de verification
+ * d'arrivee).
+ *
+ * RG-CLI-12 (recherches_sans_resultat) : tension assumee entre le pack et une
+ * protection deja en place, documentee dans docs/reste-a-faire.md (F-CLI-02) -
+ * transfert/code-acces.ts bloque deja toute nouvelle demande au-dela de
+ * SANS_CORRESPONDANCE_MAX_PAR_PROFESSIONNEL_PAR_HEURE (10) recherches sans
+ * resultat par heure glissante, sur la MEME base de comptage
+ * (DemandeAccesDossier ou patientId est nul) que cette regle. Le seuil
+ * d'alerte du pack (30) ne peut donc jamais se declencher tant que ce blocage
+ * reste a 10 : implemente ici a l'identique du texte du pack (pour la
+ * visibilite ministere si le blocage venait a changer), pas comme une
+ * detection reellement atteignable aujourd'hui. A trancher par l'Agent
+ * Architecture : lever le blocage a 10, ou abandonner ce seuil d'alerte au
+ * profit du blocage deja plus strict.
  */
 
 import { prisma } from "@/lib/prisma";
@@ -61,10 +74,11 @@ export async function executerDetectionAnomalies(maintenant: Date = new Date()):
   const debutJour = new Date(maintenant);
   debutJour.setHours(0, 0, 0, 0);
 
-  const [seuilAccesUrgence7j, seuilIpMultiples1h, seuilDossiersDistinctsJour] = await Promise.all([
+  const [seuilAccesUrgence7j, seuilIpMultiples1h, seuilDossiersDistinctsJour, seuilRecherchesSansResultat1h] = await Promise.all([
     lireParametre("audit.seuil_acces_urgence_7j"),
     lireParametre("audit.seuil_ip_multiples_1h"),
     lireParametre("audit.seuil_dossiers_distincts_jour"),
+    lireParametre("audit.seuil_recherches_sans_resultat_1h"),
   ]);
 
   let nombreCrees = 0;
@@ -115,6 +129,32 @@ export async function executerDetectionAnomalies(maintenant: Date = new Date()):
     }
   } catch (erreur) {
     console.error("[audit] erreur regle connexions_ip_multiples :", erreur);
+  }
+
+  try {
+    // RG-CLI-12 : meme base de comptage que le blocage de
+    // transfert/code-acces.ts (DemandeAccesDossier.patientId nul), voir la
+    // note de tension en tete de fichier.
+    const sansResultat = await prisma.demandeAccesDossier.findMany({
+      where: { patientId: null, dateCreation: { gte: il1Heure } },
+      select: { demandeurId: true },
+    });
+    const parDemandeur = new Map<string, number>();
+    for (const entree of sansResultat) {
+      parDemandeur.set(entree.demandeurId, (parDemandeur.get(entree.demandeurId) ?? 0) + 1);
+    }
+    for (const [utilisateurId, nombre] of parDemandeur) {
+      if (nombre > seuilRecherchesSansResultat1h) {
+        await signalerSiNouveau(
+          "recherches_sans_resultat",
+          utilisateurId,
+          `${nombre} recherches de patient sans résultat en 1 heure (seuil : ${seuilRecherchesSansResultat1h}).`
+        );
+        nombreCrees += 1;
+      }
+    }
+  } catch (erreur) {
+    console.error("[audit] erreur regle recherches_sans_resultat :", erreur);
   }
 
   try {
