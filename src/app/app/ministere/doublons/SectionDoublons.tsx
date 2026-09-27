@@ -1,9 +1,10 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
-import { Merge } from "lucide-react";
+import { useActionState, useEffect, useId, useRef, useState } from "react";
+import { Merge, UserX } from "lucide-react";
 import {
   fusionnerPatientsAction,
+  ignorerDoublonAction,
   type CandidatDoublon,
   type CoteDoublon,
   type FusionActionState,
@@ -81,12 +82,28 @@ function ModaleFusion({
 
   const doublonId = conserveId === candidat.a.patientId ? candidat.b.patientId : candidat.a.patientId;
 
+  if (state.success && state.enAttente) {
+    return (
+      <Modal ref={modaleRef} variant="dialog" width="wide" title="Fusion en attente" onClose={onFusionReussie}>
+        <Alert level="info" title="Confirmation d'un autre administrateur requise">
+          Le sexe ou la date de naissance diffèrent entre les deux dossiers (RG-ADM-41) : aucune donnée n&apos;a
+          encore été déplacée. Un autre administrateur doit approuver la fusion depuis la section
+          « Fusions en attente ».
+        </Alert>
+        <Button variant="primary" className="mt-4 w-full" onClick={() => modaleRef.current?.close()}>
+          Fermer
+        </Button>
+      </Modal>
+    );
+  }
+
   if (state.success) {
     return (
       <Modal ref={modaleRef} variant="dialog" width="wide" title="Fusion effectuée" onClose={onFusionReussie}>
         <Alert level="success" title="Dossiers fusionnés">
           Toutes les données du dossier doublon ont été déplacées vers le dossier conservé. Le compte
-          doublon est désactivé, jamais supprimé.
+          doublon est désactivé, jamais supprimé. Réversible pendant 30 jours depuis la section
+          « Fusions récentes ».
         </Alert>
         <Button variant="primary" className="mt-4 w-full" onClick={() => modaleRef.current?.close()}>
           Fermer
@@ -141,6 +158,47 @@ function ModaleFusion({
   );
 }
 
+const etatInitialIgnorer: FusionActionState = { error: null, success: false };
+
+function BoutonIgnorer({ candidat, onIgnoreReussi }: { candidat: CandidatDoublon; onIgnoreReussi: () => void }) {
+  const [state, formAction, pending] = useActionState(ignorerDoublonAction, etatInitialIgnorer);
+  const [ouvert, setOuvert] = useState(false);
+  const motifId = useId();
+
+  useEffect(() => {
+    if (state.success) onIgnoreReussi();
+  }, [state.success, onIgnoreReussi]);
+
+  if (!ouvert) {
+    return (
+      <Button type="button" variant="secondary" size="sm" iconBefore={UserX} onClick={() => setOuvert(true)}>
+        Ce ne sont pas les mêmes personnes
+      </Button>
+    );
+  }
+
+  return (
+    <form action={formAction} className="flex flex-1 flex-col gap-2 sm:flex-row sm:items-end">
+      <input type="hidden" name="patientAId" value={candidat.a.patientId} />
+      <input type="hidden" name="patientBId" value={candidat.b.patientId} />
+      <div className="flex flex-1 flex-col gap-1">
+        <label htmlFor={motifId} className="text-[12px] font-semibold text-encre">
+          Motif (facultatif)
+        </label>
+        <input id={motifId} name="motif" className="h-10 w-full rounded-champ border border-bordure-forte bg-surface px-3 text-[14px] text-encre" />
+        {state.error ? (
+          <p role="alert" className="text-[12px] text-critique">
+            {state.error}
+          </p>
+        ) : null}
+      </div>
+      <Button type="submit" variant="secondary" size="sm" disabled={pending}>
+        {pending ? "..." : "Confirmer"}
+      </Button>
+    </form>
+  );
+}
+
 export function SectionDoublons({ candidats }: { candidats: CandidatDoublon[] }) {
   const [candidatOuvert, setCandidatOuvert] = useState<CandidatDoublon | null>(null);
   const [traites, setTraites] = useState<Set<string>>(new Set());
@@ -165,13 +223,26 @@ export function SectionDoublons({ candidats }: { candidats: CandidatDoublon[] })
           <div className="flex flex-col gap-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <Badge tone="warning">Doublon probable</Badge>
-              <Button
-                variant="primary"
-                iconBefore={Merge}
-                onClick={() => setCandidatOuvert(candidat)}
-              >
-                Examiner et fusionner
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <BoutonIgnorer
+                  candidat={candidat}
+                  onIgnoreReussi={() => {
+                    setTraites((actuels) => {
+                      const suivant = new Set(actuels);
+                      suivant.add(candidat.a.patientId);
+                      suivant.add(candidat.b.patientId);
+                      return suivant;
+                    });
+                  }}
+                />
+                <Button
+                  variant="primary"
+                  iconBefore={Merge}
+                  onClick={() => setCandidatOuvert(candidat)}
+                >
+                  Examiner et fusionner
+                </Button>
+              </div>
             </div>
             <div className="flex flex-col gap-3 sm:flex-row">
               <ColonneCote cote={candidat.a} choisi={false} />
