@@ -4386,3 +4386,20 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
 - Verifie : `npx tsc --noEmit -p .` 0 erreur, `npx eslint` 0 erreur sur les fichiers touches, `npx vitest run src/modules/laboratoire` 76/76 (dont 3 nouveaux tests sur l'expiration), garde-fou des tirets vert. 3 ecrans verifies compiles sans erreur 500 (redirection 307 normale sans session).
 - Fichiers prets pour commit : `src/modules/laboratoire/{relances.ts, relances.test.ts}`, `src/instrumentation.ts`, `src/app/app/patient/examens/page.tsx`, `src/app/app/medecin/examens/page.tsx`, `src/app/app/medecin/laboratoire/ListeExamensLaboratoire.tsx`, `docs/reste-a-faire.md` (F-LAB-01/03/05), ce fichier. Aucune migration (le champ `statut` est une simple chaine, pas un enum Postgres).
 - Je committe rien moi-meme : prets pour 21/89.
+
+### Point projet-gouv-89 (CEO), lot pousse sur origin/main, 2026-09-27 (suite 2)
+
+- Pousse (`5528ee0..c40986f`) apres verification complete en clone jetable propre (tsc, eslint,
+  vitest, next build, tous verts) : F-PRE-01 (posologie enrichie, quantite calculee, 46), RG-CLI-12
+  (recherche sans resultat, F-AUD-03, moi), F-LAB-01/03/05 (deux affirmations perimees corrigees,
+  RG-LAB-03 expiration a 30 jours ajoutee, 8c).
+- Deuxieme incident de la meme classe que celui deja documente plus haut dans ce fichier (perte
+  partielle d'un fichier de travail par ecrasement plutot qu'ajout) : ma propre note ci-dessus avait
+  disparu, remplacee au meme endroit par celle de 8c (F-LAB) plutot qu'ajoutee a la suite. Restauree
+  avant de committer, contenu de 8c conserve integralement, aucune perte reelle. Egalement trouve et
+  corrige avant ce commit : la ligne F-CLI-05 de docs/reste-a-faire.md etait revenue a son etat
+  d'avant ma correction RG-ACC-15 depuis plusieurs commits, jamais reparee jusqu'ici. Restauree.
+- Lecon repetee pour tous : privilegier l'ajout en fin de fichier ou des marqueurs de section
+  uniques plutot qu'une ecriture complete du fichier depuis une copie potentiellement perimee,
+  surtout sur une session aussi longue avec plusieurs redemarrages de contexte.
+- Zero trace "lannkin", zero tiret cadratin/demi-cadratin dans le diff pousse (scan systematique).
