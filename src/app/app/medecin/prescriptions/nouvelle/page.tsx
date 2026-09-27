@@ -109,6 +109,7 @@ export default async function NouvellePrescriptionPage({
       <RenouvellementPrescription
         consultationId={consultation.id}
         anciennesPrescriptions={consultation.anciennesPrescriptions}
+        reauthentificationRecente={consultation.reauthentificationRecente}
       />
 
       <FormulairePrescription
@@ -120,6 +121,7 @@ export default async function NouvellePrescriptionPage({
         patientPoidsRequis={consultation.patientPoidsRequis}
         patientPoidsRecentKg={consultation.patientPoidsRecentKg}
         patientTraitementsActifs={consultation.patientTraitementsActifs}
+        reauthentificationRecente={consultation.reauthentificationRecente}
       />
     </div>
   );

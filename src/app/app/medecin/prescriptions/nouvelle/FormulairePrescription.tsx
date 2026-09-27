@@ -187,6 +187,8 @@ export interface FormulairePrescriptionProps {
   patientPoidsRequis: boolean;
   patientPoidsRecentKg: number | null;
   patientTraitementsActifs: LigneComparable[];
+  /** RG-PRE-30 : re-authentification deja effectuee il y a moins de 5 minutes, mot de passe non redemande. */
+  reauthentificationRecente: boolean;
 }
 
 /**
@@ -206,6 +208,7 @@ export function FormulairePrescription({
   patientPoidsRequis,
   patientPoidsRecentKg,
   patientTraitementsActifs,
+  reauthentificationRecente,
 }: FormulairePrescriptionProps) {
   const [state, formAction, pending] = useActionState(
     creerPrescriptionAction,
@@ -842,20 +845,27 @@ export function FormulairePrescription({
         />
 
         {/*
-          RG-PRE-30 du pack : la signature exige une re-authentification.
-          Perimetre reduit assume (voir schemaCreationPrescription cote
-          serveur) : toujours redemandee, un seul essai par soumission.
+          RG-PRE-30 du pack : la signature exige une re-authentification,
+          sauf si elle a eu lieu depuis moins de 5 minutes
+          (reauthentificationRecente, prescription/reauthentification.ts).
         */}
-        <TextField
-          label="Mot de passe (signature de l'ordonnance)"
-          name="motDePasseSignature"
-          type="password"
-          required
-          autoComplete="current-password"
-          hint="Confirmez votre identite pour signer cette prescription."
-          value={motDePasseSignature}
-          onChange={(event: ChangeEvent<HTMLInputElement>) => setMotDePasseSignature(event.target.value)}
-        />
+        {!reauthentificationRecente ? (
+          <TextField
+            label="Mot de passe (signature de l'ordonnance)"
+            name="motDePasseSignature"
+            type="password"
+            required
+            autoComplete="current-password"
+            hint="Confirmez votre identite pour signer cette prescription."
+            value={motDePasseSignature}
+            onChange={(event: ChangeEvent<HTMLInputElement>) => setMotDePasseSignature(event.target.value)}
+          />
+        ) : (
+          <p className="text-[13px] text-encre-attenuee">
+            Ré-authentification déjà effectuée il y a moins de 5 minutes (RG-PRE-30), mot de passe
+            non redemandé.
+          </p>
+        )}
 
         <Button
           type="submit"
@@ -873,7 +883,7 @@ export function FormulairePrescription({
             blocageDureeNonResolu ||
             blocagePoidsManquant ||
             blocageDureeAuDessusDuMaximum ||
-            motDePasseSignature.length === 0
+            (!reauthentificationRecente && motDePasseSignature.length === 0)
           }
         >
           {pending ? "Signature en cours..." : "Signer la prescription"}

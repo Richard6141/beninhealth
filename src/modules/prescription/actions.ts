@@ -29,11 +29,23 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/modules/audit/journaliser";
-import { getSession } from "@/lib/session";
+import { getSession, destroySession } from "@/lib/session";
 import { can } from "@/security/permissions";
 import { estFonctionnaliteActive } from "@/modules/administration/parametres";
 import { MESSAGE_MODULE_INACTIF } from "@/modules/administration/modules-actifs";
 import { creerNotification } from "@/modules/notification/creer";
+import {
+  reauthentificationBloquee,
+  reauthentificationRecente,
+  enregistrerReauthentificationReussie,
+  enregistrerEchecReauthentification,
+} from "./reauthentification";
+// Defaut trouve et corrige par une autre session ce soir (voir
+// docs/coordination-agents.md) : creerNotification(patient.userId, ...)
+// perd silencieusement une notification quand ce patient est une personne
+// a charge (sans_compte, F-CIT-07/08). Applique ici a la notification de
+// signature (F-PRE-04).
+import { destinataireNotificationPatient } from "@/modules/facility/destinataire-notification-patient";
 import {
   allergieCorrespondante,
   LONGUEUR_MIN_JUSTIFICATION_FORCAGE,
@@ -209,14 +221,12 @@ const schemaCreationPrescription = z.object({
   instructions: z.string().trim().optional().default(""),
   // RG-PRE-30 du pack : la signature (ici confondue avec la creation, voir
   // le commentaire au-dessus de creerPrescriptionAction) exige une
-  // re-authentification. Perimetre reduit assume : toujours redemandee
-  // (pas de fenetre de grace de 5 minutes depuis la derniere authentification
-  // forte, qui demanderait de tracer cet instant quelque part), et un seul
-  // essai par soumission (pas de compteur de 3 echecs -> deconnexion : ce
-  // depot n'a pas de compteur d'echecs persistant hors session, contrairement
-  // au verrouillage d'ecran F-AUTH-08 qui, lui, vit entierement cote client
-  // le temps d'un seul montage de composant).
-  motDePasseSignature: z.string().min(1, "Le mot de passe est obligatoire pour signer l'ordonnance."),
+  // re-authentification, sauf si elle a eu lieu depuis moins de 5 minutes
+  // (prescription/reauthentification.ts, reauthentificationRecente). Vide
+  // et accepte dans ce cas ; sinon obligatoire, revalide dans l'action
+  // elle-meme (le formulaire l'exige deja cote client hors fenetre de
+  // grace, Zero Trust : jamais confiance dans ce que le client a valide).
+  motDePasseSignature: z.string().optional().default(""),
   lignes: z
     .array(schemaLigneSoumise)
     .min(1, "Au moins un medicament est obligatoire dans la prescription.")
@@ -552,6 +562,10 @@ export async function getConsultationPourPrescription(consultationId: string): P
   // consultation lui appartient, donc qu'il a un acces reel a ce patient),
   // pas seulement l'auteur d'origine de l'ancienne prescription.
   anciennesPrescriptions: PrescriptionAncienneResume[];
+  // RG-PRE-30 : vrai si ce medecin s'est deja re-authentifie (signature
+  // reussie) il y a moins de 5 minutes, cote client pour ne pas exiger a
+  // nouveau le mot de passe (voir prescription/reauthentification.ts).
+  reauthentificationRecente: boolean;
 } | null> {
   const professionnel = await professionnelDeLaSessionCourante();
 
@@ -635,6 +649,7 @@ export async function getConsultationPourPrescription(consultationId: string): P
     patientTraitementsActifs,
     dejaPrescription: consultation.prescriptions.length > 0,
     anciennesPrescriptions,
+    reauthentificationRecente: reauthentificationRecente(professionnel.userId),
   };
 }
 
@@ -699,23 +714,51 @@ export async function creerPrescriptionAction(
 
   const { consultationId, instructions, motDePasseSignature, lignes } = validation.data;
 
-  // RG-PRE-30 : re-authentification obligatoire avant signature. Verifiee
-  // ici, avant tout le reste (controles cliniques, transaction), pour ne
-  // jamais laisser croire qu'une prescription a ete "presque" signee.
-  const utilisateurConnecte = await prisma.user.findUnique({ where: { id: session.userId } });
-  const motDePasseValide =
-    utilisateurConnecte !== null &&
-    (await bcrypt.compare(motDePasseSignature, utilisateurConnecte.motDePasseHash));
+  // RG-PRE-30 : re-authentification obligatoire avant signature, sauf
+  // fenetre de grace de 5 minutes (reauthentificationRecente) ; 3 echecs
+  // deconnectent la session (destroySession). Verifiee ici, avant tout le
+  // reste (controles cliniques, transaction), pour ne jamais laisser croire
+  // qu'une prescription a ete "presque" signee.
+  if (reauthentificationBloquee(session.userId)) {
+    await destroySession();
+    return {
+      error: "Trop d'echecs de re-authentification. Vous avez ete deconnecte, veuillez vous reconnecter.",
+      success: false,
+    };
+  }
 
-  if (!motDePasseValide) {
-    await journaliser({
-      utilisateurId: session.userId,
-      action: "signature_prescription_mot_de_passe_invalide",
-      donneeConcernee: `consultation:${consultationId}`,
-      adresseTechnique: await adresseTechniqueCourante(),
-      justification: "Tentative de signature de prescription avec un mot de passe incorrect (RG-PRE-30).",
-    });
-    return { error: "Mot de passe incorrect. La prescription n'a pas ete signee.", success: false };
+  if (!reauthentificationRecente(session.userId)) {
+    if (motDePasseSignature.length === 0) {
+      return { error: "Le mot de passe est obligatoire pour signer l'ordonnance.", success: false };
+    }
+
+    const utilisateurConnecte = await prisma.user.findUnique({ where: { id: session.userId } });
+    const motDePasseValide =
+      utilisateurConnecte !== null &&
+      (await bcrypt.compare(motDePasseSignature, utilisateurConnecte.motDePasseHash));
+
+    if (!motDePasseValide) {
+      const troisiemeEchec = enregistrerEchecReauthentification(session.userId);
+      await journaliser({
+        utilisateurId: session.userId,
+        action: "signature_prescription_mot_de_passe_invalide",
+        donneeConcernee: `consultation:${consultationId}`,
+        adresseTechnique: await adresseTechniqueCourante(),
+        justification: "Tentative de signature de prescription avec un mot de passe incorrect (RG-PRE-30).",
+      });
+
+      if (troisiemeEchec) {
+        await destroySession();
+        return {
+          error: "Trop d'echecs de re-authentification. Vous avez ete deconnecte, veuillez vous reconnecter.",
+          success: false,
+        };
+      }
+
+      return { error: "Mot de passe incorrect. La prescription n'a pas ete signee.", success: false };
+    }
+
+    enregistrerReauthentificationReussie(session.userId);
   }
 
   // F-PRE-03 : "voie" ou "frequence" a "autre" exige la precision en texte
@@ -1094,6 +1137,21 @@ export async function creerPrescriptionAction(
 
     void prescriptionCreeeId;
 
+    // F-PRE-04 du pack : "Il notifie le patient : Une ordonnance a ete
+    // ajoutee a votre dossier." Manquait entierement avant ce correctif.
+    // Hors transaction (une notification manquee ne doit pas defaire la
+    // signature deja actee en base) ; destinataireNotificationPatient route
+    // vers le tuteur si le patient est une personne a charge (sans_compte,
+    // meme correctif que src/modules/laboratoire/actions.ts).
+    if (patient) {
+      await creerNotification(
+        await destinataireNotificationPatient(patient.id),
+        "prescription",
+        "Une ordonnance a ete ajoutee a votre dossier.",
+        "/app/patient/prescriptions"
+      );
+    }
+
     return { error: null, success: true };
   } catch (erreur) {
     console.error("Erreur lors de la creation de la prescription :", erreur);
@@ -1341,10 +1399,11 @@ export async function arreterPrescriptionAction(
 const schemaRenouvellementPrescription = z.object({
   prescriptionId: z.string().trim().min(1, "La prescription a renouveler est obligatoire."),
   consultationId: z.string().trim().min(1, "La consultation est obligatoire."),
-  // RG-PRE-30 : meme exigence de re-authentification que creerPrescriptionAction,
-  // un renouvellement cree lui aussi une prescription "validee" (voir la
-  // docstring plus bas).
-  motDePasseSignature: z.string().min(1, "Le mot de passe est obligatoire pour signer l'ordonnance."),
+  // RG-PRE-30 : meme exigence de re-authentification que creerPrescriptionAction
+  // (meme fenetre de grace de 5 minutes, meme compteur d'echecs partage par
+  // utilisateur, voir reauthentification.ts), un renouvellement cree lui
+  // aussi une prescription "validee" (voir la docstring plus bas).
+  motDePasseSignature: z.string().optional().default(""),
 });
 
 /**
@@ -1397,20 +1456,46 @@ export async function renouvelerPrescriptionAction(
 
   const { prescriptionId, consultationId, motDePasseSignature } = validation.data;
 
-  const utilisateurConnecte = await prisma.user.findUnique({ where: { id: session.userId } });
-  const motDePasseValide =
-    utilisateurConnecte !== null &&
-    (await bcrypt.compare(motDePasseSignature, utilisateurConnecte.motDePasseHash));
+  if (reauthentificationBloquee(session.userId)) {
+    await destroySession();
+    return {
+      error: "Trop d'echecs de re-authentification. Vous avez ete deconnecte, veuillez vous reconnecter.",
+      success: false,
+    };
+  }
 
-  if (!motDePasseValide) {
-    await journaliser({
-      utilisateurId: session.userId,
-      action: "signature_prescription_mot_de_passe_invalide",
-      donneeConcernee: `prescription:${prescriptionId}`,
-      adresseTechnique: await adresseTechniqueCourante(),
-      justification: "Tentative de signature d'un renouvellement de prescription avec un mot de passe incorrect (RG-PRE-30).",
-    });
-    return { error: "Mot de passe incorrect. Le renouvellement n'a pas ete signe.", success: false };
+  if (!reauthentificationRecente(session.userId)) {
+    if (motDePasseSignature.length === 0) {
+      return { error: "Le mot de passe est obligatoire pour signer l'ordonnance.", success: false };
+    }
+
+    const utilisateurConnecte = await prisma.user.findUnique({ where: { id: session.userId } });
+    const motDePasseValide =
+      utilisateurConnecte !== null &&
+      (await bcrypt.compare(motDePasseSignature, utilisateurConnecte.motDePasseHash));
+
+    if (!motDePasseValide) {
+      const troisiemeEchec = enregistrerEchecReauthentification(session.userId);
+      await journaliser({
+        utilisateurId: session.userId,
+        action: "signature_prescription_mot_de_passe_invalide",
+        donneeConcernee: `prescription:${prescriptionId}`,
+        adresseTechnique: await adresseTechniqueCourante(),
+        justification: "Tentative de signature d'un renouvellement de prescription avec un mot de passe incorrect (RG-PRE-30).",
+      });
+
+      if (troisiemeEchec) {
+        await destroySession();
+        return {
+          error: "Trop d'echecs de re-authentification. Vous avez ete deconnecte, veuillez vous reconnecter.",
+          success: false,
+        };
+      }
+
+      return { error: "Mot de passe incorrect. Le renouvellement n'a pas ete signe.", success: false };
+    }
+
+    enregistrerReauthentificationReussie(session.userId);
   }
 
   try {

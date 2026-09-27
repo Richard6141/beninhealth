@@ -37,9 +37,11 @@ function libelleStatut(statut: string): { texte: string; tone: BadgeTone } {
 function BoutonRenouveler({
   prescriptionId,
   consultationId,
+  reauthentificationRecente,
 }: {
   prescriptionId: string;
   consultationId: string;
+  reauthentificationRecente: boolean;
 }) {
   const [state, formAction, pending] = useActionState(renouvelerPrescriptionAction, etatInitial);
   const [motDePasseSignature, setMotDePasseSignature] = useState("");
@@ -64,22 +66,28 @@ function BoutonRenouveler({
           {state.error}
         </Alert>
       ) : null}
-      <div className="max-w-xs">
-        <TextField
-          label="Mot de passe (signature)"
-          name="motDePasseSignature"
-          type="password"
-          required
-          autoComplete="current-password"
-          value={motDePasseSignature}
-          onChange={(event) => setMotDePasseSignature(event.target.value)}
-        />
-      </div>
+      {!reauthentificationRecente ? (
+        <div className="max-w-xs">
+          <TextField
+            label="Mot de passe (signature)"
+            name="motDePasseSignature"
+            type="password"
+            required
+            autoComplete="current-password"
+            value={motDePasseSignature}
+            onChange={(event) => setMotDePasseSignature(event.target.value)}
+          />
+        </div>
+      ) : (
+        <p className="text-[12px] text-encre-attenuee">
+          Ré-authentification déjà effectuée il y a moins de 5 minutes (RG-PRE-30).
+        </p>
+      )}
       <Button
         type="submit"
         variant="secondary"
         size="sm"
-        disabled={pending || motDePasseSignature.length === 0}
+        disabled={pending || (!reauthentificationRecente && motDePasseSignature.length === 0)}
         className="w-fit"
       >
         {pending ? "Signature en cours..." : "Renouveler et signer"}
@@ -91,6 +99,7 @@ function BoutonRenouveler({
 export interface RenouvellementPrescriptionProps {
   consultationId: string;
   anciennesPrescriptions: PrescriptionAncienneResume[];
+  reauthentificationRecente: boolean;
 }
 
 /**
@@ -107,6 +116,7 @@ export interface RenouvellementPrescriptionProps {
 export function RenouvellementPrescription({
   consultationId,
   anciennesPrescriptions,
+  reauthentificationRecente,
 }: RenouvellementPrescriptionProps) {
   const [ouvert, setOuvert] = useState(false);
 
@@ -144,7 +154,11 @@ export function RenouvellementPrescription({
                     .map((ligne) => `${ligne.medicamentNom} (${ligne.dosage}, ${ligne.forme})`)
                     .join(", ")}
                 </p>
-                <BoutonRenouveler prescriptionId={prescription.id} consultationId={consultationId} />
+                <BoutonRenouveler
+                  prescriptionId={prescription.id}
+                  consultationId={consultationId}
+                  reauthentificationRecente={reauthentificationRecente}
+                />
               </li>
             );
           })}

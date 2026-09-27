@@ -22,6 +22,18 @@
  * mis a jour pour ne plus promettre une verification qui n'existait pas
  * encore).
  *
+ * Contenu complete le 2026-09-27 (F-PRE-04, ordre du pack) : coordonnees de
+ * l'etablissement (adresse, telephone), specialite et numero d'inscription
+ * du prescripteur, age/sexe/poids (si sous le seuil pediatrique) du
+ * patient, date de validite (JOURS_VALIDITE_ORDONNANCE,
+ * regles-ordonnance.ts, deja calculee ailleurs pour l'expiration), 8
+ * premiers caracteres de l'empreinte a cote du numero d'ordonnance. Le
+ * poids reutilise le meme calcul que la signature (poidsRecent,
+ * debutFenetrePoids, regles-ordonnance.ts) : Consultation et
+ * PriseEnChargeInfirmiere directement (aucune fonction exportee de
+ * prescription/actions.ts, fichier partage cette nuit, pour rester une
+ * route isolee comme documente ci-dessus).
+ *
  * Nouvelle route isolee, aucune modification de
  * src/modules/prescription/actions.ts (partage cette nuit avec F-PRE-05).
  */
@@ -33,6 +45,13 @@ import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/modules/audit/journaliser";
 import { consommerJetonTelechargement } from "@/modules/prescription/jetons-telechargement";
 import { genererCleVerificationOrdonnance } from "@/modules/prescription/verification-publique";
+import {
+  dateFinValiditeOrdonnance,
+  debutFenetrePoids,
+  poidsRecent,
+  poidsRequisPourPatient,
+} from "@/modules/prescription/regles-ordonnance";
+import { ageAnnees } from "@/modules/clinical/controles-constantes";
 
 function adresseTechniqueDepuisRequete(request: Request): string {
   return request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? "inconnue";
@@ -71,6 +90,19 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: "Ordonnance introuvable." }, { status: 404 });
   }
 
+  const maintenant = new Date();
+  let poidsAffiche: number | null = null;
+  if (poidsRequisPourPatient(prescription.patient.dateNaissance, maintenant)) {
+    const depuis = debutFenetrePoids(maintenant);
+    const filtre = { patientId: prescription.patientId, poidsKg: { not: null }, date: { gte: depuis } } as const;
+    const [consultations, prisesEnCharge] = await Promise.all([
+      prisma.consultation.findMany({ where: filtre, select: { date: true, poidsKg: true }, orderBy: { date: "desc" }, take: 5 }),
+      prisma.priseEnChargeInfirmiere.findMany({ where: filtre, select: { date: true, poidsKg: true }, orderBy: { date: "desc" }, take: 5 }),
+    ]);
+    const retenu = poidsRecent([...consultations, ...prisesEnCharge], maintenant);
+    poidsAffiche = retenu?.poidsKg ?? null;
+  }
+
   const document = await PDFDocument.create();
   const policeNormale = await document.embedFont(StandardFonts.Helvetica);
   const policeGrasse = await document.embedFont(StandardFonts.HelveticaBold);
@@ -106,14 +138,37 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     y -= 10;
   }
 
+  const etablissement = prescription.consultation.etablissement;
+  ecrireLigne(etablissement.nom, { gras: true, taille: 13 });
+  if (etablissement.adresse) {
+    ecrireLigne(etablissement.adresse);
+  }
+  if (etablissement.telephoneEtablissement) {
+    ecrireLigne(`Tél. ${etablissement.telephoneEtablissement}`);
+  }
+  ecrireLigneVide();
+
   ecrireTitre(`Ordonnance ${prescription.numero}`);
   ecrireLigne(`Date : ${formaterDate(prescription.date)}`);
   ecrireLigne(
-    `Prescripteur : Dr. ${prescription.medecinPrescripteur.user.prenom} ${prescription.medecinPrescripteur.user.nom}`
+    `Date de validité : ${formaterDate(dateFinValiditeOrdonnance(prescription.date))}`
   );
-  ecrireLigne(`Établissement : ${prescription.consultation.etablissement.nom}`);
+  const specialite = prescription.medecinPrescripteur.specialite;
+  const numeroOrdre = prescription.medecinPrescripteur.numeroOrdre;
+  ecrireLigne(
+    `Prescripteur : Dr. ${prescription.medecinPrescripteur.user.prenom} ${prescription.medecinPrescripteur.user.nom}` +
+      (specialite ? ` (${specialite})` : "")
+  );
+  if (numeroOrdre) {
+    ecrireLigne(`N° d'inscription à l'Ordre : ${numeroOrdre}`);
+  }
+  const ageAnneesPatient = ageAnnees(prescription.patient.dateNaissance, prescription.date);
   ecrireLigne(
     `Patient : ${prescription.patient.user.prenom} ${prescription.patient.user.nom} (${prescription.patient.identifiantSante})`
+  );
+  ecrireLigne(
+    `${ageAnneesPatient} an${ageAnneesPatient > 1 ? "s" : ""}, ${prescription.patient.sexe === "M" ? "masculin" : "féminin"}` +
+      (poidsAffiche !== null ? `, ${poidsAffiche} kg` : "")
   );
   ecrireLigneVide();
 
@@ -132,6 +187,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     ecrireLigneVide();
   });
 
+  ecrireLigneVide();
+
+  ecrireLigne(`N° d'ordonnance : ${prescription.numero} · Empreinte : ${prescription.empreinteContenu.slice(0, 8)}`, {
+    taille: 9,
+  });
   ecrireLigneVide();
 
   const cleVerification = genererCleVerificationOrdonnance(prescription.numero, prescription.id);

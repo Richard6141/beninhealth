@@ -19,7 +19,7 @@ vi.mock("@/lib/prisma", () => {
   return { prisma };
 });
 
-vi.mock("@/lib/session", () => ({ getSession: vi.fn() }));
+vi.mock("@/lib/session", () => ({ getSession: vi.fn(), destroySession: vi.fn() }));
 vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers()) }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("bcryptjs", () => {
@@ -28,6 +28,23 @@ vi.mock("bcryptjs", () => {
 });
 vi.mock("@/modules/audit/journaliser", () => ({ journaliser: vi.fn() }));
 vi.mock("@/modules/notification/creer", () => ({ creerNotification: vi.fn() }));
+// Frontiere du module : la fenetre de grace de 5 minutes et le compteur
+// d'echecs (RG-PRE-30) sont testes dans leur propre fichier
+// (reauthentification.test.ts), pas ici. Toujours "non recente, jamais
+// bloquee" : ces tests continuent d'exiger et de valider le mot de passe,
+// comme avant ce correctif.
+vi.mock("@/modules/prescription/reauthentification", () => ({
+  reauthentificationRecente: vi.fn(() => false),
+  reauthentificationBloquee: vi.fn(() => false),
+  enregistrerReauthentificationReussie: vi.fn(),
+  enregistrerEchecReauthentification: vi.fn(() => false),
+}));
+// Frontiere du module : la logique interne (routage vers le tuteur d'une
+// personne a charge) est testee dans son propre fichier
+// (facility/destinataire-notification-patient.test.ts), pas ici.
+vi.mock("@/modules/facility/destinataire-notification-patient", () => ({
+  destinataireNotificationPatient: vi.fn(async (patientId: string) => patientId),
+}));
 vi.mock("@/modules/administration/validation-professionnels-controle", () => ({
   professionnelValide: vi.fn(async () => true),
   MESSAGE_ORDRE_NON_VERIFIE: "Votre numéro d'Ordre n'est pas encore vérifié par le ministère.",
