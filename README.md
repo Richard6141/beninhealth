@@ -40,6 +40,23 @@ npm run dev
 
 L'application est ensuite accessible sur `http://localhost:3000`.
 
+### Comptes de démonstration
+
+`npm run db:seed` crée des comptes fictifs (adresses en `@benin-health.test`, aucune boîte ne les reçoit : hors production ou sur un serveur de démonstration, le code de connexion s'affiche à l'écran). Mot de passe commun à tous, uniquement pour la démonstration : `Demo1234!`. Ne jamais l'utiliser pour un vrai compte.
+
+| Rôle | Adresse | À montrer |
+|---|---|---|
+| Patient | `patient.demo@benin-health.test` | dossier, ordonnances, rendez-vous, partage par code, qui a consulté mon dossier |
+| Médecin | `medecin.demo@benin-health.test` | consultations, prescription, demande d'examen, référence |
+| Infirmier | `infirmier.demo@benin-health.test` | prise en charge avant consultation |
+| Agent communautaire | `communautaire.demo@benin-health.test` | suivis de personnes sur le terrain |
+| Laboratoire | `laboratoire.demo@benin-health.test` | résultats d'examens |
+| Pharmacien | `pharmacien.demo@benin-health.test` | recherche d'une ordonnance, délivrance |
+| Administrateur d'établissement | `admin.etablissement.demo@benin-health.test` | personnel, file du jour, fiche de l'établissement |
+| Ministère (administrateur national) | `ministere.demo@benin-health.test` | tableaux de bord agrégés, référentiels, comptes |
+
+Parcours pharmacie : se connecter en pharmacien, saisir le numéro de l'ordonnance de démonstration (`RX-2026-0001`, visible dans l'espace du patient démo) et l'année de naissance du patient (1994). Une ordonnance ne s'ouvre jamais sans cette présentation. Sur une base déjà alimentée avant l'arrivée du pharmacien, `npm run db:seed:pharmacie` ajoute la pharmacie et son compte sans toucher au reste.
+
 Contrôles avant tout push (les mêmes que ceux que doit lancer l'intégration continue) :
 
 ```bash

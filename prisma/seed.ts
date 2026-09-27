@@ -2,6 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { formaterIdentifiant, CODES_IDENTIFIANT_PAR_ROLE, CODE_IDENTIFIANT_ETABLISSEMENT } from "../src/modules/identity/identifiants";
 import { seedTerritoire, zoneSanitairePlaceholder } from "../src/modules/pilotage/referentiel-territoire";
+import { seedPharmacieDemo } from "./seed-pharmacie";
 
 // Jeu de donnees de demonstration, contexte beninois, pour le scenario du
 // cahier des charges (Partie 9) : citoyen cree son espace, prend rendez-vous,
@@ -408,12 +409,16 @@ async function main() {
     });
   }
 
+  // Pharmacie et pharmacien de demonstration (idempotent, voir prisma/seed-pharmacie.ts).
+  await seedPharmacieDemo(prisma, motDePasseHash);
+
   console.log("Jeu de donnees de demonstration cree.");
   console.log(`Mot de passe pour tous les comptes de demo : ${MOT_DE_PASSE_DEMO}`);
   console.log("- medecin.demo@benin-health.test (medecin)");
   console.log("- infirmier.demo@benin-health.test (infirmier)");
   console.log("- communautaire.demo@benin-health.test (agent_communautaire)");
   console.log("- laboratoire.demo@benin-health.test (laboratoire)");
+  console.log("- pharmacien.demo@benin-health.test (pharmacien)");
   console.log("- admin.etablissement.demo@benin-health.test (admin_etablissement)");
   console.log("- ministere.demo@benin-health.test (admin_national)");
   console.log("- patient.demo@benin-health.test (patient)");

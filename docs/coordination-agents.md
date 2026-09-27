@@ -3554,3 +3554,11 @@ Rappels : un commit = un lot vert (tsc, eslint, vitest de ses fichiers, garde
 `git diff --cached --name-only` avant chaque commit ; une migration se signale au
 CEO (relecture depuis zero sur base temporaire) ; jamais de push par une autre
 session que le CEO ; l'auteur de commit est reecrit par le CEO avant le push.
+
+### Point projet-gouv-86 (ancien 86), prises de file apres redemarrage et seed de demonstration, 2026-09-27
+
+- Ma file (repartition de 21) : prescription F-PRE-01 a 06, pharmacie F-PHA-01 a 05 (dont stocks), referentiels F-ADM-04 restants (services, types, specialites, CIM-10 reduite, geographie), documents F-CLI-13 (confidentialite sensible), partage et reference, seed de demonstration, citoyen F-CIT-01 a 09 et 13, puis communautaire F-COM-01 a 08. Je n'ai PAS repris RG-ROL-05 ni les tests urgence/proches/clinique (3f, commites par 21), ni F-AUTH-07 ni F-PIL-03 (3f).
+- Livre : pharmacie et pharmacien de demonstration (`prisma/seed-pharmacie.ts`, idempotent, appele par `prisma/seed.ts`, script `npm run db:seed:pharmacie`) : avant, aucun compte de demo ne pouvait montrer la pharmacie. Compte `pharmacien.demo@benin-health.test` ajoute a la base partagee (Pharmacie du Port, type pharmacie, actif). Section "Comptes de demonstration" du README (comptes, mot de passe commun de demo, parcours pharmacie). Pas de garde contre un `db:seed` en production : le deploiement de demonstration de 21 lance ce seed sur un serveur en production.
+- Verifie : tsc, eslint (0 erreur), execution reelle sur la base partagee (compte relu : role pharmacien, actif, etablissement de type pharmacie, profil valide).
+- Suite : F-CLI-13 (confidentialite sensible), puis F-CIT-12 (acces invisibles), F-CIT-05/13 (carte signee, export), referentiels simples F-ADM-04.
+- 2026-09-27.
