@@ -3929,3 +3929,12 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   notifications) etait deja livree, seul le second volet ("liberation par le laboratoire") restait
   reellement absent. Corrigee en consequence.
 - Suite pour moi : file de 21 vide de nouveau, je cherche la prochaine fiche P0/P1 non revendiquee.
+
+### Point projet-gouv-86 (session 41), chronologie unifiee du dossier citoyen (F-CIT-03), 2026-09-27
+
+- Livre : chronologie unifiee (consultations, ordonnances, resultats d'examens, vaccinations, documents fusionnes et tries par date, plus recent d'abord), composee dans un nouveau module `patient/chronologie.ts` a partir des lectures deja existantes de chaque module proprietaire (aucune lecture Prisma propre, Zero Trust deja applique par chacune). Filtres type et annee (formulaire GET sans script, meme convention que `/app/ministere/referentiels/cim10`), pagination 20 elements par page ("Voir plus"). Page de detail d'une consultation (`/app/patient/dossier/consultation/[id]`) : diagnostic en langage courant (le libelle CIM-10 deja simplifie de 8c/3f, jamais le seul code), ordonnance liee et analyses demandees (`ExamenResume.consultationId` expose, deja committe par 8c dans f86bfce).
+- RG-CIT-20 : un resultat sensible non encore libere affiche "Un resultat vous sera communique par votre medecin", jamais son contenu (deja garanti en amont par getMesExamens, ce module choisit seulement le bon libelle). RG-CIT-22 : chaque type retire/annule apparait barre avec sa mention. RG-CLI-54 (CA-2) : aucune observation reservee, deja garanti par ConsultationResume.
+- Limite assumee, documentee dans le module et dans docs/reste-a-faire.md : filtre "etablissement" non repris (consultation et document n'exposent pas encore ce champ) ; pagination re-tranche en memoire l'historique complet deja charge par chaque module (jamais un vrai curseur multi-source, adapte a la taille reelle d'un dossier personnel).
+- Verifie : tsc 0 (hors un fichier d'une autre session en cours d'edition, signale a son auteur), eslint 0 erreur, 20 tests (chronologie et detail de consultation), scenario navigateur reel (chronologie affichant les 5 types, filtre par type verifie, page de detail ouverte sans observation reservee).
+- A signaler, pas de mon fait : le commit f86bfce (8c/3f) reference `facility/destinataire-notification-patient.ts`, non commite (fichier present sur le disque uniquement) : HEAD casserait sur un clone frais, et 6 tests laboratoire echouent en attendant (signale a 8c).
+- 2026-09-27.

@@ -1,34 +1,13 @@
 import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
-import {
-  ArrowLeft,
-  Download,
-  FileText,
-  FolderOpen,
-  Phone,
-  Stethoscope,
-  TriangleAlert,
-  UserRound,
-} from "lucide-react";
+import { ArrowLeft, Phone, Stethoscope, TriangleAlert, UserRound } from "lucide-react";
 import { getMonDossierPatient } from "@/modules/patient/actions";
-import { getMesConsultations } from "@/modules/clinical/actions";
-import { getMesDocuments } from "@/modules/document/actions";
-import { OPTIONS_TYPE_DOCUMENT } from "@/modules/document/types-documents";
 import { Alert } from "@/components/ui/Alert";
 import { Badge } from "@/components/ui/Badge";
 import type { BadgeTone } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { FormulaireDossier } from "./FormulaireDossier";
-
-function libelleTypeDocument(type: string): string {
-  return OPTIONS_TYPE_DOCUMENT.find((option) => option.valeur === type)?.libelle ?? type;
-}
-
-function formaterTailleFichier(octets: number): string {
-  const ko = octets / 1024;
-  if (ko < 1024) return `${Math.max(1, Math.round(ko))} Ko`;
-  return `${(ko / 1024).toFixed(1)} Mo`;
-}
+import { SectionChronologie } from "./SectionChronologie";
 
 function formaterDate(date: string): string {
   try {
@@ -40,10 +19,6 @@ function formaterDate(date: string): string {
   } catch {
     return date;
   }
-}
-
-function capitaliser(texte: string): string {
-  return texte.length > 0 ? texte.charAt(0).toUpperCase() + texte.slice(1) : texte;
 }
 
 function ListeOuVide({
@@ -99,44 +74,21 @@ function TitreSection({
   );
 }
 
-function EtatVide({
-  icon: Icon,
-  titre,
-  description,
-  phase,
-}: {
-  icon: LucideIcon;
-  titre: string;
-  description: string;
-  phase: string;
-}) {
-  return (
-    <div className="flex flex-col items-center gap-2 rounded-champ border border-dashed border-bordure-forte bg-plan px-4 py-8 text-center">
-      <span className="flex h-11 w-11 items-center justify-center rounded-full bg-accent-clair text-accent">
-        <Icon size={20} aria-hidden="true" />
-      </span>
-      <p className="text-[14px] font-semibold text-encre">{titre}</p>
-      <p className="max-w-[30ch] text-[13px] text-encre-attenuee">{description}</p>
-      <Badge tone="info">{phase}</Badge>
-    </div>
-  );
+
+interface DossierPatientPageProps {
+  searchParams: Promise<{ type?: string; annee?: string; page?: string }>;
 }
 
 /**
  * Ecran "dossier santé" complet (Phase 3, Partie 4 §7 du cahier des charges) :
  * lecture détaillée du résumé santé (getMonDossierPatient), regroupée en
- * trois blocs logiques (identité, santé, contacts), historique des
- * consultations passées (getMesConsultations, module clinical, Phase 4),
- * documents médicaux ajoutés par un professionnel (getMesDocuments,
- * téléchargement direct via /api/documents/[id], F-CLI-13), puis formulaire
- * d'édition branché sur updatePatientProfileAction.
+ * trois blocs logiques (identité, santé, contacts), chronologie unifiée
+ * (F-CIT-03 du pack : consultations, ordonnances, résultats, vaccinations,
+ * documents fusionnés, filtrés et paginés, voir SectionChronologie), puis
+ * formulaire d'édition branché sur updatePatientProfileAction.
  */
-export default async function DossierPatientPage() {
-  const [dossier, consultations, documents] = await Promise.all([
-    getMonDossierPatient(),
-    getMesConsultations(),
-    getMesDocuments(),
-  ]);
+export default async function DossierPatientPage({ searchParams }: DossierPatientPageProps) {
+  const [dossier, searchParamsResolus] = await Promise.all([getMonDossierPatient(), searchParams]);
 
   return (
     <div className="conteneur-page mx-auto flex flex-col gap-8 px-4 py-8 sm:px-6">
@@ -282,132 +234,10 @@ export default async function DossierPatientPage() {
       )}
 
       <section aria-labelledby="titre-historique" className="flex flex-col gap-4">
-        <TitreSection icon={FileText} id="titre-historique">
-          Historique et documents
+        <TitreSection icon={Stethoscope} id="titre-historique">
+          Historique
         </TitreSection>
-        <div className="grid gap-4 md:grid-cols-2">
-          <Card
-            title="Consultations passées"
-            description="Historique de vos consultations, la plus récente en premier."
-            actions={
-              consultations.length > 0 ? (
-                <Badge tone="accent">{consultations.length}</Badge>
-              ) : undefined
-            }
-          >
-            {consultations.length > 0 ? (
-              <ol className="flex flex-col gap-4">
-                {consultations.map((consultation) => (
-                  <li
-                    key={consultation.id}
-                    className="flex flex-col gap-1 border-b border-bordure pb-4 last:border-0 last:pb-0"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span
-                        className={
-                          consultation.saisieParErreur
-                            ? "text-[14px] font-semibold text-encre-attenuee line-through decoration-2"
-                            : "text-[14px] font-semibold text-encre"
-                        }
-                      >
-                        {formaterDate(consultation.date)}
-                      </span>
-                      <div className="flex items-center gap-1.5">
-                        {consultation.saisieParErreur ? <Badge tone="critical">Retirée</Badge> : null}
-                        <Badge tone="neutral">{capitaliser(consultation.statut)}</Badge>
-                      </div>
-                    </div>
-                    <span className="text-[13px] text-encre-secondaire">
-                      {consultation.motif}
-                      {consultation.professionnelNomComplet
-                        ? `, suivi par ${consultation.professionnelNomComplet}`
-                        : ""}
-                    </span>
-                    {consultation.conclusion ? (
-                      <p className="text-[13px] text-encre-attenuee">
-                        Conclusion : {consultation.conclusion}
-                      </p>
-                    ) : null}
-                    {consultation.addenda.length > 0 ? (
-                      <div className="mt-1 flex flex-col gap-1.5">
-                        {consultation.addenda.map((addendum) => (
-                          <p key={addendum.id} className="text-[12px] text-encre-attenuee">
-                            Addendum ({addendum.auteurNomComplet},{" "}
-                            {new Date(addendum.date).toLocaleDateString("fr-FR")}) : {addendum.contenu}
-                          </p>
-                        ))}
-                      </div>
-                    ) : null}
-                  </li>
-                ))}
-              </ol>
-            ) : (
-              <EtatVide
-                icon={Stethoscope}
-                titre="Aucune consultation enregistrée"
-                description="L'historique de vos consultations apparaîtra ici après votre première visite chez un professionnel de santé."
-                phase="Disponible"
-              />
-            )}
-          </Card>
-          <Card
-            title="Documents médicaux"
-            description="Résultats, comptes-rendus, imagerie."
-            actions={
-              documents.length > 0 ? <Badge tone="accent">{documents.length}</Badge> : undefined
-            }
-          >
-            {documents.length > 0 ? (
-              <ul className="flex flex-col gap-4">
-                {documents.map((document) => (
-                  <li
-                    key={document.id}
-                    className="flex flex-col gap-1 border-b border-bordure pb-4 last:border-0 last:pb-0"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="text-[14px] font-semibold text-encre">
-                        {document.titre}
-                      </span>
-                      <div className="flex items-center gap-1.5">
-                        {document.niveauConfidentialite === "sensible" ? (
-                          <Badge tone="critical">Sensible</Badge>
-                        ) : null}
-                        {document.retirePourErreur ? <Badge tone="warning">Retiré</Badge> : null}
-                      </div>
-                    </div>
-                    <span className="text-[13px] text-encre-secondaire">
-                      {libelleTypeDocument(document.type)} · {formaterDate(document.dateDocument)}
-                      {" · "}
-                      Ajouté par {document.auteurNomComplet}
-                    </span>
-                    <span className="text-[12px] text-encre-attenuee">
-                      {document.nomFichierOriginal} · {formaterTailleFichier(document.tailleOctets)}
-                    </span>
-                    {document.retirePourErreur && document.motifRetrait ? (
-                      <p className="text-[13px] text-critique">
-                        Retiré (ajouté par erreur) : {document.motifRetrait}
-                      </p>
-                    ) : null}
-                    <a
-                      href={`/api/documents/${document.id}`}
-                      className="mt-1 inline-flex w-fit items-center gap-1.5 text-[13px] font-semibold text-accent hover:underline"
-                    >
-                      <Download size={14} aria-hidden="true" />
-                      Télécharger
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <EtatVide
-                icon={FolderOpen}
-                titre="Aucun document disponible"
-                description="Vos résultats d'examens et comptes-rendus ajoutés par un professionnel de santé apparaîtront ici."
-                phase="Disponible"
-              />
-            )}
-          </Card>
-        </div>
+        <SectionChronologie searchParams={searchParamsResolus} />
       </section>
 
       <section aria-labelledby="titre-edition" className="flex flex-col gap-4">
