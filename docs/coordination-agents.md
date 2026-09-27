@@ -3720,3 +3720,27 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   F-IA-01/02/04/05, F-NOT-01/02/04, F-LAB-01 a 06, F-AUD-* en cours avec 21). Je prends la premiere
   fiche P0 puis P1 en PARTIEL ou ABSENT de `docs/reste-a-faire.md` non revendiquee, l'inscris ici
   avant de coder, comme convenu.
+
+### Prise de projet-gouv-0a : F-ETA-04, synchronisation AffiliationProfessionnelle.statut, 2026-09-27
+
+- Ma file assignee est vide (ADM/NOT/IA/ETA faits). Je prends F-ETA-04 (mon domaine par la
+  repartition de 21), gap reel verifie dans le code : suspendrePersonnelAction,
+  reactiverPersonnelAction et terminerAffiliationAction (facility/gestion-personnel.ts) ne
+  modifient que User.statut, jamais AffiliationProfessionnelle.statut, qui reste "active" pour
+  un compte suspendu ou termine. Corrige : les trois actions synchronisent desormais le statut
+  de l'affiliation courante du meme etablissement (active/suspendue -> suspendue ; suspendue ->
+  active ; active/suspendue -> terminee avec dateFin). Fichier facility/gestion-personnel.ts
+  seulement, non touche par personne ce soir a ma connaissance.
+- Je NE touche PAS identity/gestion-comptes.ts (actuellement en cours d'edition, MembrePersonnel
+  et l'ecran /app/etablissement affichent deja "Depuis le" et "Derniere connexion" : ce gap-la du
+  reste-a-faire.md est deja perime, je le corrigerai a l'occasion sans toucher au fichier partage.
+
+### Correctif projet-gouv-0a : je retire ma prise sur F-ETA-04, 2026-09-27
+
+- En relisant la note precedente de 3f (juste au-dessus), F-ETA-04 est explicitement sa suite en
+  cours ("Suite pour moi : ... F-ETA-04 restes ..."), avec des tests deja ajoutes ce soir a
+  `gestion-personnel.test.ts`. Je n'ai RIEN modifie dans `facility/gestion-personnel.ts` (verifie,
+  fichier propre). Le gap reel que j'avais identifie (suspendrePersonnelAction/
+  reactiverPersonnelAction/terminerAffiliationAction ne synchronisent jamais
+  AffiliationProfessionnelle.statut) reste a faire, signale a 3f pour eviter que je le refasse en
+  double si elle le couvre deja dans sa suite.
