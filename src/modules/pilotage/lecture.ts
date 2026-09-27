@@ -17,11 +17,21 @@
  */
 
 import { headers } from "next/headers";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { journaliser } from "@/modules/audit/journaliser";
-import { masquerPetitEffectif, masquerTaux, type ValeurMasquee } from "./masquage";
+import { masquerDelaiMoyen, masquerPetitEffectif, masquerTaux, type ValeurMasquee } from "./masquage";
 import { GROUPES_MALADIES, estGroupeSensible } from "./referentiel-groupes-maladies";
+import {
+  DIMENSIONS_PAR_INDICATEUR,
+  FILTRES_VIDES,
+  TRANCHES_AGE_FILTRE,
+  auMoinsUnFiltre,
+  filtreApplicable,
+  parametresDesFiltres,
+  type FiltresPilotage,
+} from "./filtres-pilotage";
 
 export type PeriodeTableauBord = "aujourdhui" | "7j" | "30j" | "mois";
 
@@ -62,7 +72,26 @@ export interface TableauBordEtablissement {
    * de cette architecture par agregats quotidiens pre-calcules, pas un bug.
    */
   patientsVus: ValeurMasquee;
-  rendezVousDuJour: { pris: ValeurMasquee; honores: ValeurMasquee; annules: ValeurMasquee } | null;
+  rendezVousDuJour: { pris: ValeurMasquee; honores: ValeurMasquee; annules: ValeurMasquee; absences: ValeurMasquee } | null;
+  /**
+   * "effectif insuffisant" (RG-PIL-02) si moins de 20 rendez-vous honores+absents
+   * AUJOURD'HUI (jamais sur la periode selectionnee : texte du pack, section
+   * 14.2, "rendez-vous du jour et taux d'absence" dans la meme rangee
+   * d'indicateurs cles que rendezVousDuJour ci-dessus, meme portee).
+   */
+  tauxAbsenceRendezVous: string;
+  /**
+   * IND-11 du pack : delai d'attente arrivee -> demarrage de consultation,
+   * AUJOURD'HUI (meme portee que rendezVousDuJour/tauxAbsenceRendezVous
+   * ci-dessus, jamais la periode selectionnee : texte du pack, section 14.2).
+   * C'est une MOYENNE (somme des minutes / nombre de mesures de l'agregat du
+   * jour), jamais la vraie MEDIANE du pack (non additive sur plusieurs jours
+   * dans une architecture par agregats pre-calcules, voir agregation.ts) :
+   * limite assumee, nommee comme telle. "aucune mesure" si aucun rendez-vous
+   * avec heure d'arrivee et consultation liee aujourd'hui ; "< 5 mesures" en
+   * dessous du seuil RG-PIL-02.
+   */
+  delaiAttenteMoyen: string;
   /** "effectif insuffisant" (RG-PIL-02) si moins de 20 ordonnances signees sur la periode. */
   tauxDelivranceOrdonnances: string;
   evolutionConsultations: PointJournalierConsultations[];
@@ -144,7 +173,7 @@ export async function getTableauBordEtablissement(
       where: { etablissementId, date: { gte: debut, lt: fin } },
     }),
     prisma.agregatQuotidien.findMany({
-      where: { etablissementId, date: { gte: debutAujourdhui, lt: finAujourdhui }, indicateur: "IND-07" },
+      where: { etablissementId, date: { gte: debutAujourdhui, lt: finAujourdhui }, indicateur: { in: ["IND-07", "IND-11"] } },
     }),
     prisma.consultation.groupBy({
       by: ["professionnelId"],
@@ -186,13 +215,25 @@ export async function getTableauBordEtablissement(
   }
 
   let rendezVousDuJour: TableauBordEtablissement["rendezVousDuJour"] = null;
-  if (lignesAujourdhui.length > 0) {
-    const parDimension = new Map(lignesAujourdhui.map((ligne) => [ligne.dimensionLibre, ligne.valeur]));
+  let tauxAbsenceRendezVous = "effectif insuffisant";
+  let delaiAttenteMoyen = "aucune mesure";
+  const lignesIND07Aujourdhui = lignesAujourdhui.filter((ligne) => ligne.indicateur === "IND-07");
+  if (lignesIND07Aujourdhui.length > 0) {
+    const parDimension = new Map(lignesIND07Aujourdhui.map((ligne) => [ligne.dimensionLibre, ligne.valeur]));
+    const honores = parDimension.get("honores") ?? 0;
+    const absences = parDimension.get("absences") ?? 0;
     rendezVousDuJour = {
       pris: masquerPetitEffectif(parDimension.get("pris") ?? 0),
-      honores: masquerPetitEffectif(parDimension.get("honores") ?? 0),
+      honores: masquerPetitEffectif(honores),
       annules: masquerPetitEffectif(parDimension.get("annules") ?? 0),
+      absences: masquerPetitEffectif(absences),
     };
+    tauxAbsenceRendezVous = masquerTaux(absences, honores + absences);
+  }
+  const ligneIND11Somme = lignesAujourdhui.find((ligne) => ligne.indicateur === "IND-11" && ligne.dimensionLibre === "somme_minutes");
+  const ligneIND11Nombre = lignesAujourdhui.find((ligne) => ligne.indicateur === "IND-11" && ligne.dimensionLibre === "nombre_mesures");
+  if (ligneIND11Nombre) {
+    delaiAttenteMoyen = masquerDelaiMoyen(ligneIND11Somme?.valeur ?? 0, ligneIND11Nombre.valeur);
   }
 
   const evolutionConsultations: PointJournalierConsultations[] = [];
@@ -229,6 +270,8 @@ export async function getTableauBordEtablissement(
     consultations: masquerPetitEffectif(totalConsultations),
     patientsVus: masquerPetitEffectif(totalPatientsVus),
     rendezVousDuJour,
+    tauxAbsenceRendezVous,
+    delaiAttenteMoyen,
     tauxDelivranceOrdonnances: masquerTaux(totalOrdonnancesDelivrees30j, totalOrdonnancesSignees),
     evolutionConsultations,
     topDiagnostics,
@@ -273,8 +316,24 @@ export interface PointHebdomadaireNational {
   paludisme: number | null;
 }
 
+/** Cartes et courbes que la vue nationale peut declarer non filtrables (F-PIL-02). */
+export type CleCarteNationale =
+  | "consultations"
+  | "patientsVus"
+  | "etablissementsActifs"
+  | "casPaludisme"
+  | "evolutionPaludisme"
+  | "tauxDelivrance"
+  | "vaccinations";
+
 export interface VueNationalePilotage {
   periode: PeriodeTableauBord;
+  /** Filtres reellement appliques apres verification cote serveur. */
+  filtres: FiltresPilotage;
+  /** Cartes dont l'agregat n'a pas la dimension d'un filtre actif : a afficher "Non disponible avec ces filtres", jamais un chiffre non filtre. */
+  nonFiltrables: CleCarteNationale[];
+  /** Vrai quand les groupes de maladies sensibles sont absents du top a cause des filtres (RG-PIL-05). */
+  groupesSensiblesExclus: boolean;
   consultations: CarteIndicateurNational;
   patientsVus: CarteIndicateurNational;
   etablissementsActifs: { actifs: ValeurMasquee; total: number };
@@ -292,7 +351,7 @@ async function estAdminNationalDeLaSessionCourante(): Promise<boolean> {
 }
 
 /** Journalise l'ouverture ou le changement de filtre du centre national de pilotage (RG-PIL-21). */
-async function journaliserOuvertureVueNationale(periode: PeriodeTableauBord): Promise<void> {
+async function journaliserOuvertureVueNationale(periode: PeriodeTableauBord, filtres: FiltresPilotage): Promise<void> {
   const session = await getSession();
   if (!session) return;
 
@@ -304,18 +363,87 @@ async function journaliserOuvertureVueNationale(periode: PeriodeTableauBord): Pr
     // Contexte hors requete HTTP (ex. tache planifiee) : adresse technique non disponible.
   }
 
+  const filtresActifs = parametresDesFiltres(filtres)
+    .map(([nom, valeur]) => `;${nom}=${valeur}`)
+    .join("");
+
   await journaliser({
     utilisateurId: session.userId,
     action: "ANALYTICS_VIEW",
-    donneeConcernee: `pilotage_national:periode=${periode}`,
+    donneeConcernee: `pilotage_national:periode=${periode}${filtresActifs}`,
     adresseTechnique,
     justification: "Consultation du centre national de pilotage",
   });
 }
 
-async function sommeIndicateurNational(indicateur: string, debut: Date, fin: Date): Promise<number> {
+interface ContexteFiltres {
+  /** Filtres reverifies cote serveur (un departement ou un type inconnu est ecarte). */
+  filtres: FiltresPilotage;
+  /** Etablissements du territoire et du type choisis, ou null quand aucun des deux n'est filtre. */
+  etablissementIds: string[] | null;
+}
+
+/** Zero Trust : le departement et le type viennent de l'URL, ils sont verifies en base avant tout usage. */
+async function resoudreFiltres(demandes: FiltresPilotage): Promise<ContexteFiltres> {
+  const departement = demandes.departementId
+    ? await prisma.departement.findUnique({ where: { id: demandes.departementId }, select: { id: true } })
+    : null;
+  const etablissementDuType = demandes.typeEtablissement
+    ? await prisma.etablissementSanitaire.findFirst({ where: { type: demandes.typeEtablissement }, select: { type: true } })
+    : null;
+
+  const filtres: FiltresPilotage = {
+    departementId: departement?.id ?? null,
+    typeEtablissement: etablissementDuType?.type ?? null,
+    sexe: demandes.sexe === "M" || demandes.sexe === "F" ? demandes.sexe : null,
+    trancheAge: demandes.trancheAge !== null && TRANCHES_AGE_FILTRE.includes(demandes.trancheAge) ? demandes.trancheAge : null,
+  };
+
+  if (filtres.departementId === null && filtres.typeEtablissement === null) {
+    return { filtres, etablissementIds: null };
+  }
+
+  const conditions: Prisma.EtablissementSanitaireWhereInput[] = [];
+  if (filtres.departementId !== null) {
+    // Meme regle de rattachement que l'agregation : la commune d'abord, la zone sanitaire sinon.
+    conditions.push({
+      OR: [
+        { commune: { departementId: filtres.departementId } },
+        { communeId: null, zoneSanitaire: { departementId: filtres.departementId } },
+      ],
+    });
+  }
+  if (filtres.typeEtablissement !== null) conditions.push({ type: filtres.typeEtablissement });
+
+  const etablissements = await prisma.etablissementSanitaire.findMany({ where: { AND: conditions }, select: { id: true } });
+  return { filtres, etablissementIds: etablissements.map((etablissement) => etablissement.id) };
+}
+
+/** Conditions de lecture d'un indicateur sous les filtres actifs, ou null si un filtre actif ne s'applique pas a cet indicateur. */
+function conditionsAgregat(indicateur: string, contexte: ContexteFiltres): Prisma.AgregatQuotidienWhereInput | null {
+  if (!filtreApplicable(indicateur, contexte.filtres)) return null;
+  const dimensions = DIMENSIONS_PAR_INDICATEUR[indicateur] ?? { sexe: false, trancheAge: false };
+
+  return {
+    ...(contexte.etablissementIds !== null ? { etablissementId: { in: contexte.etablissementIds } } : {}),
+    ...(contexte.filtres.sexe !== null && dimensions.sexe ? { sexe: contexte.filtres.sexe } : {}),
+    ...(contexte.filtres.trancheAge !== null && dimensions.trancheAge ? { trancheAge: contexte.filtres.trancheAge } : {}),
+  };
+}
+
+/** Somme brute d'un indicateur sous les filtres, ou null quand un filtre actif ne peut pas s'y appliquer. */
+async function sommeIndicateurNational(
+  indicateur: string,
+  debut: Date,
+  fin: Date,
+  contexte: ContexteFiltres,
+  supplement: Prisma.AgregatQuotidienWhereInput = {}
+): Promise<number | null> {
+  const conditions = conditionsAgregat(indicateur, contexte);
+  if (conditions === null) return null;
+
   const resultat = await prisma.agregatQuotidien.aggregate({
-    where: { indicateur, date: { gte: debut, lt: fin } },
+    where: { indicateur, date: { gte: debut, lt: fin }, ...conditions, ...supplement },
     _sum: { valeur: true },
   });
   return resultat._sum.valeur ?? 0;
@@ -329,25 +457,82 @@ function calculerVariation(actuel: number, precedent: number): number | null {
   return Math.round(((actuel - precedent) / precedent) * 1000) / 10;
 }
 
-function carteNationale(actuel: number, precedent: number): CarteIndicateurNational {
+function carteNationale(actuel: number | null, precedent: number | null): CarteIndicateurNational {
+  if (actuel === null || precedent === null) return { valeur: 0, variationPourcent: null };
   return {
     valeur: masquerPetitEffectif(actuel),
     variationPourcent: calculerVariation(actuel, precedent),
   };
 }
 
-export async function getVueNationalePilotage(periode: PeriodeTableauBord): Promise<VueNationalePilotage | null> {
+/** Perimetre des lignes IND-05 (calculees par type, nationales ou par departement) sous les filtres de territoire et de type. */
+function perimetreEtablissementsActifs(filtres: FiltresPilotage): Prisma.AgregatQuotidienWhereInput {
+  const type = filtres.typeEtablissement !== null ? { typeEtablissement: filtres.typeEtablissement } : {};
+  if (filtres.departementId !== null) return { etablissementId: null, departementId: filtres.departementId, ...type };
+  return { etablissementId: null, departementId: null, ...type };
+}
+
+/**
+ * Le top des diagnostics lit les lignes des etablissements ; les groupes
+ * SENSIBLES ne sont comptes qu'au departement et au national (RG-PIL-05,
+ * lignes sans etablissement, sans sexe ni tranche). Ils ne peuvent donc
+ * accompagner que la vue nationale ou celle d'un seul departement, sans
+ * filtre de type, de sexe ni d'age.
+ */
+function conditionsTopDiagnostics(contexte: ContexteFiltres): { conditions: Prisma.AgregatQuotidienWhereInput; sensiblesExclus: boolean } {
+  const base = conditionsAgregat("IND-03", contexte) ?? {};
+  const { filtres } = contexte;
+
+  if (!auMoinsUnFiltre(filtres)) return { conditions: base, sensiblesExclus: false };
+
+  const seulementUnDepartement = filtres.departementId !== null && filtres.typeEtablissement === null && filtres.sexe === null && filtres.trancheAge === null;
+  if (seulementUnDepartement) {
+    return { conditions: { OR: [base, { etablissementId: null, departementId: filtres.departementId }] }, sensiblesExclus: false };
+  }
+  return { conditions: base, sensiblesExclus: true };
+}
+
+/** Options du filtre territoire (F-PIL-02), admin_national seulement : departements du referentiel, tries par nom. */
+export async function listerDepartementsFiltrables(): Promise<{ id: string; nom: string }[] | null> {
+  if (!(await estAdminNationalDeLaSessionCourante())) {
+    return null;
+  }
+  return prisma.departement.findMany({ orderBy: { nom: "asc" }, select: { id: true, nom: true } });
+}
+
+export async function getVueNationalePilotage(
+  periode: PeriodeTableauBord,
+  filtresDemandes: FiltresPilotage = FILTRES_VIDES
+): Promise<VueNationalePilotage | null> {
   if (!(await estAdminNationalDeLaSessionCourante())) {
     return null;
   }
 
-  await journaliserOuvertureVueNationale(periode);
+  const contexte = await resoudreFiltres(filtresDemandes);
+  const { filtres } = contexte;
+
+  await journaliserOuvertureVueNationale(periode, filtres);
 
   const maintenant = new Date();
   const { debut, fin } = plagePourPeriode(periode, maintenant);
   const dureeMs = fin.getTime() - debut.getTime();
   const debutPrecedent = new Date(debut.getTime() - dureeMs);
   const finPrecedent = debut;
+
+  const conditionsSignees = conditionsAgregat("IND-08", contexte);
+  const sommeOrdonnances = (dimensionLibre: string) =>
+    conditionsSignees === null
+      ? Promise.resolve(null)
+      : prisma.agregatQuotidien
+          .aggregate({
+            where: { indicateur: "IND-08", dimensionLibre, date: { gte: debut, lt: fin }, ...conditionsSignees },
+            _sum: { valeur: true },
+          })
+          .then((resultat) => resultat._sum.valeur ?? 0);
+
+  const perimetre05 = perimetreEtablissementsActifs(filtres);
+  const etablissementsActifsFiltrables = filtreApplicable("IND-05", filtres);
+  const topDiagnosticsConditions = conditionsTopDiagnostics(contexte);
 
   const [
     consultationsActuel,
@@ -364,32 +549,28 @@ export async function getVueNationalePilotage(periode: PeriodeTableauBord): Prom
     lignesEtablissementsActifs,
     dateCalculLigne,
   ] = await Promise.all([
-    sommeIndicateurNational("IND-01", debut, fin),
-    sommeIndicateurNational("IND-01", debutPrecedent, finPrecedent),
-    sommeIndicateurNational("IND-02", debut, fin),
-    sommeIndicateurNational("IND-02", debutPrecedent, finPrecedent),
-    sommeIndicateurNational("IND-04", debut, fin),
-    sommeIndicateurNational("IND-04", debutPrecedent, finPrecedent),
-    prisma.agregatQuotidien.aggregate({
-      where: { indicateur: "IND-08", dimensionLibre: "signees", date: { gte: debut, lt: fin } },
-      _sum: { valeur: true },
-    }),
-    prisma.agregatQuotidien.aggregate({
-      where: { indicateur: "IND-08", dimensionLibre: "delivrees_30j", date: { gte: debut, lt: fin } },
-      _sum: { valeur: true },
-    }),
-    sommeIndicateurNational("IND-10", debut, fin),
-    sommeIndicateurNational("IND-10", debutPrecedent, finPrecedent),
+    sommeIndicateurNational("IND-01", debut, fin, contexte),
+    sommeIndicateurNational("IND-01", debutPrecedent, finPrecedent, contexte),
+    sommeIndicateurNational("IND-02", debut, fin, contexte),
+    sommeIndicateurNational("IND-02", debutPrecedent, finPrecedent, contexte),
+    sommeIndicateurNational("IND-04", debut, fin, contexte),
+    sommeIndicateurNational("IND-04", debutPrecedent, finPrecedent, contexte),
+    sommeOrdonnances("signees"),
+    sommeOrdonnances("delivrees_30j"),
+    sommeIndicateurNational("IND-10", debut, fin, contexte),
+    sommeIndicateurNational("IND-10", debutPrecedent, finPrecedent, contexte),
     prisma.agregatQuotidien.groupBy({
       by: ["dimensionLibre"],
-      where: { indicateur: "IND-03", date: { gte: debut, lt: fin }, dimensionLibre: { not: null } },
+      where: { indicateur: "IND-03", date: { gte: debut, lt: fin }, dimensionLibre: { not: null }, ...topDiagnosticsConditions.conditions },
       _sum: { valeur: true },
     }),
-    prisma.agregatQuotidien.findFirst({
-      where: { indicateur: "IND-05", etablissementId: null, departementId: null, date: { lt: fin } },
-      orderBy: { date: "desc" },
-      select: { date: true },
-    }),
+    etablissementsActifsFiltrables
+      ? prisma.agregatQuotidien.findFirst({
+          where: { indicateur: "IND-05", ...perimetre05, date: { lt: fin } },
+          orderBy: { date: "desc" },
+          select: { date: true },
+        })
+      : Promise.resolve(null),
     prisma.agregatQuotidien.findFirst({
       where: { date: { gte: debut, lt: fin } },
       orderBy: { dateCalcul: "desc" },
@@ -397,18 +578,21 @@ export async function getVueNationalePilotage(periode: PeriodeTableauBord): Prom
     }),
   ]);
 
-  const totalSignees = signeesActuel._sum.valeur ?? 0;
-  const totalDelivrees30j = delivrees30jActuel._sum.valeur ?? 0;
+  const nonFiltrables: CleCarteNationale[] = [];
+  if (consultationsActuel === null) nonFiltrables.push("consultations");
+  if (patientsVusActuel === null) nonFiltrables.push("patientsVus");
+  if (!etablissementsActifsFiltrables) nonFiltrables.push("etablissementsActifs");
+  if (casPaludismeActuel === null) nonFiltrables.push("casPaludisme", "evolutionPaludisme");
+  if (signeesActuel === null) nonFiltrables.push("tauxDelivrance");
+  if (vaccinationsActuel === null) nonFiltrables.push("vaccinations");
+
+  const totalSignees = signeesActuel ?? 0;
+  const totalDelivrees30j = delivrees30jActuel ?? 0;
 
   let etablissementsActifs: VueNationalePilotage["etablissementsActifs"] = { actifs: 0, total: 0 };
   if (lignesEtablissementsActifs) {
     const lignesDuJour = await prisma.agregatQuotidien.findMany({
-      where: {
-        indicateur: "IND-05",
-        etablissementId: null,
-        departementId: null,
-        date: lignesEtablissementsActifs.date,
-      },
+      where: { indicateur: "IND-05", ...perimetre05, date: lignesEtablissementsActifs.date },
       select: { dimensionLibre: true, valeur: true },
     });
     let totalActifs = 0;
@@ -440,19 +624,22 @@ export async function getVueNationalePilotage(periode: PeriodeTableauBord): Prom
     finSemaineExclusive.setUTCDate(finSemaineExclusive.getUTCDate() + 1);
 
     const [consultationsSemaine, paludismeSemaine] = await Promise.all([
-      sommeIndicateurNational("IND-01", debutSemaine, finSemaineExclusive),
-      sommeIndicateurNational("IND-04", debutSemaine, finSemaineExclusive),
+      sommeIndicateurNational("IND-01", debutSemaine, finSemaineExclusive, contexte),
+      sommeIndicateurNational("IND-04", debutSemaine, finSemaineExclusive, contexte),
     ]);
 
     evolutionHebdomadaire.push({
       finSemaine: formaterDateISO(finSemaine),
-      consultations: consultationsSemaine > 0 && consultationsSemaine < 5 ? null : consultationsSemaine,
-      paludisme: paludismeSemaine > 0 && paludismeSemaine < 5 ? null : paludismeSemaine,
+      consultations: consultationsSemaine === null || (consultationsSemaine > 0 && consultationsSemaine < 5) ? null : consultationsSemaine,
+      paludisme: paludismeSemaine === null || (paludismeSemaine > 0 && paludismeSemaine < 5) ? null : paludismeSemaine,
     });
   }
 
   return {
     periode,
+    filtres,
+    nonFiltrables,
+    groupesSensiblesExclus: topDiagnosticsConditions.sensiblesExclus,
     consultations: carteNationale(consultationsActuel, consultationsPrecedent),
     patientsVus: carteNationale(patientsVusActuel, patientsVusPrecedent),
     etablissementsActifs,

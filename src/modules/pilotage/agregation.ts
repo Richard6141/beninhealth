@@ -40,14 +40,12 @@ function groupeDeLaConsultation(diagnosticPrincipalCode: string | null, conclusi
  * (adoption) agregats systeme sans grain etablissement, calcules par
  * recalculerIndicateursSystemeJour.
  *
- * IND-11 (delai d'attente, arrivee -> demarrage de consultation) n'est PAS
- * implemente : ce depot n'a aucun champ d'horodatage d'arrivee, ni sur
- * RendezVous ni ailleurs (PriseEnChargeInfirmiere.date n'est pas non plus
- * une heure d'arrivee, c'est la date de creation de la fiche de soins).
- * Rien a agreger tant qu'un champ dedie n'existe pas cote Agent
- * Architecture ; inventer une approximation (ex. date de creation de la
- * consultation comme proxy d'arrivee) presenterait une donnee absente comme
- * mesuree, ce que ce projet s'interdit.
+ * IND-11 (delai d'attente, arrivee -> demarrage de consultation) : implemente
+ * le 2026-09-27 (F-PIL-01, voir plus bas dans ce fichier) depuis que
+ * RendezVous.heureArrivee existe (F-RDV-04). Ce paragraphe affirmait a tort
+ * le contraire avant cette date ; PriseEnChargeInfirmiere.date reste, comme
+ * note ici a l'origine, la date de creation de la fiche de soins, jamais une
+ * heure d'arrivee - non utilisee pour cet indicateur.
  *
  * Limite assumee sur IND-04 : le pack demande aussi "dont confirmes par test
  * (goutte epaisse ou TDR positif lie)". Ce depot n'a pas de lien fiable et
@@ -59,17 +57,21 @@ function groupeDeLaConsultation(diagnosticPrincipalCode: string | null, conclusi
  * le sous-compte "confirmes par test" necessite un champ de liaison explicite
  * cote Agent Architecture avant d'etre implemente.
  *
- * Limite assumee sur IND-07 : le pack demande aussi les "absences", avec un
- * taux d'absence = absences / (honores + absences). `StatutRendezVous`
- * (src/types/domain-facility.ts) n'a que demande | confirme | termine |
- * annule : aucun statut ne distingue un rendez-vous simplement manque d'un
- * rendez-vous encore a venir ou jamais mis a jour. Deduire une "absence" par
- * inference (date passee, statut toujours confirme) serait un heuristique
- * non fiable presente comme une donnee reelle : seuls pris/honores/annules
- * sont calcules, "absences" et le taux associe necessitent un statut dedie
- * cote Agent Architecture. Le pack liste aussi "service" comme dimension :
- * absent du modele de donnees (RendezVous.motif est un texte libre), donc
- * non calcule non plus.
+ * IND-07 (corrige le 2026-09-27, F-PIL-01) : compte desormais aussi les
+ * "absences" (RendezVous.statut = "absent", pose par la tache planifiee
+ * marquage-absences.ts, F-RDV-05/RG-RDV-40 - le paragraphe precedent de ce
+ * commentaire, ecrit avant cette tache, affirmait a tort qu'aucun statut ne
+ * le permettait). Le taux d'absence (absences / (honores + absences)) se
+ * calcule cote lecture (jamais stocke directement, RG-PIL-02). Le pack liste
+ * aussi "service" comme dimension : toujours absent du modele de donnees
+ * (RendezVous.motif est un texte libre), donc toujours non calcule.
+ *
+ * IND-11 (ajoute le 2026-09-27, F-PIL-01) : delai d'attente (arrivee ->
+ * demarrage de consultation), utilise desormais RendezVous.heureArrivee
+ * (F-RDV-04) et Consultation.date. Stocke en (somme, nombre de mesures)
+ * plutot qu'une mediane directement (voir le commentaire dans
+ * recalculerJourEtablissement) : la lecture recalcule une MOYENNE, pas la
+ * vraie mediane du pack, limite assumee et nommee comme telle a l'ecran.
  *
  * Limite assumee sur IND-06 : seuls les actes de consultation (medecin,
  * infirmier) sont comptes comme "acte valide" pour l'instant. Les actes de
@@ -95,8 +97,10 @@ function groupeDeLaConsultation(diagnosticPrincipalCode: string | null, conclusi
  * Limite assumee sur IND-12 : seule la part de consultations validees
  * tardivement (> 48h entre Consultation.date et dateValidation) est
  * calculee. La seconde moitie du pack, "part des arrivees verifiees sur
- * piece", depend du meme champ d'arrivee absent que IND-11 : non calculee,
- * meme raison.
+ * piece", reste non calculee : RendezVous.heureArrivee (utilise depuis peu
+ * par IND-11) donne l'HEURE d'arrivee, jamais la METHODE de verification
+ * (piece d'identite, QR, SMS - RG-ACC-20), qu'aucun champ ne distingue dans
+ * ce depot.
  *
  * Limite assumee sur IND-13 : "comptes citoyens crees" et "comptes actifs
  * sur 30 jours" sont calcules au niveau national uniquement. La dimension
@@ -116,6 +120,7 @@ export const CODES_INDICATEURS_JOUR_ETABLISSEMENT = [
   "IND-08",
   "IND-09",
   "IND-10",
+  "IND-11",
   "IND-12",
 ] as const;
 export const CODES_INDICATEURS_SYSTEME_JOUR = ["IND-05", "IND-06", "IND-13"] as const;
@@ -256,9 +261,12 @@ export async function recalculerJourEtablissement(
     });
   }
 
-  // IND-07 : rendez-vous pris/honores/annules du jour, attribues a la date
-  // planifiee du rendez-vous (pas a sa date de creation). Voir la limite
-  // assumee documentee en tete de fichier : ni "absences" ni "service".
+  // IND-07 : rendez-vous pris/honores/annules/absences du jour, attribues a
+  // la date planifiee du rendez-vous (pas a sa date de creation). Le taux
+  // d'absence (absences / (honores + absences)) se calcule cote lecture,
+  // jamais stocke directement (RG-PIL-02 : deriverait un petit effectif
+  // masque). Voir la limite assumee documentee en tete de fichier : "service"
+  // reste non calcule (RendezVous.motif est un texte libre).
   const rendezVousDuJour = await prisma.rendezVous.findMany({
     where: { etablissementId, date: { gte: debut, lt: fin } },
     select: { statut: true },
@@ -266,13 +274,64 @@ export async function recalculerJourEtablissement(
   if (rendezVousDuJour.length > 0) {
     let honores = 0;
     let annules = 0;
+    let absences = 0;
     for (const rendezVous of rendezVousDuJour) {
       if (rendezVous.statut === "termine") honores += 1;
       else if (rendezVous.statut === "annule") annules += 1;
+      else if (rendezVous.statut === "absent") absences += 1;
     }
     lignes.push({ indicateur: "IND-07", sexe: null, trancheAge: null, dimensionLibre: "pris", valeur: rendezVousDuJour.length });
     lignes.push({ indicateur: "IND-07", sexe: null, trancheAge: null, dimensionLibre: "honores", valeur: honores });
     lignes.push({ indicateur: "IND-07", sexe: null, trancheAge: null, dimensionLibre: "annules", valeur: annules });
+    lignes.push({ indicateur: "IND-07", sexe: null, trancheAge: null, dimensionLibre: "absences", valeur: absences });
+  }
+
+  // IND-11 : delai d'attente (arrivee -> demarrage de consultation), en
+  // minutes. "Demarrage" = creation du brouillon (Consultation.date, jamais
+  // sa validation eventuelle), la seule mesure disponible sans nouveau champ.
+  // Necessite un rendez-vous avec une arrivee enregistree (heureArrivee,
+  // F-RDV-04) : une consultation sans rendez-vous lie n'a pas de mesure
+  // d'attente ici. Le pack demande une MEDIANE, non additive sur une periode
+  // de plusieurs jours ; cette table ne stocke que des sommes idempotentes
+  // (RG-PIL-60/61). Somme et nombre de mesures sont donc stockes separement,
+  // et c'est une MOYENNE (pas une mediane) qui est recalculee a la lecture
+  // sur la periode demandee - limite assumee et nommee comme telle a
+  // l'ecran, jamais presentee comme la vraie mediane du pack. "Service"
+  // reste non calcule, meme limite que IND-07 ci-dessus.
+  const consultationsAvecArriveeDuJour = await prisma.consultation.findMany({
+    where: {
+      etablissementId,
+      date: { gte: debut, lt: fin },
+      rendezVousId: { not: null },
+      rendezVous: { heureArrivee: { not: null } },
+    },
+    select: { date: true, rendezVous: { select: { heureArrivee: true } } },
+  });
+  const delaisMinutes = consultationsAvecArriveeDuJour
+    // Defensif malgre le where ci-dessus (jamais une exception si rendezVous
+    // ou heureArrivee manque tout de meme, ex. une relation non chargee) :
+    // filtre avant de calculer plutot qu'un "!" qui ferait echouer tout le
+    // recalcul du jour pour une seule ligne incomplete.
+    .filter((c) => c.rendezVous?.heureArrivee != null)
+    .map((c) => (c.date.getTime() - c.rendezVous!.heureArrivee!.getTime()) / 60000)
+    // Defensif : jamais un delai negatif (anomalie d'horloge ou de saisie) ne doit fausser la moyenne.
+    .filter((minutes) => minutes >= 0);
+  if (delaisMinutes.length > 0) {
+    const sommeMinutes = delaisMinutes.reduce((total, minutes) => total + minutes, 0);
+    lignes.push({
+      indicateur: "IND-11",
+      sexe: null,
+      trancheAge: null,
+      dimensionLibre: "somme_minutes",
+      valeur: Math.round(sommeMinutes),
+    });
+    lignes.push({
+      indicateur: "IND-11",
+      sexe: null,
+      trancheAge: null,
+      dimensionLibre: "nombre_mesures",
+      valeur: delaisMinutes.length,
+    });
   }
 
   // IND-08 : ordonnances signees du jour (toute prescription non annulee,

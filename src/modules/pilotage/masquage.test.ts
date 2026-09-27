@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { masquerLigneAvecTotal, masquerPetitEffectif, masquerTaux } from "@/modules/pilotage/masquage";
+import { masquerDelaiMoyen, masquerLigneAvecTotal, masquerPetitEffectif, masquerTaux } from "@/modules/pilotage/masquage";
 
 describe("masquerPetitEffectif (RG-PIL-02)", () => {
   it("masque les valeurs de 1 a 4", () => {
@@ -21,6 +21,22 @@ describe("masquerTaux (RG-PIL-02)", () => {
 
   it("calcule le taux normalement a partir de 20", () => {
     expect(masquerTaux(10, 20)).toBe("50.0 %");
+  });
+});
+
+describe("masquerDelaiMoyen (RG-PIL-02, IND-11)", () => {
+  it("aucune mesure : le distingue d'un delai masque", () => {
+    expect(masquerDelaiMoyen(0, 0)).toBe("aucune mesure");
+  });
+
+  it("masque une moyenne calculee sur moins de 5 mesures", () => {
+    expect(masquerDelaiMoyen(40, 1)).toBe("< 5 mesures");
+    expect(masquerDelaiMoyen(160, 4)).toBe("< 5 mesures");
+  });
+
+  it("calcule et arrondit la moyenne a partir de 5 mesures", () => {
+    expect(masquerDelaiMoyen(100, 5)).toBe("20 min");
+    expect(masquerDelaiMoyen(101, 5)).toBe("20 min");
   });
 });
 

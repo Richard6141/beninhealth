@@ -27,6 +27,18 @@ export function masquerTaux(numerateur: number, denominateur: number): string {
   return `${taux.toFixed(1)} %`;
 }
 
+/**
+ * RG-PIL-02, une moyenne calculee sur un petit nombre de mesures : avec
+ * moins de 5 mesures, afficher une moyenne reviendrait a reveler le delai
+ * exact d'un patient (n=1) ou presque (n=2 a 4), meme principe que
+ * masquerPetitEffectif applique a un compte. IND-11 (pilotage/agregation.ts).
+ */
+export function masquerDelaiMoyen(sommeMinutes: number, nombreMesures: number): string {
+  if (nombreMesures === 0) return "aucune mesure";
+  if (nombreMesures < 5) return "< 5 mesures";
+  return `${Math.round(sommeMinutes / nombreMesures)} min`;
+}
+
 export interface CelluleLigne {
   cle: string;
   valeur: number;

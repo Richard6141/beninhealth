@@ -186,12 +186,13 @@ describe("recalculerJourEtablissement", () => {
     expect(operations).toHaveLength(1);
   });
 
-  it("calcule IND-07 (rendez-vous pris/honores/annules) du jour", async () => {
+  it("calcule IND-07 (rendez-vous pris/honores/annules/absences) du jour", async () => {
     prismaMock.consultation.findMany.mockResolvedValue([]);
     prismaMock.rendezVous.findMany.mockResolvedValue([
       { statut: "termine" },
       { statut: "termine" },
       { statut: "annule" },
+      { statut: "absent" },
       { statut: "confirme" },
     ]);
 
@@ -201,11 +202,54 @@ describe("recalculerJourEtablissement", () => {
     const appelCreateMany = prismaMock.agregatQuotidien.createMany.mock.calls[0][0];
     expect(appelCreateMany.data).toEqual(
       expect.arrayContaining([
-        { ...ligneDeBase, indicateur: "IND-07", dimensionLibre: "pris", valeur: 4 },
+        { ...ligneDeBase, indicateur: "IND-07", dimensionLibre: "pris", valeur: 5 },
         { ...ligneDeBase, indicateur: "IND-07", dimensionLibre: "honores", valeur: 2 },
         { ...ligneDeBase, indicateur: "IND-07", dimensionLibre: "annules", valeur: 1 },
+        { ...ligneDeBase, indicateur: "IND-07", dimensionLibre: "absences", valeur: 1 },
       ])
     );
+  });
+
+  it("calcule IND-11 (delai d'attente : somme et nombre de mesures, en minutes)", async () => {
+    prismaMock.consultation.findMany.mockImplementation(
+      async ({ select }: { select?: { rendezVous?: unknown } }) => {
+        if (select?.rendezVous) {
+          return [
+            // 25 minutes d'attente.
+            { date: new Date("2026-01-15T09:25:00.000Z"), rendezVous: { heureArrivee: new Date("2026-01-15T09:00:00.000Z") } },
+            // 45 minutes d'attente.
+            { date: new Date("2026-01-15T10:45:00.000Z"), rendezVous: { heureArrivee: new Date("2026-01-15T10:00:00.000Z") } },
+          ];
+        }
+        return [];
+      }
+    );
+
+    await recalculerJourEtablissement(prisma, JOUR, "etab1");
+
+    const ligneDeBase = { date: DEBUT_JOUR, etablissementId: "etab1", sexe: null, trancheAge: null };
+    const appelCreateMany = prismaMock.agregatQuotidien.createMany.mock.calls[0][0];
+    expect(appelCreateMany.data).toEqual(
+      expect.arrayContaining([
+        { ...ligneDeBase, indicateur: "IND-11", dimensionLibre: "somme_minutes", valeur: 70 },
+        { ...ligneDeBase, indicateur: "IND-11", dimensionLibre: "nombre_mesures", valeur: 2 },
+      ])
+    );
+  });
+
+  it("IND-11 : aucune ligne quand aucune mesure d'attente n'est disponible", async () => {
+    prismaMock.consultation.findMany.mockResolvedValue([]);
+    // Au moins une autre ligne (IND-07) pour que createMany soit bien appele
+    // (jamais appele quand `lignes` est entierement vide, voir plus bas dans
+    // recalculerJourEtablissement) : ce test verifie l'absence d'IND-11
+    // precisement, pas l'absence de tout appel.
+    prismaMock.rendezVous.findMany.mockResolvedValue([{ statut: "termine" }]);
+
+    await recalculerJourEtablissement(prisma, JOUR, "etab1");
+
+    const appelCreateMany = prismaMock.agregatQuotidien.createMany.mock.calls[0][0];
+    const lignesInd11 = appelCreateMany.data.filter((ligne: { indicateur: string }) => ligne.indicateur === "IND-11");
+    expect(lignesInd11).toHaveLength(0);
   });
 
   it("calcule IND-08 (ordonnances signees / delivrees dans le delai de 30 jours)", async () => {

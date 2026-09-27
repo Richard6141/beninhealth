@@ -120,15 +120,15 @@ export function SectionPilotage({ tableauBord }: { tableauBord: TableauBordEtabl
           }
           info={
             tableauBord.rendezVousDuJour
-              ? `Dont ${texteValeurMasquee(tableauBord.rendezVousDuJour.honores)} honorés et ${texteValeurMasquee(tableauBord.rendezVousDuJour.annules)} annulés. Le taux d'absence n'est pas calculable : aucun statut de rendez-vous distinct pour une absence dans ce dépôt.`
+              ? `Dont ${texteValeurMasquee(tableauBord.rendezVousDuJour.honores)} honorés, ${texteValeurMasquee(tableauBord.rendezVousDuJour.annules)} annulés et ${texteValeurMasquee(tableauBord.rendezVousDuJour.absences)} absences. Taux d'absence : ${tableauBord.tauxAbsenceRendezVous}.`
               : "Aucun rendez-vous prévu aujourd'hui."
           }
         />
         <TuilePilotage
           icon={Activity}
-          label="Délai d'attente médian (IND-11)"
-          value="Non disponible"
-          info="Nécessite un horodatage d'arrivée du patient, absent du modèle de données actuel (ni sur les rendez-vous, ni ailleurs). Non calculé plutôt qu'approximé."
+          label="Délai d'attente moyen (IND-11)"
+          value={tableauBord.delaiAttenteMoyen}
+          info="Du jour : arrivée à l'accueil (heure enregistrée) jusqu'au démarrage de la consultation. C'est une MOYENNE, pas la médiane du pack : une médiane ne s'additionne pas correctement sur plusieurs jours dans une architecture par agrégats quotidiens pré-calculés."
         />
       </div>
 
