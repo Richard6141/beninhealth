@@ -22,7 +22,7 @@ vi.mock("@/lib/prisma", () => {
     professionnelSante: { findUnique: vi.fn() },
     patient: { findUnique: vi.fn() },
     consentement: { findUnique: vi.fn() },
-    rendezVous: { findUnique: vi.fn(), updateMany: vi.fn() },
+    rendezVous: { findUnique: vi.fn(), findFirst: vi.fn(), updateMany: vi.fn() },
     consultation: { findUnique: vi.fn(), findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
     priseEnChargeInfirmiere: { updateMany: vi.fn() },
     diagnosticCim10: { findUnique: vi.fn() },
@@ -43,7 +43,7 @@ const prismaMock = prisma as unknown as {
   professionnelSante: { findUnique: Mock };
   patient: { findUnique: Mock };
   consentement: { findUnique: Mock };
-  rendezVous: { findUnique: Mock; updateMany: Mock };
+  rendezVous: { findUnique: Mock; findFirst: Mock; updateMany: Mock };
   consultation: { findUnique: Mock; findFirst: Mock; create: Mock; update: Mock };
   priseEnChargeInfirmiere: { updateMany: Mock };
   diagnosticCim10: { findUnique: Mock };
@@ -86,6 +86,19 @@ beforeEach(() => {
   prismaMock.patient.findUnique.mockResolvedValue({ id: "pat-1", dateNaissance: new Date(1990, 0, 15) });
   prismaMock.consentement.findUnique.mockResolvedValue({ statut: "actif", typeAcces: "dossier_complet", dateFin: new Date(MAINTENANT.getTime() + 3600_000) });
   prismaMock.consultation.findFirst.mockResolvedValue(null);
+  // RG-ACC-15 : base d'acces en ecriture par defaut (rendez-vous confirme de
+  // CE professionnel, aujourd'hui) - un consentement seul ne suffit jamais a
+  // creer une consultation. Les tests qui portent specifiquement sur cette
+  // regle l'ecrasent au cas par cas (mockResolvedValueOnce(null) ou variantes).
+  prismaMock.rendezVous.findFirst.mockResolvedValue({
+    id: "rdv-defaut",
+    patientId: "pat-1",
+    professionnelId: "pro-1",
+    etablissementId: "etab-1",
+    statut: "confirme",
+    date: MAINTENANT,
+    heureArrivee: null,
+  });
   prismaMock.consultation.create.mockResolvedValue({ id: "c-new", rendezVousId: null, date: MAINTENANT, etablissementId: "etab-1" });
   prismaMock.consultation.update.mockResolvedValue({});
   prismaMock.rendezVous.updateMany.mockResolvedValue({ count: 1 });
@@ -237,6 +250,72 @@ describe("brouillon (RG-CLI-40, RG-CLI-41)", () => {
     prismaMock.rendezVous.findUnique.mockResolvedValue({ id: "rdv-1", patientId: "pat-1", professionnelId: "pro-1" });
     expect((await enregistrerConsultationAction(ETAT, formulaire({ rendezVousId: "rdv-1" }))).success).toBe(true);
     expect(prismaMock.consultation.create.mock.calls.at(-1)?.[0].data.rendezVousId).toBe("rdv-1");
+  });
+});
+
+describe("base d'acces en ecriture a la CREATION d'une consultation (RG-ACC-15)", () => {
+  it("refuse la creation quand ni un contexte de soins (B4) ni un rendez-vous confirme du jour (B3) n'existe, meme avec un consentement actif", async () => {
+    prismaMock.rendezVous.findFirst.mockResolvedValue(null);
+
+    const resultat = await enregistrerConsultationAction(ETAT, formulaire());
+
+    expect(resultat.success).toBe(false);
+    expect(resultat.error).toContain("Un consentement seul ne permet pas de creer une consultation");
+    expect(prismaMock.consultation.create).not.toHaveBeenCalled();
+  });
+
+  it("accepte via un contexte de soins B4 (patient arrive dans l'etablissement), meme sans rendez-vous avec ce professionnel precis", async () => {
+    prismaMock.rendezVous.findFirst.mockResolvedValue({
+      id: "rdv-arrivee",
+      patientId: "pat-1",
+      professionnelId: "pro-autre",
+      etablissementId: "etab-1",
+      statut: "demande",
+      date: new Date(MAINTENANT.getTime() + 3 * 24 * 3600_000),
+      heureArrivee: new Date(MAINTENANT.getTime() - 3600_000),
+    });
+
+    const resultat = await enregistrerConsultationAction(ETAT, formulaire());
+
+    expect(resultat.success).toBe(true);
+  });
+
+  it("interroge la base sur une fenetre de 72 h exactement pour le contexte de soins B4", async () => {
+    prismaMock.rendezVous.findFirst.mockResolvedValue(null);
+
+    await enregistrerConsultationAction(ETAT, formulaire());
+
+    const critere = prismaMock.rendezVous.findFirst.mock.calls[0][0];
+    const seuilAttendu = new Date(MAINTENANT.getTime() - 72 * 3600_000);
+    expect(critere.where.OR[0].heureArrivee.gte).toEqual(seuilAttendu);
+    expect(critere.where.OR[0].etablissementId).toBe("etab-1");
+    expect(critere.where.OR[1]).toMatchObject({ professionnelId: "pro-1", statut: "confirme" });
+  });
+
+  it("accepte via un rendez-vous confirme du jour avec CE professionnel, meme sans arrivee enregistree", async () => {
+    prismaMock.rendezVous.findFirst.mockResolvedValue({
+      id: "rdv-confirme",
+      patientId: "pat-1",
+      professionnelId: "pro-1",
+      etablissementId: "etab-1",
+      statut: "confirme",
+      date: MAINTENANT,
+      heureArrivee: null,
+    });
+
+    const resultat = await enregistrerConsultationAction(ETAT, formulaire());
+
+    expect(resultat.success).toBe(true);
+  });
+
+  it("ne re-verifie jamais cette base pour la mise a jour d'un brouillon deja ouvert (base B7, auteur)", async () => {
+    prismaMock.rendezVous.findFirst.mockResolvedValue(null);
+    prismaMock.consultation.findFirst.mockResolvedValue({ id: "c-brouillon", rendezVousId: null, date: MAINTENANT, etablissementId: "etab-1" });
+
+    const resultat = await enregistrerConsultationAction(ETAT, formulaire());
+
+    expect(resultat.success).toBe(true);
+    expect(prismaMock.rendezVous.findFirst).not.toHaveBeenCalled();
   });
 });
 

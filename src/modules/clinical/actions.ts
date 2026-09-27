@@ -22,7 +22,8 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/modules/audit/journaliser";
 import { publierEvenementPilotage } from "@/modules/pilotage/file-taches";
-import { transitionnerRendezVous } from "@/modules/facility/rendez-vous-etats";
+import { STATUTS_ACTIFS, transitionnerRendezVous } from "@/modules/facility/rendez-vous-etats";
+import { bornesJourneeBenin } from "@/modules/transfert/code-acces";
 import { MESSAGE_ORDRE_NON_VERIFIE, professionnelValide } from "@/modules/administration/validation-professionnels-controle";
 import { FORMAT_CODE_CIM10, estChapitreSymptome, normaliserCodeCim10 } from "@/modules/administration/cim10-groupes";
 import { getSession } from "@/lib/session";
@@ -144,6 +145,9 @@ function fenetreAddendumRetraitDepassee(dateConsultation: Date): boolean {
 
 /** Types d'acces de consentement autorisant un professionnel a creer une consultation. */
 const TYPES_ACCES_CONSULTATION = ["dossier_complet", "consultations"] as const;
+
+/** RG-ACC-15 / base B4 : duree du contexte de soins depuis l'arrivee du patient. */
+const DUREE_CONTEXTE_SOINS_HEURES = 72;
 
 /** Types de consentement qui ouvrent la lecture du resume et de l'historique du dossier (l'acces d'urgence en fait partie, sans donnee sensible). */
 const TYPES_ACCES_LECTURE_DOSSIER = ["dossier_complet", "consultations", "urgence"] as const;
@@ -1543,6 +1547,42 @@ export async function enregistrerConsultationAction(
           await tx.consultation.update({ where: { id: brouillonExistant.id }, data: donneesConsultation });
           cible = brouillonExistant;
         } else {
+          // RG-ACC-15 (docs/pack claude/specs/05-acces-consentement.md) : un
+          // consentement (verifie plus haut) ne donne jamais lui seul le droit
+          // d'ECRIRE une consultation. Il faut en plus, au moment de la
+          // CREATION seulement (un brouillon deja ouvert reste modifiable
+          // ensuite, base B7 "auteur") : soit un contexte de soins B4 (le
+          // patient est arrive dans cet etablissement, heureArrivee posee,
+          // fenetre de 72 h, n'importe quel clinicien de l'etablissement),
+          // soit un rendez-vous confirme du jour avec CE professionnel precis.
+          // Verification de presence par QR/SMS/piece (RG-ACC-20) non
+          // modelisee dans ce depot : meme simplification assumee que F-RDV-04
+          // (heureArrivee seul fait foi).
+          const seuilContexteSoins = new Date(dateReference.getTime() - DUREE_CONTEXTE_SOINS_HEURES * 60 * 60 * 1000);
+          const { debut: debutJour, fin: finJour } = bornesJourneeBenin(dateReference);
+
+          const baseEcritureValide = await tx.rendezVous.findFirst({
+            where: {
+              patientId,
+              OR: [
+                {
+                  etablissementId: professionnel.etablissementId,
+                  statut: { in: [...STATUTS_ACTIFS] },
+                  heureArrivee: { gte: seuilContexteSoins },
+                },
+                {
+                  professionnelId: professionnel.id,
+                  statut: "confirme",
+                  date: { gte: debutJour, lt: finJour },
+                },
+              ],
+            },
+          });
+
+          if (!baseEcritureValide) {
+            throw new Error("BASE_ACCES_ECRITURE_ABSENTE");
+          }
+
           const consultationCreee = await tx.consultation.create({
             data: {
               patientId,
@@ -1633,6 +1673,13 @@ export async function enregistrerConsultationAction(
     }
     if (erreur instanceof Error && erreur.message === "CONSULTATION_DEJA_VALIDEE") {
       return { error: "Cette consultation est deja validee et ne peut plus etre modifiee.", success: false };
+    }
+    if (erreur instanceof Error && erreur.message === "BASE_ACCES_ECRITURE_ABSENTE") {
+      return {
+        error:
+          "Un consentement seul ne permet pas de creer une consultation : il faut que le patient soit arrive dans l'etablissement, ou un rendez-vous confirme aujourd'hui avec vous.",
+        success: false,
+      };
     }
     console.error("Erreur lors de l'enregistrement de la consultation :", erreur);
     return {
