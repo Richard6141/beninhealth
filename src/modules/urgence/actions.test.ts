@@ -12,6 +12,7 @@ vi.mock("@/lib/session", () => ({ getSession: vi.fn() }));
 vi.mock("@/modules/audit/journaliser", () => ({ journaliser: vi.fn() }));
 vi.mock("@/modules/notification/creer", () => ({ creerNotification: vi.fn(async () => undefined) }));
 vi.mock("@/modules/identity/mfa-totp", () => ({ verifierCodeMfaPourConnexion: vi.fn() }));
+vi.mock("@/modules/administration/parametres-lecture", () => ({ lireParametre: vi.fn(async () => 5) }));
 
 vi.mock("@/lib/prisma", () => {
   const prisma = {
@@ -31,6 +32,7 @@ import { getSession } from "@/lib/session";
 import { journaliser } from "@/modules/audit/journaliser";
 import { creerNotification } from "@/modules/notification/creer";
 import { verifierCodeMfaPourConnexion } from "@/modules/identity/mfa-totp";
+import { lireParametre } from "@/modules/administration/parametres-lecture";
 import { viderCompteursDebit } from "@/lib/limite-debit";
 import { declencherAccesUrgenceAction } from "./actions";
 
@@ -45,6 +47,7 @@ const getSessionMock = getSession as unknown as Mock;
 const journaliserMock = journaliser as unknown as Mock;
 const creerNotificationMock = creerNotification as unknown as Mock;
 const verifierMfaMock = verifierCodeMfaPourConnexion as unknown as Mock;
+const lireParametreMock = lireParametre as unknown as Mock;
 
 const ETAT = { error: null, success: false };
 const JUSTIFICATION = "Patient retrouve inconscient a l'accueil, sans accompagnant ni carte.";
@@ -72,6 +75,7 @@ beforeEach(() => {
   getSessionMock.mockResolvedValue({ userId: "user-med", roles: ["medecin"] });
   prismaMock.user.findUnique.mockResolvedValue({ id: "user-med", mfaActif: true });
   verifierMfaMock.mockResolvedValue(true);
+  lireParametreMock.mockResolvedValue(5);
   prismaMock.professionnelSante.findUnique.mockResolvedValue({
     id: "pro-1",
     userId: "user-med",
@@ -266,6 +270,35 @@ describe("quota de 5 acces par 24 heures (RG-CLI-90)", () => {
       donneeConcernee: "patient:pat-1",
     });
     expect(creerNotificationMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("limite d'acces d'urgence administrable (F-ADM-07, RG-ADM-50)", () => {
+  it("lit la limite dans le parametre urgence.limite_acces_24h a chaque acces", async () => {
+    await declencherAccesUrgenceAction(ETAT, formulaire());
+    await declencherAccesUrgenceAction(ETAT, formulaire());
+
+    expect(lireParametreMock).toHaveBeenCalledTimes(2);
+    expect(lireParametreMock).toHaveBeenCalledWith("urgence.limite_acces_24h");
+  });
+
+  it("une limite abaissee a 2 refuse le troisieme acces et l'annonce dans le message", async () => {
+    lireParametreMock.mockResolvedValue(2);
+    prismaMock.journalAudit.count.mockResolvedValue(2);
+
+    const resultat = await declencherAccesUrgenceAction(ETAT, formulaire());
+
+    expect(resultat.success).toBe(false);
+    expect(resultat.error).toContain("2 acces");
+    expect(prismaMock.consentement.upsert).not.toHaveBeenCalled();
+    expect(journaliserMock.mock.calls[0][0].justification).toContain("Quota de 2 acces");
+  });
+
+  it("une limite relevee a 8 autorise le sixieme acces", async () => {
+    lireParametreMock.mockResolvedValue(8);
+    prismaMock.journalAudit.count.mockResolvedValue(5);
+
+    expect((await declencherAccesUrgenceAction(ETAT, formulaire())).success).toBe(true);
   });
 });
 

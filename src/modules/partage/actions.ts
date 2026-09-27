@@ -33,12 +33,12 @@ import { headers } from "next/headers";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { lireParametre } from "@/modules/administration/parametres-lecture";
 import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
 
 const ROUNDS_BCRYPT = 12;
-const DUREE_VALIDITE_CODE_MINUTES = 10;
 const DUREE_CONSENTEMENT_ISSU_CODE_HEURES = 24;
 const MAX_TENTATIVES_PAR_HEURE = 5;
 
@@ -135,7 +135,9 @@ export async function genererCodePartageAction(
 
   const code = genererCode();
   const codeHash = await bcrypt.hash(code, ROUNDS_BCRYPT);
-  const expireLe = new Date(Date.now() + DUREE_VALIDITE_CODE_MINUTES * 60_000);
+  // F-ADM-07 : duree administrable, relue en base a chaque generation (RG-ADM-50).
+  const dureeMinutes = await lireParametre("partage.code_duree_minutes");
+  const expireLe = new Date(Date.now() + dureeMinutes * 60_000);
 
   try {
     const [, codeCree] = await prisma.$transaction([

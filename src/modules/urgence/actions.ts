@@ -20,6 +20,7 @@
 import { headers } from "next/headers";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { lireParametre } from "@/modules/administration/parametres-lecture";
 import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
@@ -36,7 +37,6 @@ export interface UrgenceActionState {
 }
 
 const DUREE_ACCES_URGENCE_MS = 4 * 60 * 60 * 1000;
-const MAX_ACCES_URGENCE_PAR_JOUR = 5;
 // Meme regle que la connexion (F-AUTH-06) : 5 codes incorrects verrouillent 15 minutes.
 // Sans cette limite, une session volee pourrait deviner le code a 6 chiffres.
 const MAX_CODES_TOTP_INCORRECTS = 5;
@@ -152,6 +152,9 @@ export async function declencherAccesUrgenceAction(
   const debutFenetre24h = new Date(maintenant.getTime() - 24 * 60 * 60 * 1000);
   const adresseTechnique = await adresseTechniqueCourante();
 
+  // F-ADM-07 : limite administrable, relue en base a chaque acces (RG-ADM-50).
+  const limiteAcces24h = await lireParametre("urgence.limite_acces_24h");
+
   const nombreAccesRecents = await prisma.journalAudit.count({
     where: {
       utilisateurId: session.userId,
@@ -160,16 +163,16 @@ export async function declencherAccesUrgenceAction(
     },
   });
 
-  if (nombreAccesRecents >= MAX_ACCES_URGENCE_PAR_JOUR) {
+  if (nombreAccesRecents >= limiteAcces24h) {
     await journaliser({
       utilisateurId: session.userId,
       action: "acces_urgence_refuse_quota",
       donneeConcernee: `patient:${patient.id}`,
       adresseTechnique,
-      justification: `Quota de ${MAX_ACCES_URGENCE_PAR_JOUR} acces d'urgence par 24h atteint. Tentative motif "${motif}" refusee.`,
+      justification: `Quota de ${limiteAcces24h} acces d'urgence par 24h atteint. Tentative motif "${motif}" refusee.`,
     });
     return {
-      error: `Vous avez deja declenche ${MAX_ACCES_URGENCE_PAR_JOUR} acces d'urgence au cours des dernieres 24 heures. Refus, alerte transmise.`,
+      error: `Vous avez deja declenche ${limiteAcces24h} acces d'urgence au cours des dernieres 24 heures. Refus, alerte transmise.`,
       success: false,
     };
   }

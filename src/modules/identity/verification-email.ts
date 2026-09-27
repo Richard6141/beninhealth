@@ -10,20 +10,20 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { getEnv } from "@/lib/env";
 import { envoyerEmail } from "@/lib/mail";
+import { lireParametre } from "@/modules/administration/parametres-lecture";
 
 const ROUNDS_BCRYPT = 12;
-const DUREE_VALIDITE_MINUTES = 10;
 
 function genererCode(): string {
   return randomInt(0, 1_000_000).toString().padStart(6, "0");
 }
 
-function gabaritEmailCode(code: string): string {
+function gabaritEmailCode(code: string, dureeMinutes: number): string {
   return `
     <div style="font-family: Arial, sans-serif; color: #1d2530;">
       <p>Voici votre code de connexion a la Plateforme d'Intelligence Sanitaire du Benin :</p>
       <p style="font-size: 28px; font-weight: 700; letter-spacing: 0.1em; color: #0a3764;">${code}</p>
-      <p>Ce code expire dans ${DUREE_VALIDITE_MINUTES} minutes. Si vous n'etes pas a l'origine de cette
+      <p>Ce code expire dans ${dureeMinutes} minutes. Si vous n'etes pas a l'origine de cette
       demande de connexion, ignorez cet e-mail.</p>
     </div>
   `.trim();
@@ -42,7 +42,9 @@ export async function creerEtEnvoyerCodeVerificationEmail(
 ): Promise<string> {
   const code = genererCode();
   const codeHash = await bcrypt.hash(code, ROUNDS_BCRYPT);
-  const expireLe = new Date(Date.now() + DUREE_VALIDITE_MINUTES * 60_000);
+  // F-ADM-07 : duree administrable, relue en base a chaque envoi (RG-ADM-50).
+  const dureeMinutes = await lireParametre("identity.code_verification_duree_minutes");
+  const expireLe = new Date(Date.now() + dureeMinutes * 60_000);
 
   await prisma.$transaction([
     prisma.codeVerificationEmail.deleteMany({
@@ -57,7 +59,7 @@ export async function creerEtEnvoyerCodeVerificationEmail(
     await envoyerEmail({
       to: email,
       subject: "Votre code de connexion",
-      html: gabaritEmailCode(code),
+      html: gabaritEmailCode(code, dureeMinutes),
     });
   } catch (erreur) {
     // En production, un code qui ne peut pas etre livre doit bloquer la

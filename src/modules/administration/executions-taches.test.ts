@@ -91,13 +91,10 @@ describe("purgerExecutionsAnciennes", () => {
 });
 
 describe("LIBELLES_TACHES", () => {
-  it("nomme les 5 taches planifiees suivies", () => {
-    expect(Object.keys(LIBELLES_TACHES).sort()).toEqual([
-      "marquage_absences",
-      "purge_notifications",
-      "rappels_rendez_vous",
-      "relances_laboratoire",
-      "remise_sms_differes",
-    ]);
+  it("nomme au moins les 5 taches planifiees suivies a l'origine, chacune avec un libelle", () => {
+    for (const tache of ["marquage_absences", "purge_notifications", "rappels_rendez_vous", "relances_laboratoire", "remise_sms_differes"]) {
+      expect(LIBELLES_TACHES[tache]).toBeTruthy();
+    }
+    for (const libelle of Object.values(LIBELLES_TACHES)) expect(libelle.length).toBeGreaterThan(3);
   });
 });

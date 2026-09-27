@@ -33,10 +33,12 @@ vi.mock("bcryptjs", () => {
   return { default: { hash, compare }, hash, compare };
 });
 vi.mock("@/modules/audit/journaliser", () => ({ journaliser: vi.fn() }));
+vi.mock("@/modules/administration/parametres-lecture", () => ({ lireParametre: vi.fn(async () => 10) }));
 
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { journaliser } from "@/modules/audit/journaliser";
+import { lireParametre } from "@/modules/administration/parametres-lecture";
 import {
   consommerCodePartageAction,
   genererCodePartageAction,
@@ -75,6 +77,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(MAINTENANT);
+  (lireParametre as unknown as Mock).mockResolvedValue(10);
 });
 
 afterEach(() => {
@@ -104,6 +107,17 @@ describe("genererCodePartageAction (F-CIT-11, RG-CIT-90)", () => {
     expect(resultat.success).toBe(true);
     expect(resultat.code).toMatch(/^[2-9A-HJKMNP-Z]{4}-[2-9A-HJKMNP-Z]{4}$/);
     expect(resultat.expireLe).toBe(new Date(MAINTENANT.getTime() + 10 * 60_000).toISOString());
+  });
+
+  it("la duree de validite vient du parametre partage.code_duree_minutes, relu a chaque generation (F-ADM-07)", async () => {
+    (lireParametre as unknown as Mock).mockResolvedValue(30);
+
+    const resultat = await genererCodePartageAction(etatInitialGeneration, new FormData());
+
+    expect(lireParametre).toHaveBeenCalledWith("partage.code_duree_minutes");
+    expect(resultat.expireLe).toBe(new Date(MAINTENANT.getTime() + 30 * 60_000).toISOString());
+    const { data } = p.codePartageDossier.create.mock.calls[0][0] as { data: { expireLe: Date } };
+    expect(data.expireLe.toISOString()).toBe(new Date(MAINTENANT.getTime() + 30 * 60_000).toISOString());
   });
 
   it("ne stocke que l'empreinte du code et invalide les codes non consommes precedents", async () => {

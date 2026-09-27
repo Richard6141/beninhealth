@@ -16,11 +16,12 @@
  * a chaque appel, jamais mise en cache en memoire par ce module) et est
  * journalisee.
  *
- * Perimetre honnete : aucune constante existante du code (ex.
- * DUREE_VALIDITE_MINUTES dans src/modules/identity/verification-email.ts,
- * DUREE_ACCES_REFERENCE_JOURS dans src/modules/reference/actions.ts) n'a ete
- * migree pour lire sa valeur depuis la table Parametre : ce sont encore des
- * constantes fixes ailleurs dans le code, non branchees sur ce systeme.
+ * Les 4 parametres du catalogue (parametres-catalogue.ts) sont lus par leur
+ * consommateur reel a chaque appel via parametres-lecture.ts : duree du code de
+ * verification e-mail, duree de l'acces d'une reference, limite d'acces
+ * d'urgence par 24 h, duree du code de partage. D'autres constantes du code
+ * (ex. duree du code de reinitialisation du mot de passe, duree du code d'acces
+ * par telephone) ne sont pas encore administrables.
  */
 
 import { headers } from "next/headers";
@@ -29,6 +30,7 @@ import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
+import { PARAMETRES_PAR_DEFAUT } from "./parametres-catalogue";
 import {
   CLES_FONCTIONNALITES,
   DESCRIPTIONS_FONCTIONNALITES,
@@ -181,60 +183,13 @@ export async function basculerFonctionnaliteAction(
   }
 }
 
-/**
- * Quelques parametres representatifs, avec les valeurs actuellement figees
- * en dur ailleurs dans le code (voir la reference de chaque cle). Semes a
- * la premiere lecture, jamais ecrases s'ils existent deja (meme principe que
- * provisionnerFonctionnalitesParDefaut) : cette liste peut grandir sans
- * jamais reinitialiser une valeur deja modifiee par un administrateur.
- */
-const PARAMETRES_PAR_DEFAUT: {
-  cle: string;
-  valeurDefaut: number;
-  borneMin: number;
-  borneMax: number;
-  description: string;
-}[] = [
-  {
-    cle: "identity.code_verification_duree_minutes",
-    valeurDefaut: 10,
-    borneMin: 5,
-    borneMax: 60,
-    description:
-      "Duree de validite du code de verification envoye par e-mail a la connexion (voir DUREE_VALIDITE_MINUTES, src/modules/identity/verification-email.ts, non encore branche sur ce parametre).",
-  },
-  {
-    cle: "reference.duree_acces_jours",
-    valeurDefaut: 30,
-    borneMin: 1,
-    borneMax: 90,
-    description:
-      "Duree de l'acces temporaire accorde a l'etablissement destinataire d'une reference de patient (voir DUREE_ACCES_REFERENCE_JOURS, src/modules/reference/actions.ts, non encore branche sur ce parametre).",
-  },
-  {
-    cle: "urgence.limite_acces_24h",
-    valeurDefaut: 5,
-    borneMin: 1,
-    borneMax: 20,
-    description:
-      "Nombre maximal d'acces d'urgence (bris de glace) autorises par professionnel sur 24 heures (voir MAX_ACCES_URGENCE_PAR_JOUR, src/modules/urgence/actions.ts, non encore branche sur ce parametre).",
-  },
-  {
-    cle: "partage.code_duree_minutes",
-    valeurDefaut: 10,
-    borneMin: 5,
-    borneMax: 60,
-    description:
-      "Duree de validite du code de partage temporaire du dossier patient (voir DUREE_VALIDITE_CODE_MINUTES, src/modules/partage/actions.ts, non encore branche sur ce parametre).",
-  },
-];
-
 async function provisionnerParametresParDefaut(): Promise<void> {
   await Promise.all(
     PARAMETRES_PAR_DEFAUT.map((parametre) =>
       prisma.parametre.upsert({
         where: { cle: parametre.cle },
-        update: {},
+        // Seul le texte est rafraichi : jamais la valeur, les bornes ni le defaut deja fixes.
+        update: { description: parametre.description },
         create: { ...parametre, valeur: parametre.valeurDefaut },
       })
     )

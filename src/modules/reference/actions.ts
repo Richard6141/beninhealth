@@ -30,12 +30,12 @@
 import { headers } from "next/headers";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { lireParametre } from "@/modules/administration/parametres-lecture";
 import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
 import { creerNotification } from "@/modules/notification/creer";
 
-const DUREE_ACCES_REFERENCE_JOURS = 30;
 // "Niveau superieur" approxime par le type hopital (voir l'en-tete du module) : applique a la
 // liste des destinations ET a la creation, l'ecran seul ne fait pas autorite.
 const TYPE_ETABLISSEMENT_DESTINATION = "hopital";
@@ -308,7 +308,9 @@ export async function creerReferenceAction(
 
     const adresseTechnique = await adresseTechniqueCourante();
     const dateCreation = new Date();
-    const dateFinAcces = new Date(dateCreation.getTime() + DUREE_ACCES_REFERENCE_JOURS * 24 * 60 * 60 * 1000);
+    // F-ADM-07 : duree administrable, relue en base a chaque reference (RG-ADM-50).
+    const dureeAccesJours = await lireParametre("reference.duree_acces_jours");
+    const dateFinAcces = new Date(dateCreation.getTime() + dureeAccesJours * 24 * 60 * 60 * 1000);
 
     const reference = await prisma.$transaction(async (tx) => {
       const referenceCreee = await tx.referencePatient.create({

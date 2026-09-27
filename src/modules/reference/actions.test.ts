@@ -19,11 +19,13 @@ vi.mock("@/lib/session", () => ({ getSession: vi.fn() }));
 vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers()) }));
 vi.mock("@/modules/audit/journaliser", () => ({ journaliser: vi.fn() }));
 vi.mock("@/modules/notification/creer", () => ({ creerNotification: vi.fn() }));
+vi.mock("@/modules/administration/parametres-lecture", () => ({ lireParametre: vi.fn(async () => 30) }));
 
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { journaliser } from "@/modules/audit/journaliser";
 import { creerNotification } from "@/modules/notification/creer";
+import { lireParametre } from "@/modules/administration/parametres-lecture";
 import {
   creerReferenceAction,
   enregistrerContreReferenceAction,
@@ -69,6 +71,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(MAINTENANT);
+  (lireParametre as unknown as Mock).mockResolvedValue(30);
   getSessionMock.mockResolvedValue({ userId: "user-med", roles: ["medecin"] });
   p.professionnelSante.findUnique.mockResolvedValue({ id: "pro-med", etablissementId: "etab-origine" });
 });
@@ -133,6 +136,17 @@ describe("creerReferenceAction (F-CLI-14)", () => {
     expect(resultat.success).toBe(false);
     expect(resultat.error).toContain("hopital");
     expect(p.referencePatient.create).not.toHaveBeenCalled();
+  });
+
+  it("la duree d'acces vient du parametre reference.duree_acces_jours, relu a chaque reference (F-ADM-07)", async () => {
+    (lireParametre as unknown as Mock).mockResolvedValue(7);
+
+    const resultat = await creerReferenceAction(etatInitial, creation());
+
+    expect(resultat.success).toBe(true);
+    expect(lireParametre).toHaveBeenCalledWith("reference.duree_acces_jours");
+    const { data } = p.referencePatient.create.mock.calls[0][0] as { data: Record<string, unknown> };
+    expect((data.dateFinAcces as Date).toISOString()).toBe(new Date(MAINTENANT.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString());
   });
 
   it("cree la reference avec 30 jours d'acces, la journalise et notifie chaque medecin de la destination", async () => {
