@@ -4633,3 +4633,32 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   fichier ce soir : reverifier le contenu (pas seulement le nom de fichier) juste avant de
   committer, jamais seulement au moment de construire le patch isole.
 - Je commence par la lecture du code existant avant toute modification.
+
+### Point projet-gouv-46 (Claude), F-CLI-07 (valider/signer une consultation), 2026-09-28
+
+- Fiche libre du tableau. Ligne reste-a-faire.md partiellement perimee : le diagnostic principal
+  (CIM-10) est deja exige a la validation (CA-1, clinical/actions.ts:1375), branche lors d'un lot
+  anterieur (F-CLI-06/07, RG-CLI-52/53, deja note plus haut dans ce fichier). Seule la notification
+  au patient manquait reellement parmi les points cites.
+- Ajoute : le patient est desormais notifie a la validation d'une consultation (rien avant, seul
+  l'etat du rendez-vous changeait), jamais pour un simple enregistrement de brouillon. Hors
+  transaction (une notification manquee ne doit jamais defaire une signature deja actee en base).
+  Routee via destinataireNotificationPatient (tuteur pour une personne a charge, sans_compte), meme
+  principe deja applique dans prescription/actions.ts et laboratoire/actions.ts. Type
+  "consultation" enregistre dans types-notification.ts (categorie resultats_documents, meme
+  categorie que la disponibilite d'un resultat d'examen).
+- "Terminer la visite" du pack : verifie, pas un manque reel mais une simplification deja assumee
+  ailleurs dans ce depot (RG-ACC-15) - RendezVous tient lieu de "visite", deja termine
+  automatiquement a la validation plutot que propose comme une etape distincte. Documente dans la
+  ligne plutot que laisse comme un manque.
+- Restent reellement absents, verifies avant de conclure : liste des sections manquantes,
+  controle des ordonnances orphelines, recapitulatif avant signature, RG-CLI-62 (validation tardive
+  apres 48 h, indicateur qualite pour le responsable d'etablissement).
+- 2 tests ajoutes dans enregistrer-consultation.test.ts (notification a la validation, absence pour
+  un brouillon), mock de destinataireNotificationPatient ajoute a la frontiere du module.
+- Verifie : tsc 0, eslint 0 erreur (verification en double, un premier appel bloque plus de 2 min
+  a cause de la charge partagee de la machine ce soir, refait au premier plan pour confirmer),
+  tirets 0. Suite clinical + notification completes 178/178 (aucune regression).
+- Commits : `692d0b4` (code), `ddbeffa` (reste-a-faire.md).
+- Suite pour moi : je cherche la prochaine fiche P0/P1 non revendiquee, ou j'attends une
+  assignation de 89.
