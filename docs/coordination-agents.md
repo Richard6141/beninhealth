@@ -3806,3 +3806,37 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
 - `docs/reste-a-faire.md` : ligne F-CIT-08 mise a jour en conséquence (fichier ajoute :
   `facility/rappels-rendez-vous.ts:98,119`, `facility/actions.ts:736`).
 - Suite pour moi : je continue vers la prochaine fiche P0/P1 non revendiquee.
+
+### Point projet-gouv-0a, verification transverse et perimetre epuise, 2026-09-27
+
+- Mon perimetre (administration F-ADM-01 a 07, notifications F-NOT-01 a 04, etablissements
+  F-ETA-01 a 05, IA F-IA-01 a 05) est maintenant entierement FAIT ou bloque hors de mes mains :
+  F-ETA-04 a un correctif de 3f pret pour commit (non repris ici, pas mon travail a revendiquer) ;
+  F-ETA-05 attend une decision d'architecture avec le CEO (modele d'agenda structure, note de 3f
+  plus haut) ; les autres ecarts restants sont des limites assumees (aucun champ Prisma), deja
+  documentees comme telles.
+- En cherchant la prochaine fiche P0/P1 non revendiquee (F-CIT-08 laisse a 3f, voir point
+  precedent), tout le reste du tableau appartient au perimetre deja affiche par une session active
+  ce soir (21, 41, 3d/e1, 3f) ou est en plein chantier au moment ou je regarde (F-COM-04 par
+  exemple, tests tout juste ecrits et encore rouges chez son auteur, normal en cours d'ecriture, je
+  n'y touche pas). Plutot que de forcer une prise et risquer une collision, j'ai fait une passe de
+  verification transverse, entierement en lecture, aucun fichier metier touche :
+  - `npx tsc --noEmit` sur tout le depot : 0 erreur.
+  - `npx eslint .` sur tout le depot : 0 erreur (seul avertissement : un script `.cjs` dans mon
+    propre `scratch-tmp/`, supprime).
+  - `npx vitest run` sur toute la suite : 1985/1998, les 13 echecs sont tous dans
+    `vaccination/actions-communautaire.test.ts` (F-COM-04, chantier de 41 en cours ce soir, pas
+    touche).
+  - Nettoyage documentaire de synchronisation disque/HEAD sur `docs/reste-a-faire.md` (F-AUD-03,
+    F-AUD-04, F-NOT-03) : le depot partage entre 4 sessions fait que le fichier sur disque peut
+    rester en retard sur ce que git a deja en HEAD (meme mecanisme que pour F-CIT-08 plus haut) ;
+    remis a jour sur disque pour que quiconque le lise directement voie le bon statut, sans nouveau
+    commit necessaire (l'historique etait deja correct).
+  - Tiret cadratin/demi-cadratin signale par 3d plus haut (`SectionEtablissementsAdmin.tsx`,
+    `patient/proches/[id]/page.tsx`, `pilotage/masquage.ts`, une quarantaine de fichiers de
+    documentation) : verifie, deja corrige entre-temps par d'autres sessions (aucune occurrence
+    restante dans les fichiers HEAD ni dans les fichiers actuellement modifies sur disque, hormis
+    `AGENTS.md` regenere par `next dev` et `design-system-base-fundlab.md`, deux fichiers hors de
+    portee d'une correction manuelle).
+- Je reste disponible pour toute fiche que le CEO voudrait m'assigner specifiquement, plutot que de
+  prendre l'initiative sur un chantier deja actif ce soir.
