@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   grantConsentAction,
@@ -12,6 +12,7 @@ import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { SelectField } from "@/components/ui/SelectField";
+import { SelecteurProfessionnel } from "./SelecteurProfessionnel";
 
 const etatInitial: PatientActionState = { error: null, success: false };
 
@@ -23,18 +24,20 @@ const optionsTypeAcces = [
   { value: "documents", label: "Documents" },
 ];
 
-export interface FormulaireNouveauConsentementProps {
-  professionnels: ProfessionnelDisponible[];
-}
-
-export function FormulaireNouveauConsentement({
-  professionnels,
-}: FormulaireNouveauConsentementProps) {
-  const [state, formAction, pending] = useActionState(
-    grantConsentAction,
-    etatInitial
-  );
+export function FormulaireNouveauConsentement() {
+  const [state, formAction, pending] = useActionState(grantConsentAction, etatInitial);
+  const [professionnel, setProfessionnel] = useState<ProfessionnelDisponible | null>(null);
   const router = useRouter();
+
+  // Ajustement d'etat pendant le rendu (comparaison avec l'etat precedent),
+  // meme motif que GestionMfa.tsx : router.refresh() reste le seul effet.
+  const [etatPrecedent, setEtatPrecedent] = useState(state);
+  if (state !== etatPrecedent) {
+    setEtatPrecedent(state);
+    if (state.success) {
+      setProfessionnel(null);
+    }
+  }
 
   useEffect(() => {
     if (state.success) {
@@ -42,18 +45,13 @@ export function FormulaireNouveauConsentement({
     }
   }, [state.success, router]);
 
-  const optionsProfessionnels = professionnels.map((professionnel) => ({
-    value: professionnel.userId,
-    label: `${professionnel.nomComplet}, ${professionnel.specialite}, ${professionnel.etablissementNom}`,
-  }));
-
   const optionsDuree = OPTIONS_DUREE_CONSENTEMENT.map((option) => ({
     value: option.valeur,
     label: option.libelle,
   }));
 
   return (
-    <Card description="Le professionnel choisi pourra consulter les informations correspondant au type d'accès sélectionné, pour la durée choisie. Vous pouvez retirer l'accès à tout moment avant l'échéance.">
+    <Card description="Recherchez le professionnel choisi : il pourra consulter les informations correspondant au type d'accès sélectionné, pour la durée choisie. Vous pouvez retirer l'accès à tout moment avant l'échéance.">
       <form action={formAction} aria-busy={pending} className="flex flex-col gap-4">
         {state.error ? (
           <Alert level="critical" title="Autorisation impossible">
@@ -67,12 +65,11 @@ export function FormulaireNouveauConsentement({
           </Alert>
         ) : null}
 
-        <SelectField
-          label="Professionnel de santé"
-          name="acteurAutoriseId"
-          required
-          options={optionsProfessionnels}
-          placeholder="Choisir un professionnel"
+        <input type="hidden" name="acteurAutoriseId" value={professionnel?.userId ?? ""} />
+        <SelecteurProfessionnel
+          professionnelChoisi={professionnel}
+          onChoisir={setProfessionnel}
+          onEffacer={() => setProfessionnel(null)}
         />
 
         <SelectField
@@ -92,7 +89,7 @@ export function FormulaireNouveauConsentement({
           hint="Maximum 12 mois. Vous pourrez retirer l'accès avant l'échéance à tout moment."
         />
 
-        <Button type="submit" variant="primary" className="w-fit" disabled={pending}>
+        <Button type="submit" variant="primary" className="w-fit" disabled={pending || !professionnel}>
           {pending ? "Envoi en cours..." : "Accorder l'accès"}
         </Button>
       </form>

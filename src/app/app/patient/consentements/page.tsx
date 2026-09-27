@@ -1,10 +1,6 @@
 import Link from "next/link";
 import { ArrowLeft, Eye, ShieldCheck, UserCheck } from "lucide-react";
-import {
-  getMesConsentements,
-  listProfessionnelsDisponibles,
-} from "@/modules/patient/actions";
-import { Alert } from "@/components/ui/Alert";
+import { getMesConsentements } from "@/modules/patient/actions";
 import { Card } from "@/components/ui/Card";
 import { ListeConsentements } from "./ListeConsentements";
 import { FormulaireNouveauConsentement } from "./FormulaireNouveauConsentement";
@@ -34,15 +30,12 @@ const principesConsentement = [
 /**
  * Ecran de gestion du consentement (Phase 3) : liste des accès actuellement
  * accordés (getMesConsentements) et formulaire pour en accorder un nouveau
- * (listProfessionnelsDisponibles + grantConsentAction). Le retrait d'accès
- * (revokeConsentAction) est géré dans ListeConsentements, avec confirmation
- * via Modal avant soumission.
+ * (recherche du professionnel puis grantConsentAction, F-CIT-10). Le retrait
+ * d'accès (revokeConsentAction) est géré dans ListeConsentements, avec
+ * confirmation via Modal avant soumission.
  */
 export default async function ConsentementsPage() {
-  const [consentements, professionnels] = await Promise.all([
-    getMesConsentements(),
-    listProfessionnelsDisponibles(),
-  ]);
+  const consentements = await getMesConsentements();
 
   const consentementsActifs = consentements.filter((c) => c.statutEffectif === "actif");
 
@@ -106,14 +99,7 @@ export default async function ConsentementsPage() {
           <h2 id="titre-nouveau" className="text-[20px] font-bold text-encre">
             Accorder un nouvel accès
           </h2>
-          {professionnels.length > 0 ? (
-            <FormulaireNouveauConsentement professionnels={professionnels} />
-          ) : (
-            <Alert level="info" title="Aucun professionnel disponible">
-              Aucun professionnel de santé n&apos;est disponible pour le
-              moment.
-            </Alert>
-          )}
+          <FormulaireNouveauConsentement />
         </section>
       </div>
 

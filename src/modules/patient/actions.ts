@@ -20,9 +20,19 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
+import { creerNotification } from "@/modules/notification/creer";
 import type { ContactUrgence, GroupeSanguin, NomRole, TypeAccesConsentement } from "@/types";
 import { calculerDateFinConsentement, DUREES_CONSENTEMENT_CONNUES } from "./consentement-durees";
 import { clesAuditDuPatient } from "./cles-audit-patient";
+
+/** Libelles francais des types d'acces (ecran de partage et notifications). */
+const LIBELLES_TYPE_ACCES: Record<string, string> = {
+  dossier_complet: "dossier complet",
+  consultations: "consultations",
+  prescriptions: "prescriptions",
+  examens: "examens",
+  documents: "documents",
+};
 
 /** Etat renvoye par chaque Server Action de ce module, consomme via useActionState. */
 export interface PatientActionState {
@@ -388,17 +398,40 @@ export async function signalerAccesSuspectAction(
   return { error: null, success: true };
 }
 
+/** Minuscules, sans accents, espaces compactes (meme principe que recherche-medicaments.ts). */
+function normaliserPourRecherche(texte: string): string {
+  return texte
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export const MIN_CARACTERES_RECHERCHE_PROFESSIONNEL = 3;
+const MAX_RESULTATS_RECHERCHE_PROFESSIONNEL = 20;
+
+/** Vrai a partir de 3 caracteres (espaces exclus). */
+export function rechercheProfessionnelSuffisante(terme: string): boolean {
+  return normaliserPourRecherche(terme).replace(/ /g, "").length >= MIN_CARACTERES_RECHERCHE_PROFESSIONNEL;
+}
+
 /**
- * Liste les professionnels de sante valides, pour peupler le selecteur
- * "a qui accorder l'acces" cote ecran. Exclut les professionnels deja
- * autorises avec un consentement actif pour le patient connecte.
+ * Recherche un professionnel de sante valide, pour le selecteur "a qui
+ * accorder l'acces" (F-CIT-10) : jamais la liste complete des professionnels
+ * du pays (des milliers de lignes a l'echelle nationale), seulement les 20
+ * meilleurs resultats sur le nom, la specialite ou l'etablissement, des 3
+ * caracteres. Exclut les professionnels deja autorises avec un consentement
+ * actif pour le patient connecte.
  */
-export async function listProfessionnelsDisponibles(): Promise<ProfessionnelDisponible[]> {
+export async function rechercherProfessionnelsPourPartageAction(terme: string): Promise<ProfessionnelDisponible[]> {
   const patient = await patientDeLaSessionCourante();
 
-  if (!patient) {
+  if (!patient || !rechercheProfessionnelSuffisante(terme)) {
     return [];
   }
+
+  const termeNormalise = normaliserPourRecherche(terme);
 
   const [professionnels, consentementsActifs] = await Promise.all([
     prisma.professionnelSante.findMany({
@@ -420,7 +453,13 @@ export async function listProfessionnelsDisponibles(): Promise<ProfessionnelDisp
       nomComplet: nomCompletActeur(professionnel.user, true),
       specialite: professionnel.specialite,
       etablissementNom: professionnel.etablissement.nom,
-    }));
+    }))
+    .filter((professionnel) =>
+      normaliserPourRecherche(`${professionnel.nomComplet} ${professionnel.specialite} ${professionnel.etablissementNom}`).includes(
+        termeNormalise
+      )
+    )
+    .slice(0, MAX_RESULTATS_RECHERCHE_PROFESSIONNEL);
 }
 
 /**
@@ -541,7 +580,10 @@ export async function grantConsentAction(
   const { acteurAutoriseId, typeAcces, duree } = validation.data;
 
   try {
-    const patient = await prisma.patient.findUnique({ where: { userId: session.userId } });
+    const patient = await prisma.patient.findUnique({
+      where: { userId: session.userId },
+      include: { user: true },
+    });
 
     if (!patient) {
       return { error: "Aucun dossier patient associe a ce compte.", success: false };
@@ -593,6 +635,14 @@ export async function grantConsentAction(
       justification: `Consentement accorde (${typeAcces}, ${duree}) a l'acteur ${acteurAutoriseId}, jusqu'au ${dateFin.toISOString()}`,
     });
 
+    // N-CONSENT-GRANTED (catalogue F-NOT-04) : notification interne seule, pas de SMS.
+    await creerNotification(
+      acteurAutoriseId,
+      "consentement_accorde",
+      `${patient.user.prenom} ${patient.user.nom} vous a accordé l'accès à son dossier (${LIBELLES_TYPE_ACCES[typeAcces] ?? typeAcces}) jusqu'au ${dateFin.toLocaleDateString("fr-FR")}.`,
+      "/app/medecin/patients"
+    );
+
     return { error: null, success: true };
   } catch (erreur) {
     console.error("Erreur lors de l'octroi du consentement :", erreur);
@@ -633,7 +683,10 @@ export async function revokeConsentAction(
   const { consentementId } = validation.data;
 
   try {
-    const patient = await prisma.patient.findUnique({ where: { userId: session.userId } });
+    const patient = await prisma.patient.findUnique({
+      where: { userId: session.userId },
+      include: { user: true },
+    });
 
     if (!patient) {
       return { error: "Aucun dossier patient associe a ce compte.", success: false };
@@ -662,6 +715,14 @@ export async function revokeConsentAction(
         justification: `Consentement retire vers l'acteur ${consentement.acteurAutoriseId}`,
       }),
     ]);
+
+    // N-CONSENT-REVOKED (catalogue F-NOT-04) : notification interne seule, pas de SMS.
+    await creerNotification(
+      consentement.acteurAutoriseId,
+      "consentement_retire",
+      `${patient.user.prenom} ${patient.user.nom} a retiré votre accès à son dossier (${LIBELLES_TYPE_ACCES[consentement.typeAcces] ?? consentement.typeAcces}).`,
+      "/app/medecin/patients"
+    );
 
     return { error: null, success: true };
   } catch (erreur) {
