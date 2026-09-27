@@ -1133,7 +1133,8 @@ export async function rejeterEchantillonAction(
         examen.patient.userId,
         "echantillon_rejete",
         "Un nouveau prelevement est necessaire pour un examen demande par votre medecin.",
-        "/app/patient/examens"
+        "/app/patient/examens",
+        { codeCatalogue: "N-LAB-SAMPLE-REJECTED" }
       ),
     ]);
 

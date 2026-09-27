@@ -219,8 +219,8 @@ describe("fusionnerPatientsAction : execution immediate (identites identiques)",
   it("notifie les deux patients apres la transaction, sans donnee de sante", async () => {
     await fusionnerPatientsAction(etatInitial, formulaire({ patientConserveId: "p-conserve", patientDoublonId: "p-doublon", justification: JUSTIFICATION }));
 
-    expect(creerNotificationMock).toHaveBeenCalledWith("u-conserve", "fusion_dossier", expect.any(String));
-    expect(creerNotificationMock).toHaveBeenCalledWith("u-doublon", "fusion_dossier", expect.any(String));
+    expect(creerNotificationMock).toHaveBeenCalledWith("u-conserve", "fusion_dossier", expect.any(String), undefined, { codeCatalogue: "N-MERGE" });
+    expect(creerNotificationMock).toHaveBeenCalledWith("u-doublon", "fusion_dossier", expect.any(String), undefined, { codeCatalogue: "N-MERGE" });
   });
 
   it("un consentement du doublon vers un acteur deja consenti par le principal reste sur le doublon (conflit d'unicite), trace dans nonDeplaces", async () => {

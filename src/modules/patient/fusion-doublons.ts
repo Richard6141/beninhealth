@@ -470,8 +470,8 @@ async function executerFusion(params: {
 
   // F-ADM-06 : les deux patients sont notifies (apres commit, RG-NOT-03).
   await Promise.all([
-    creerNotification(patientConserve.user.id, "fusion_dossier", "Votre dossier a absorbé un dossier en doublon. Le contenu des deux dossiers est conservé."),
-    creerNotification(patientDoublon.user.id, "fusion_dossier", "Votre dossier a été fusionné avec un autre dossier. Vos données sont conservées et rattachées au dossier principal."),
+    creerNotification(patientConserve.user.id, "fusion_dossier", "Votre dossier a absorbé un dossier en doublon. Le contenu des deux dossiers est conservé.", undefined, { codeCatalogue: "N-MERGE" }),
+    creerNotification(patientDoublon.user.id, "fusion_dossier", "Votre dossier a été fusionné avec un autre dossier. Vos données sont conservées et rattachées au dossier principal.", undefined, { codeCatalogue: "N-MERGE" }),
   ]);
 }
 

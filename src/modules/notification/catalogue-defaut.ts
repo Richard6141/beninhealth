@@ -4,10 +4,7 @@
  * src/modules/administration/referentiel-notifications.ts). Module pur (pas
  * de "use server").
  *
- * Reprend le tableau du pack a l'identique (24 codes), complete par les codes
- * du laboratoire cites plus bas dans le meme chapitre (N-LAB-CANCELLED,
- * N-LAB-CRITICAL-ESCALATION, N-LAB-ANNOUNCE-OVERDUE, tous "interne
- * seulement", donc sans texte SMS). Les variables entre
+ * Reprend le tableau complet du pack (38 codes, section 17.1). Les variables entre
  * accolades ({date}, {etablissement}...) sont indicatives, jamais
  * interpolees automatiquement dans ce depot (voir la limite assumee
  * documentee dans referentiel-notifications.ts) : le texte est affiche et
@@ -51,4 +48,15 @@ export const CATALOGUE_NOTIFICATIONS_DEFAUT: ModeleNotificationDefaut[] = [
   { code: "N-LAB-CANCELLED", declencheur: "Demande d'examen annulée", destinataire: "Patient, laboratoire", canaux: "Interne", texteModele: "" },
   { code: "N-LAB-CRITICAL-ESCALATION", declencheur: "Résultat critique non lu sous 2 h", destinataire: "Responsable d'établissement du prescripteur", canaux: "Interne (prioritaire)", texteModele: "" },
   { code: "N-LAB-ANNOUNCE-OVERDUE", declencheur: "Résultat à annoncer non annoncé sous 30 jours", destinataire: "Auditeur, prescripteur", canaux: "Interne", texteModele: "" },
+  { code: "N-CONSENT-REVOKED", declencheur: "Consentement retiré", destinataire: "Bénéficiaire", canaux: "Interne", texteModele: "" },
+  { code: "N-GUARDIAN-CONFLICT", declencheur: "Second parent déclare le même enfant", destinataire: "Tuteur vérifié existant", canaux: "Interne + SMS", texteModele: "BHIP : une autre personne a déclaré être tuteur d'un de vos proches. Détails dans l'application." },
+  { code: "N-GUARDIAN-REQUEST", declencheur: "Demande de tutelle d'une personne majeure", destinataire: "Personne concernée", canaux: "Interne + SMS", texteModele: "BHIP : une personne demande à gérer votre dossier. Répondez dans l'application." },
+  { code: "N-ACCOUNT-LOCKED", declencheur: "Compte verrouillé après échecs", destinataire: "Titulaire", canaux: "SMS", texteModele: "BHIP : trop de tentatives de connexion. Votre compte est bloqué temporairement." },
+  { code: "N-EMERGENCY-NONCOMPLIANT", declencheur: "Revue d'urgence non conforme", destinataire: "Professionnel, responsable", canaux: "Interne", texteModele: "" },
+  { code: "N-EMERGENCY-LIMIT", declencheur: "Limite d'accès d'urgence dépassée", destinataire: "Auditeur", canaux: "Interne", texteModele: "" },
+  { code: "N-MERGE", declencheur: "Fusion de dossiers", destinataire: "Patient(s) ayant un compte", canaux: "Interne", texteModele: "" },
+  { code: "N-2FA-RESET", declencheur: "Second facteur réinitialisé", destinataire: "Titulaire", canaux: "Interne + SMS", texteModele: "BHIP : la double authentification de votre compte a été réinitialisée. Si ce n'est pas vous, contactez le support." },
+  { code: "N-COMMUNITY-REFERRAL", declencheur: "Référence communautaire reçue", destinataire: "Soignants du centre de santé", canaux: "Interne", texteModele: "" },
+  { code: "N-LAB-SAMPLE-REJECTED", declencheur: "Échantillon rejeté", destinataire: "Prescripteur, patient", canaux: "Interne + SMS (patient)", texteModele: "BHIP : un nouveau prélèvement est nécessaire. Détails dans l'application." },
+  { code: "N-CONSULT-ERROR", declencheur: "Consultation retirée « saisie par erreur »", destinataire: "Responsable d'établissement, patient", canaux: "Interne", texteModele: "" },
 ];

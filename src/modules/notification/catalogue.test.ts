@@ -60,3 +60,31 @@ describe("getTexteSmsDuCatalogue : quand un SMS peut partir", () => {
     expect(await getTexteSmsDuCatalogue("N-APPT-CONFIRMED", {})).toBeNull();
   });
 });
+
+describe("getTexteSmsDuCatalogue : repli sur le catalogue compile quand la table n'est pas encore semee", () => {
+  it("un code connu du pack, absent de la base (ecran d'administration jamais ouvert), envoie quand meme le texte compile", async () => {
+    findUniqueMock.mockResolvedValue(null);
+
+    expect(await getTexteSmsDuCatalogue("N-2FA-RESET")).toBe(
+      "BHIP : la double authentification de votre compte a été réinitialisée. Si ce n'est pas vous, contactez le support."
+    );
+  });
+
+  it("un code compile mais 'interne seulement' (texte vide) n'envoie toujours aucun SMS meme absent de la base", async () => {
+    findUniqueMock.mockResolvedValue(null);
+
+    expect(await getTexteSmsDuCatalogue("N-MERGE")).toBeNull();
+  });
+
+  it("une ligne DEJA presente en base (l'administrateur a ouvert l'ecran une fois) garde toujours la priorite sur le texte compile", async () => {
+    findUniqueMock.mockResolvedValue({ actif: false, texteModele: "BHIP : texte compile" });
+
+    expect(await getTexteSmsDuCatalogue("N-2FA-RESET")).toBeNull();
+  });
+
+  it("un code totalement inconnu (ni en base, ni dans le catalogue compile) n'envoie jamais rien", async () => {
+    findUniqueMock.mockResolvedValue(null);
+
+    expect(await getTexteSmsDuCatalogue("N-CE-CODE-N-EXISTE-PAS")).toBeNull();
+  });
+});

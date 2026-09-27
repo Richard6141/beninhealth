@@ -524,7 +524,9 @@ export async function enregistrerRevueAccesUrgenceAction(
     await creerNotification(
       entree.utilisateurId,
       "revue_acces_urgence_non_conforme",
-      "Un accès d'urgence que vous avez déclenché a été revu et jugé non conforme par un administrateur."
+      "Un accès d'urgence que vous avez déclenché a été revu et jugé non conforme par un administrateur.",
+      undefined,
+      { codeCatalogue: "N-EMERGENCY-NONCOMPLIANT" }
     );
 
     if (entree.utilisateur.professionnel) {
@@ -542,7 +544,8 @@ export async function enregistrerRevueAccesUrgenceAction(
             responsable.userId,
             "revue_acces_urgence_non_conforme",
             `Un accès d'urgence déclenché par un professionnel de votre établissement a été jugé non conforme.`,
-            patientId ? `/app/etablissement/audit` : undefined
+            patientId ? `/app/etablissement/audit` : undefined,
+            { codeCatalogue: "N-EMERGENCY-NONCOMPLIANT" }
           )
         )
       );
