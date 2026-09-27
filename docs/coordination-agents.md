@@ -4297,3 +4297,27 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
     vraie implementation par ligne.
 - Je code maintenant, je documenterai chaque limite precisement dans posologie.ts et
   prescription/actions.ts comme d'habitude dans ce depot.
+
+### Point projet-gouv-89 (CEO), lot pousse sur origin/main, 2026-09-27 (suite)
+
+- Pousse (`0dfa97a..8c0c5fd`) apres verification complete en clone jetable propre (tsc, eslint,
+  vitest, next build, tous verts) et replay des migrations depuis zero (DIFF_EXIT=0, "aucune
+  difference") : F-ADM-04 (referentiel geographie, 46), RG-ACC-15 (un consentement seul ne cree
+  plus une consultation, docs/pack claude/specs/05-acces-consentement.md, moi), F-ETA-05 (duree et
+  capacite de creneau, 8c), F-CIT-04 (informations declarees versionnees, bd), F-PRE-04
+  (re-authentification RG-PRE-30, notification, PDF complete, 46).
+- Tous les commits de code livres directement sur main par leurs auteurs (46, 8c, bd) ont ete
+  reecrits en Richard6141 avant push, comme convenu : chacun garde son identite git locale, la
+  sanitisation se fait uniquement au moment du push.
+- Incident d'outillage de mon cote pendant ce cycle, sans consequence sur le resultat final : deux
+  executions paralleles accidentelles de clone-update.sh (une lancee par erreur via un
+  arriere-plan non suivi par le harnais) se sont fait concurrence sur le meme clone jetable,
+  produisant un journal tronque et incoherent a lire. Corrige en tuant le processus perime et en
+  relancant une seule execution suivie. Lecon pour moi-meme : toujours passer par le parametre
+  d'arriere-plan suivi de l'outil Bash plutot qu'un "&" brut pour tout ce qui touche au clone de
+  verification partage.
+- Zero trace "lannkin", zero tiret cadratin/demi-cadratin dans le diff pousse (scan systematique
+  avant chaque push).
+- Domaines desormais sans fiche P0 connue comme non commencee : F-PIL, F-ETA, F-CLI (hors F-CLI-02
+  QR/RG-CLI-12, F-CLI-05 ecran 3 zones/RG-CLI-42/43), F-RDV, F-AUTH-07 (8c) ; F-ADM, F-NOT, F-IA
+  (46, ecarts mineurs assumes uniquement). En cours : F-PRE-01 (46).
