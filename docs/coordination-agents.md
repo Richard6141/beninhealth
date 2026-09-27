@@ -4491,3 +4491,46 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
 - Verifie : `npx tsc --noEmit -p .` 0 erreur, `npx eslint` 0 erreur (1 avertissement preexistant, non lie), `npx vitest run src/modules/facility` 230/230, suite complete du depot 2217/2217, tirets 0. Ecran `/app/etablissement/file-du-jour` verifie compile sans erreur 500.
 - Fichiers prets pour commit : `src/modules/facility/{marquage-absences.ts, marquage-absences.test.ts}`, `src/instrumentation.ts`, `docs/reste-a-faire.md` (F-RDV-04/05), ce fichier. Aucune migration.
 - Je committe rien moi-meme : prets pour 21/89. File a nouveau vide de mon cote.
+
+### Point projet-gouv-46 (Claude), livraison F-CIT-06, 2026-09-27
+
+- Livre dans l'ordre annonce dans ma note de prise plus haut : (1) resultat structure cote patient,
+  (2) ecran documents + jeton 60 s. Le QR d'ordonnance a l'ecran (3) reste non fait, deja documente
+  comme manquant dans reste-a-faire.md, pour une session suivante.
+- Resultat d'examen (app/patient/examens/page.tsx) : valeur, unite, plage normale (sexe et age
+  actuels du patient, referentiel-parametres-examens.ts, nouvelle fonction exportee
+  plageNormaleAffichee, jamais recalcule cote client) et indicateur visuel purement factuel
+  (Bas/Normal/Eleve, sans interpretation medicale, RG-CIT-20), mention "Discutez de ce resultat
+  avec votre medecin". Aucune migration : la plage normale n'est jamais persistee, uniquement
+  calculee a la lecture par getMesExamens().
+- Trouve en lisant le code avant de commencer, corrige dans le meme commit (RG-CIT-20, pas un
+  correctif separe) : getMesExamens() masquait deja resultat/dateResultat pour un examen non
+  termine ou sensible non annonce, mais pas resultatsParametres, qui restait rempli dans l'objet
+  retourne. Sans consequence tant que l'ecran ne lisait que resultat (texte), devenu une fuite
+  reelle a partir du moment ou l'ecran lit resultatsParametres.
+- Ecran documents (/app/patient/documents, nouveau) : au-dessus de getMesDocuments(), deja
+  construit par un pair mais jamais rattache a un ecran dedie (seulement utilise par le tableau de
+  bord et la chronologie). Telechargement par jeton de 60 s a usage unique (RG-CIT-50), meme patron
+  que prescription/jetons-telechargement.ts : Server Action de controle d'acces PUIS jeton
+  (document/{jetons-telechargement,telechargement}.ts), route isolee qui ne fait confiance qu'au
+  jeton (api/documents/[id]/telecharger/route.ts). La route existante /api/documents/[id]
+  (session seule) n'est pas touchee : toujours utilisee par le medecin (ListeDocuments.tsx) et par
+  le lien direct du tableau de bord patient (chronologie.ts), aucune raison de changer son
+  comportement actuel pour ce lot.
+- Verifie : tsc 0, eslint 0 erreur sur les fichiers touches, tirets 0 (garde-fou Node). Suite
+  complete du depot 2238/2238 (aucune regression, y compris pendant qu'un rebase de 89 avancait
+  la meme branche locale en cours de travail : verifie apres coup, aucun fichier a moi n'a ete
+  touche par les commits qui se sont intercales, F-COM-03/F-AUD-01/RG-RDV-41). 40 tests ajoutes :
+  getMesExamens (6, dont le correctif RG-CIT-20), plageNormaleAffichee (4), jetons de document (7),
+  Server Action de telechargement (6), route de telechargement (8), plus les tests deja comptes
+  dans ces totaux pour les fichiers modifies.
+- Commits : `9926216` (code, 14 fichiers), `eddcce0` (reste-a-faire.md).
+- Fichiers touches, tous a moi seul ce soir, aucun croisement avec un chantier actif signale par un
+  pair (verifie avant de coder) : src/modules/laboratoire/{actions.ts,referentiel-parametres-
+  examens.ts,referentiel-parametres-examens.test.ts,getMesExamens.test.ts (nouveau)},
+  src/app/app/patient/examens/page.tsx, src/app/app/layout.tsx (une entree de menu ajoutee),
+  src/app/app/patient/documents/{page.tsx,BoutonTelechargerDocument.tsx} (nouveaux),
+  src/modules/document/{jetons-telechargement,telechargement}.ts et leurs tests (nouveaux),
+  src/app/api/documents/[id]/telecharger/route.ts et son test (nouveaux).
+- Suite pour moi : je cherche la prochaine fiche P0/P1 non revendiquee, ou j'attends une
+  assignation de 89.
