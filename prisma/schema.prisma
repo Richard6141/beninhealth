@@ -1462,25 +1462,45 @@ model VaccinReferentiel {
 // F-ETA-05 du pack (chapitre 9, "Definir les agendas"). Perimetre reduit et
 // documente comme tel (voir docs/coordination-agents.md, point F-ETA-05) :
 // disponibilite hebdomadaire RECURRENTE par professionnel, sans notion de
-// service distincte (ce depot n'a pas de modele Service), sans duree de
-// creneau ni capacite variable (capacite 1 fixe, un seul rendez-vous par
-// professionnel/date/heure), sans generation physique de creneaux (verifie a
-// la volee a la creation du rendez-vous), sans fermetures ponctuelles ni
-// jours feries (RG-ETA-42 hors perimetre), sans role RECEPTIONIST (absent
-// des 8 roles de ce depot). heureDebutMinutes/heureFinMinutes sont exprimees
-// en minutes depuis minuit, heure LOCALE Africa/Porto-Novo (RG-ETA-43 : ce
-// fuseau est fixe UTC+1 sans heure d'ete, donc un entier simple suffit, pas
-// besoin de stocker un fuseau).
+// service distincte (ce depot n'a pas de modele Service), sans generation
+// physique de creneaux (verifie a la volee a la creation du rendez-vous),
+// sans fermetures ponctuelles par etablissement, sans role RECEPTIONIST
+// (absent des 8 roles de ce depot). RG-ETA-42 (jour ferie national) EST
+// applique (voir creneau-disponible.ts) malgre ce qu'affirmait a tort une
+// version anterieure de ce commentaire. heureDebutMinutes/heureFinMinutes
+// sont exprimees en minutes depuis minuit, heure LOCALE Africa/Porto-Novo
+// (RG-ETA-43 : ce fuseau est fixe UTC+1 sans heure d'ete, donc un entier
+// simple suffit, pas besoin de stocker un fuseau).
+//
+// dureeCreneauMinutes et capacite (ajoutes le 2026-09-27, F-ETA-05) :
+// capacite EST appliquee a la creation/au deplacement d'un rendez-vous
+// (plusieurs patients peuvent reserver le meme creneau nominal, voir
+// creerAvecCapacite dans rendez-vous-etats.ts) sans jamais modifier l'index
+// unique partiel qui garantit a lui seul RG-RDV-03. dureeCreneauMinutes
+// reste pour l'instant purement informatif (affiche a l'ecran de gestion
+// des creneaux) : la prise de rendez-vous cote citoyen saisit encore un
+// horaire en texte libre (aucun selecteur visuel de creneaux, deja
+// documente comme un chantier separe pour F-RDV-01) ; imposer un
+// alignement strict sur la grille casserait des saisies legitimes sans
+// aucun repere a l'ecran des horaires valides. A appliquer cote serveur des
+// que ce selecteur existera.
 model CreneauDisponibilite {
-  id                String             @id @default(cuid())
-  professionnelId   String
-  professionnel     ProfessionnelSante @relation(fields: [professionnelId], references: [id], onDelete: Cascade)
+  id                  String             @id @default(cuid())
+  professionnelId     String
+  professionnel       ProfessionnelSante @relation(fields: [professionnelId], references: [id], onDelete: Cascade)
   // 0 = dimanche ... 6 = samedi (meme convention que Date.getUTCDay(), a
   // interpreter cote lecture par rapport au jour LOCAL Porto-Novo, pas UTC).
-  jourSemaine       Int
-  heureDebutMinutes Int
-  heureFinMinutes   Int
-  dateCreation      DateTime           @default(now())
+  jourSemaine         Int
+  heureDebutMinutes   Int
+  heureFinMinutes     Int
+  // Duree d'un creneau elementaire au sein de cette plage. Informatif pour
+  // l'instant (voir commentaire ci-dessus) : bornee cote application (10 a
+  // 60 minutes), pas en base.
+  dureeCreneauMinutes Int                @default(30)
+  // Nombre de patients pouvant reserver le meme creneau nominal (>= 1).
+  // Bornee cote application (1 a 10), pas en base.
+  capacite            Int                @default(1)
+  dateCreation        DateTime           @default(now())
 
   @@index([professionnelId, jourSemaine])
   @@schema("public")

@@ -155,3 +155,44 @@ export function estConflitDeCreneau(erreur: unknown): boolean {
 }
 
 export const MESSAGE_CRENEAU_PRIS = "Ce créneau vient d'être réservé par un autre patient. Merci de choisir un autre horaire.";
+
+/**
+ * F-ETA-05 (capacite de creneau) : bornes couvrant tous les instants
+ * candidats d'un creneau nominal de capacite N (voir creerAvecCapacite
+ * ci-dessous), utilisees pour la verification courtoise avant tentative
+ * d'ecriture (le nombre reel de places deja prises).
+ */
+export function fenetreCandidats(date: Date, capacite: number): { gte: Date; lt: Date } {
+  return { gte: date, lt: new Date(date.getTime() + capacite * 1000) };
+}
+
+/**
+ * Tente une operation transactionnelle jusqu'a `capacite` fois, en decalant
+ * l'instant candidat de quelques secondes a chaque tentative : permet a
+ * plusieurs patients de reserver "le meme creneau" nominal (meme heure
+ * HH:MM affichee) SANS jamais modifier l'index unique partiel qui garantit
+ * a lui seul RG-RDV-03 (professionnelId, date, parmi les statuts actifs) -
+ * chaque tentative reste un instant EXACT distinct, seule la granularite
+ * affichee est partagee. Relance l'erreur telle quelle des qu'elle n'est
+ * pas un conflit de creneau (P2002), ou une fois la derniere tentative
+ * epuisee, pour que l'appelant la traite normalement (voir estConflitDeCreneau
+ * dans les appelants).
+ */
+export async function creerAvecCapacite<T>(
+  dateSouhaitee: Date,
+  capacite: number,
+  creer: (dateCandidate: Date) => Promise<T>
+): Promise<T> {
+  for (let tentative = 0; tentative < capacite; tentative++) {
+    try {
+      return await creer(new Date(dateSouhaitee.getTime() + tentative * 1000));
+    } catch (erreur) {
+      if (!estConflitDeCreneau(erreur) || tentative === capacite - 1) {
+        throw erreur;
+      }
+      // Capacite de cet instant epuisee : on retente au prochain instant candidat.
+    }
+  }
+  // Inatteignable : capacite >= 1 garanti cote application (voir disponibilites.ts).
+  throw new Error("Capacité de créneau invalide.");
+}

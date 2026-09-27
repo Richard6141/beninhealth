@@ -5,7 +5,9 @@ import {
   STATUTS_QUI_LIBERENT_LE_CRENEAU,
   STATUTS_RENDEZ_VOUS,
   TRANSITIONS,
+  creerAvecCapacite,
   estConflitDeCreneau,
+  fenetreCandidats,
   transitionAutorisee,
   transitionnerRendezVous,
   transitionnerRendezVousEnMasse,
@@ -132,5 +134,55 @@ describe("estConflitDeCreneau (RG-RDV-03)", () => {
     expect(estConflitDeCreneau(autre)).toBe(false);
     expect(estConflitDeCreneau(new Error("P2002"))).toBe(false);
     expect(estConflitDeCreneau(null)).toBe(false);
+  });
+});
+
+describe("fenetreCandidats (F-ETA-05, capacite de creneau)", () => {
+  it("couvre exactement les instants de date a date + capacite secondes, borne haute exclue", () => {
+    const date = new Date("2026-10-05T08:00:00.000Z");
+    expect(fenetreCandidats(date, 3)).toEqual({ gte: date, lt: new Date("2026-10-05T08:00:03.000Z") });
+  });
+});
+
+describe("creerAvecCapacite (F-ETA-05, capacite de creneau)", () => {
+  const conflit = () => new Prisma.PrismaClientKnownRequestError("Unique constraint failed", { code: "P2002", clientVersion: "6" });
+
+  it("reussit du premier coup a l'instant demande quand il n'y a pas de conflit", async () => {
+    const creer = vi.fn(async (date: Date) => `ok:${date.toISOString()}`);
+
+    const resultat = await creerAvecCapacite(new Date("2026-10-05T08:00:00.000Z"), 1, creer);
+
+    expect(resultat).toBe("ok:2026-10-05T08:00:00.000Z");
+    expect(creer).toHaveBeenCalledTimes(1);
+    expect(creer).toHaveBeenCalledWith(new Date("2026-10-05T08:00:00.000Z"));
+  });
+
+  it("retente au prochain instant candidat (decalage d'une seconde) apres un conflit, dans la limite de la capacite", async () => {
+    const creer = vi
+      .fn()
+      .mockRejectedValueOnce(conflit())
+      .mockResolvedValueOnce("ok-a-la-deuxieme-tentative");
+
+    const resultat = await creerAvecCapacite(new Date("2026-10-05T08:00:00.000Z"), 3, creer);
+
+    expect(resultat).toBe("ok-a-la-deuxieme-tentative");
+    expect(creer).toHaveBeenNthCalledWith(1, new Date("2026-10-05T08:00:00.000Z"));
+    expect(creer).toHaveBeenNthCalledWith(2, new Date("2026-10-05T08:00:01.000Z"));
+  });
+
+  it("relance le conflit une fois la capacite reellement epuisee (toutes les tentatives en conflit)", async () => {
+    const creer = vi.fn().mockRejectedValue(conflit());
+
+    await expect(creerAvecCapacite(new Date("2026-10-05T08:00:00.000Z"), 2, creer)).rejects.toThrow();
+    expect(creer).toHaveBeenCalledTimes(2);
+  });
+
+  it("relance immediatement une erreur qui n'est pas un conflit de creneau, sans retenter", async () => {
+    const creer = vi.fn().mockRejectedValue(new Error("DEPLACEMENT_ANCIEN_NON_ANNULABLE"));
+
+    await expect(creerAvecCapacite(new Date("2026-10-05T08:00:00.000Z"), 5, creer)).rejects.toThrow(
+      "DEPLACEMENT_ANCIEN_NON_ANNULABLE"
+    );
+    expect(creer).toHaveBeenCalledTimes(1);
   });
 });

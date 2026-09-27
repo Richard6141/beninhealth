@@ -20,12 +20,14 @@ import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
 import { dateDepuisChaineLocaleBenin } from "@/lib/fuseau-horaire";
-import { dateDansUnCreneauDisponible } from "./creneau-disponible";
+import { capaciteDuCreneau, dateDansUnCreneauDisponible } from "./creneau-disponible";
 import { creerNotification } from "@/modules/notification/creer";
 import { destinataireNotificationPatient } from "./destinataire-notification-patient";
 import {
   STATUTS_QUI_LIBERENT_LE_CRENEAU,
+  creerAvecCapacite,
   estConflitDeCreneau,
+  fenetreCandidats,
   MESSAGE_CRENEAU_PRIS,
   TRANSITIONS,
   transitionnerRendezVous,
@@ -298,6 +300,10 @@ export async function creerRendezVousAction(
     }
 
     const professionnelIdNettoye = professionnelId.trim();
+    // Capacite du creneau nominal (F-ETA-05) : 1 quand aucun professionnel
+    // n'est choisi (pas de notion de creneau dans ce cas, comportement
+    // inchange), sinon celle du creneau configure (1 par defaut).
+    let capacite = 1;
 
     if (professionnelIdNettoye.length > 0) {
       const professionnel = await prisma.professionnelSante.findUnique({
@@ -327,47 +333,57 @@ export async function creerRendezVousAction(
         };
       }
 
-      // Empeche un double rendez-vous au meme professionnel et au meme
-      // instant (capacite 1, perimetre reduit F-ETA-05 : pas de gestion de
-      // plusieurs patients en parallele sur un meme creneau).
-      const dejaPris = await prisma.rendezVous.findFirst({
+      // Empeche plus de rendez-vous que la capacite du creneau au meme
+      // professionnel et au meme instant nominal (capacite 1 par defaut,
+      // davantage si l'admin de l'etablissement en a configure plus).
+      capacite = await capaciteDuCreneau(professionnelIdNettoye, dateRendezVous);
+      const compteActifs = await prisma.rendezVous.count({
         where: {
           professionnelId: professionnelIdNettoye,
-          date: dateRendezVous,
+          date: fenetreCandidats(dateRendezVous, capacite),
           statut: { notIn: [...STATUTS_QUI_LIBERENT_LE_CRENEAU] },
         },
       });
-      if (dejaPris) {
+      if (compteActifs >= capacite) {
         return { error: MESSAGE_CRENEAU_PRIS, success: false };
       }
     }
 
     const adresseTechnique = await adresseTechniqueCourante();
+    const professionnelIdRetenu = professionnelIdNettoye.length > 0 ? professionnelIdNettoye : null;
 
-    // Creation et journal dans la meme transaction : pas de rendez-vous sans trace d'audit.
-    await prisma.$transaction(async (tx) => {
-      const rendezVous = await tx.rendezVous.create({
-        data: {
-          patientId: patient.id,
-          etablissementId,
-          professionnelId: professionnelIdNettoye.length > 0 ? professionnelIdNettoye : null,
-          date: dateRendezVous,
-          motif,
-          statut: "demande",
-        },
-      });
+    // Creation et journal dans la meme transaction : pas de rendez-vous sans
+    // trace d'audit. Le controle ci-dessus est une courtoisie ; c'est l'index
+    // unique partiel de la base (RG-RDV-03) qui garantit seul l'absence de
+    // reservation au-dela de la capacite reelle quand plusieurs demandes
+    // arrivent en meme temps (creerAvecCapacite retente sur un instant
+    // candidat voisin a chaque conflit, jusqu'a capacite tentatives ; sans
+    // professionnel choisi, capacite vaut 1, une seule tentative, comme avant).
+    await creerAvecCapacite(dateRendezVous, capacite, (dateCandidate) =>
+      prisma.$transaction(async (tx) => {
+        const rendezVous = await tx.rendezVous.create({
+          data: {
+            patientId: patient.id,
+            etablissementId,
+            professionnelId: professionnelIdRetenu,
+            date: dateCandidate,
+            motif,
+            statut: "demande",
+          },
+        });
 
-      await journaliser(
-        {
-          utilisateurId: session.userId,
-          action: "creation",
-          donneeConcernee: `rendez_vous:${rendezVous.id}`,
-          adresseTechnique,
-          justification: `Demande de rendez-vous creee aupres de l'etablissement ${etablissementId}`,
-        },
-        tx
-      );
-    });
+        await journaliser(
+          {
+            utilisateurId: session.userId,
+            action: "creation",
+            donneeConcernee: `rendez_vous:${rendezVous.id}`,
+            adresseTechnique,
+            justification: `Demande de rendez-vous creee aupres de l'etablissement ${etablissementId}`,
+          },
+          tx
+        );
+      })
+    );
 
     return { error: null, success: true };
   } catch (erreur) {
@@ -546,6 +562,9 @@ export async function deplacerRendezVousAction(
       return { error: refusRegles, success: false };
     }
 
+    // Capacite du creneau nominal (F-ETA-05) : voir creerRendezVousAction plus haut.
+    let capacite = 1;
+
     if (ancien.professionnelId) {
       if (!(await dateDansUnCreneauDisponible(ancien.professionnelId, nouvelleDate))) {
         return {
@@ -554,48 +573,51 @@ export async function deplacerRendezVousAction(
         };
       }
 
-      const dejaPris = await prisma.rendezVous.findFirst({
+      capacite = await capaciteDuCreneau(ancien.professionnelId, nouvelleDate);
+      const compteActifs = await prisma.rendezVous.count({
         where: {
           professionnelId: ancien.professionnelId,
-          date: nouvelleDate,
+          date: fenetreCandidats(nouvelleDate, capacite),
           statut: { notIn: [...STATUTS_QUI_LIBERENT_LE_CRENEAU] },
         },
       });
-      if (dejaPris) {
+      if (compteActifs >= capacite) {
         return { error: MESSAGE_CRENEAU_PRIS, success: false };
       }
     }
 
     const adresseTechnique = await adresseTechniqueCourante();
 
-    await prisma.$transaction(async (tx) => {
-      const nouveau = await tx.rendezVous.create({
-        data: {
-          patientId: patient.id,
-          etablissementId: ancien.etablissementId,
-          professionnelId: ancien.professionnelId,
-          date: nouvelleDate,
-          motif: ancien.motif,
-          statut: "demande",
-          nombreDeplacements: ancien.nombreDeplacements + 1,
-        },
-      });
+    await creerAvecCapacite(nouvelleDate, capacite, (dateCandidate) =>
+      prisma.$transaction(async (tx) => {
+        const nouveau = await tx.rendezVous.create({
+          data: {
+            patientId: patient.id,
+            etablissementId: ancien.etablissementId,
+            professionnelId: ancien.professionnelId,
+            date: dateCandidate,
+            motif: ancien.motif,
+            statut: "demande",
+            nombreDeplacements: ancien.nombreDeplacements + 1,
+          },
+        });
 
-      if (!(await transitionnerRendezVous(tx, ancien.id, "annuler"))) {
-        throw new Error("DEPLACEMENT_ANCIEN_NON_ANNULABLE");
-      }
+        if (!(await transitionnerRendezVous(tx, ancien.id, "annuler"))) {
+          throw new Error("DEPLACEMENT_ANCIEN_NON_ANNULABLE");
+        }
 
-      await journaliser(
-        {
-          utilisateurId: session.userId,
-          action: "deplacement_rendez_vous",
-          donneeConcernee: `rendez_vous:${nouveau.id}`,
-          adresseTechnique,
-          justification: `Rendez-vous ${ancien.id} deplace (deplacement ${ancien.nombreDeplacements + 1} sur ${MAX_DEPLACEMENTS}) : nouveau rendez-vous ${nouveau.id}`,
-        },
-        tx
-      );
-    });
+        await journaliser(
+          {
+            utilisateurId: session.userId,
+            action: "deplacement_rendez_vous",
+            donneeConcernee: `rendez_vous:${nouveau.id}`,
+            adresseTechnique,
+            justification: `Rendez-vous ${ancien.id} deplace (deplacement ${ancien.nombreDeplacements + 1} sur ${MAX_DEPLACEMENTS}) : nouveau rendez-vous ${nouveau.id}`,
+          },
+          tx
+        );
+      })
+    );
 
     return { error: null, success: true };
   } catch (erreur) {

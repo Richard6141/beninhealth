@@ -23,7 +23,7 @@ vi.mock("@/lib/prisma", () => ({
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { ajouterCreneauAction } from "./disponibilites";
-import { dateDansUnCreneauDisponible } from "./creneau-disponible";
+import { capaciteDuCreneau, dateDansUnCreneauDisponible } from "./creneau-disponible";
 
 const prismaMock = prisma as unknown as {
   professionnelSante: { findUnique: Mock };
@@ -83,6 +83,34 @@ describe("dateDansUnCreneauDisponible (RG-ETA-43, fuseau Africa/Porto-Novo)", ()
   });
 });
 
+describe("capaciteDuCreneau (F-ETA-05, ajoute le 2026-09-27)", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("renvoie 1 si aucun creneau n'est configure (meme limite assumee que dateDansUnCreneauDisponible)", async () => {
+    prismaMock.creneauDisponibilite.findMany.mockResolvedValue([]);
+    const resultat = await capaciteDuCreneau("prof-1", new Date("2026-09-28T10:00:00.000Z"));
+    expect(resultat).toBe(1);
+  });
+
+  it("renvoie la capacite du creneau trouve", async () => {
+    prismaMock.creneauDisponibilite.findMany.mockResolvedValue([
+      { jourSemaine: 1, heureDebutMinutes: 8 * 60, heureFinMinutes: 12 * 60, capacite: 3 },
+    ]);
+    // 09:00 UTC == 10:00 heure locale Porto-Novo, dans le creneau.
+    const resultat = await capaciteDuCreneau("prof-1", new Date("2026-09-28T09:00:00.000Z"));
+    expect(resultat).toBe(3);
+  });
+
+  it("renvoie 1 si l'instant est hors de tout creneau configure", async () => {
+    prismaMock.creneauDisponibilite.findMany.mockResolvedValue([
+      { jourSemaine: 1, heureDebutMinutes: 8 * 60, heureFinMinutes: 12 * 60, capacite: 5 },
+    ]);
+    // 13:00 UTC == 14:00 heure locale, hors creneau.
+    const resultat = await capaciteDuCreneau("prof-1", new Date("2026-09-28T13:00:00.000Z"));
+    expect(resultat).toBe(1);
+  });
+});
+
 describe("ajouterCreneauAction (RG-ETA-40, chevauchement)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -124,6 +152,55 @@ describe("ajouterCreneauAction (RG-ETA-40, chevauchement)", () => {
       creerFormData({ professionnelId: "prof-cible", jourSemaine: "1", heureDebut: "14:00", heureFin: "10:00" })
     );
     expect(resultat.success).toBe(false);
+  });
+
+  it("accepte durée et capacité par défaut quand ils ne sont pas transmis (rétrocompatibilité)", async () => {
+    prismaMock.creneauDisponibilite.findMany.mockResolvedValue([]);
+    const resultat = await ajouterCreneauAction(
+      { error: null, success: false },
+      creerFormData({ professionnelId: "prof-cible", jourSemaine: "1", heureDebut: "08:00", heureFin: "12:00" })
+    );
+    expect(resultat.success).toBe(true);
+    expect(prismaMock.creneauDisponibilite.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ dureeCreneauMinutes: 30, capacite: 1 }),
+    });
+  });
+
+  it("persiste une durée et une capacité explicites", async () => {
+    prismaMock.creneauDisponibilite.findMany.mockResolvedValue([]);
+    const resultat = await ajouterCreneauAction(
+      { error: null, success: false },
+      creerFormData({
+        professionnelId: "prof-cible",
+        jourSemaine: "1",
+        heureDebut: "08:00",
+        heureFin: "12:00",
+        dureeCreneauMinutes: "15",
+        capacite: "4",
+      })
+    );
+    expect(resultat.success).toBe(true);
+    expect(prismaMock.creneauDisponibilite.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ dureeCreneauMinutes: 15, capacite: 4 }),
+    });
+  });
+
+  it("rejette une durée de créneau hors des valeurs proposées", async () => {
+    const resultat = await ajouterCreneauAction(
+      { error: null, success: false },
+      creerFormData({ professionnelId: "prof-cible", jourSemaine: "1", heureDebut: "08:00", heureFin: "12:00", dureeCreneauMinutes: "17" })
+    );
+    expect(resultat.success).toBe(false);
+    expect(prismaMock.creneauDisponibilite.create).not.toHaveBeenCalled();
+  });
+
+  it("rejette une capacité hors de [1, 10]", async () => {
+    const resultat = await ajouterCreneauAction(
+      { error: null, success: false },
+      creerFormData({ professionnelId: "prof-cible", jourSemaine: "1", heureDebut: "08:00", heureFin: "12:00", capacite: "11" })
+    );
+    expect(resultat.success).toBe(false);
+    expect(prismaMock.creneauDisponibilite.create).not.toHaveBeenCalled();
   });
 
   it("rejette si l'appelant ne gere pas ce professionnel (etablissement different)", async () => {

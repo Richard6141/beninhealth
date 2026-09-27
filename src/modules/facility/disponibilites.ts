@@ -9,11 +9,16 @@
  * pas de role RECEPTIONIST dans ce depot, pas de gestion directe par le
  * professionnel lui-meme, conformement au tableau de roles de la fiche).
  *
- * Hors perimetre, documente explicitement : duree de creneau et capacite
- * variables (capacite 1 fixe ici), generation physique de creneaux 60 jours
- * a l'avance (verifie a la volee a chaque creation de rendez-vous),
- * fermetures ponctuelles et jours feries (RG-ETA-42), chevauchement entre
- * plusieurs services (pas de modele Service dans ce depot).
+ * Hors perimetre, documente explicitement : generation physique de creneaux
+ * 60 jours a l'avance (verifie a la volee a chaque creation de rendez-vous),
+ * fermetures ponctuelles par etablissement, chevauchement entre plusieurs
+ * services (pas de modele Service dans ce depot). RG-ETA-42 (jours feries)
+ * EST applique, voir creneau-disponible.ts.
+ *
+ * dureeCreneauMinutes et capacite (F-ETA-05, ajoutes le 2026-09-27) :
+ * capacite EST appliquee a la prise de rendez-vous (voir creerAvecCapacite
+ * dans rendez-vous-etats.ts) ; dureeCreneauMinutes reste pour l'instant
+ * informatif (voir le commentaire du modele dans prisma/schema.prisma).
  *
  * Zero Trust : l'admin_etablissement courant est toujours derive de
  * getSession(), et chaque action verifie explicitement que le professionnel
@@ -26,6 +31,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { journaliser } from "@/modules/audit/journaliser";
+import { CAPACITE_MAX, CAPACITE_MIN, DUREES_CRENEAU_MINUTES } from "./disponibilites-regles";
 
 export interface DisponibiliteActionState {
   error: string | null;
@@ -37,6 +43,8 @@ export interface CreneauDisponibiliteResume {
   jourSemaine: number;
   heureDebut: string;
   heureFin: string;
+  dureeCreneauMinutes: number;
+  capacite: number;
 }
 
 const JOURS_SEMAINE_VALIDES = [0, 1, 2, 3, 4, 5, 6] as const;
@@ -51,6 +59,15 @@ const schemaCreneau = z
       .refine((valeur) => (JOURS_SEMAINE_VALIDES as readonly number[]).includes(valeur), "Jour de semaine invalide."),
     heureDebut: z.string().regex(REGEX_HEURE, "Heure de début invalide (format HH:MM)."),
     heureFin: z.string().regex(REGEX_HEURE, "Heure de fin invalide (format HH:MM)."),
+    dureeCreneauMinutes: z.coerce
+      .number()
+      .int()
+      .refine((valeur) => (DUREES_CRENEAU_MINUTES as readonly number[]).includes(valeur), "Durée de créneau invalide."),
+    capacite: z.coerce
+      .number()
+      .int()
+      .min(CAPACITE_MIN, `La capacité minimale est ${CAPACITE_MIN}.`)
+      .max(CAPACITE_MAX, `La capacité maximale est ${CAPACITE_MAX}.`),
   })
   .refine((donnees) => minutesDepuisHeure(donnees.heureFin) > minutesDepuisHeure(donnees.heureDebut), {
     message: "L'heure de fin doit être après l'heure de début.",
@@ -127,6 +144,8 @@ export async function listerCreneauxProfessionnel(professionnelId: string): Prom
     jourSemaine: creneau.jourSemaine,
     heureDebut: heureDepuisMinutes(creneau.heureDebutMinutes),
     heureFin: heureDepuisMinutes(creneau.heureFinMinutes),
+    dureeCreneauMinutes: creneau.dureeCreneauMinutes,
+    capacite: creneau.capacite,
   }));
 }
 
@@ -144,6 +163,8 @@ export async function ajouterCreneauAction(
     jourSemaine: texte(formData, "jourSemaine"),
     heureDebut: texte(formData, "heureDebut"),
     heureFin: texte(formData, "heureFin"),
+    dureeCreneauMinutes: texte(formData, "dureeCreneauMinutes") || "30",
+    capacite: texte(formData, "capacite") || "1",
   });
 
   if (!validation.success) {
@@ -178,6 +199,8 @@ export async function ajouterCreneauAction(
       jourSemaine: validation.data.jourSemaine,
       heureDebutMinutes: debut,
       heureFinMinutes: fin,
+      dureeCreneauMinutes: validation.data.dureeCreneauMinutes,
+      capacite: validation.data.capacite,
     },
   });
 
@@ -186,7 +209,7 @@ export async function ajouterCreneauAction(
     action: "creation",
     donneeConcernee: `creneau_disponibilite:${creneau.id}`,
     adresseTechnique: await adresseTechniqueCourante(),
-    justification: `Créneau ajouté (F-ETA-05) pour le professionnel ${validation.data.professionnelId} : jour ${validation.data.jourSemaine}, ${validation.data.heureDebut}-${validation.data.heureFin}.`,
+    justification: `Créneau ajouté (F-ETA-05) pour le professionnel ${validation.data.professionnelId} : jour ${validation.data.jourSemaine}, ${validation.data.heureDebut}-${validation.data.heureFin}, durée ${validation.data.dureeCreneauMinutes} min, capacité ${validation.data.capacite}.`,
   });
 
   return { error: null, success: true };

@@ -27,12 +27,12 @@
  * - RG-RDV-02 (max 3 rendez-vous futurs par patient) : non implemente non
  *   plus par F-RDV-01 (citoyen) dans ce depot, pas ajoute ici pour rester
  *   coherent (ne pas restreindre l'accueil plus que le patient lui-meme).
- * - RG-RDV-03 (reservation atomique par capacite de creneau) : ce depot n'a
- *   pas de modele de "slot" avec compteur/capacite ; reutilise la meme
- *   verification que `creerRendezVousAction` (F-ETA-05,
- *   `dateDansUnCreneauDisponible` + refus d'un doublon professionnel/instant
- *   exact, capacite 1 implicite), pour rester harmonise avec la creation de
- *   RDV cote citoyen.
+ * - RG-RDV-03 (reservation atomique par capacite de creneau) : reutilise les
+ *   memes verifications que `creerRendezVousAction` (F-ETA-05,
+ *   `dateDansUnCreneauDisponible` + `capaciteDuCreneau` + `creerAvecCapacite`,
+ *   capacite 1 par defaut, davantage si l'admin de l'etablissement en a
+ *   configure plus), pour rester harmonise avec la creation de RDV cote
+ *   citoyen. L'index unique partiel de la base reste seul garant reel.
  *
  * RG-RDV-01 (delai minimum avant reservation) NE S'APPLIQUE PAS ici (le
  * pack le dit explicitement) : l'accueil peut reserver des maintenant,
@@ -50,8 +50,8 @@ import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
 import { dateDepuisChaineLocaleBenin } from "@/lib/fuseau-horaire";
-import { dateDansUnCreneauDisponible } from "./creneau-disponible";
-import { STATUTS_QUI_LIBERENT_LE_CRENEAU, estConflitDeCreneau } from "./rendez-vous-etats";
+import { capaciteDuCreneau, dateDansUnCreneauDisponible } from "./creneau-disponible";
+import { STATUTS_QUI_LIBERENT_LE_CRENEAU, creerAvecCapacite, estConflitDeCreneau, fenetreCandidats } from "./rendez-vous-etats";
 import { verifierReglesReservation } from "./regles-reservation";
 
 async function adresseTechniqueCourante(): Promise<string> {
@@ -280,6 +280,9 @@ export async function creerRendezVousGuichetAction(
       return { error: refusRegles, success: false };
     }
 
+    // Capacite du creneau nominal (F-ETA-05) : voir facility/actions.ts.
+    let capacite = 1;
+
     if (professionnelIdNettoye.length > 0) {
       const professionnel = await prisma.professionnelSante.findUnique({
         where: { id: professionnelIdNettoye },
@@ -304,14 +307,15 @@ export async function creerRendezVousGuichetAction(
         };
       }
 
-      const dejaPris = await prisma.rendezVous.findFirst({
+      capacite = await capaciteDuCreneau(professionnelIdNettoye, dateRendezVous);
+      const compteActifs = await prisma.rendezVous.count({
         where: {
           professionnelId: professionnelIdNettoye,
-          date: dateRendezVous,
+          date: fenetreCandidats(dateRendezVous, capacite),
           statut: { notIn: [...STATUTS_QUI_LIBERENT_LE_CRENEAU] },
         },
       });
-      if (dejaPris) {
+      if (compteActifs >= capacite) {
         return {
           error: "Ce créneau est déjà pris. Merci de choisir un autre horaire.",
           success: false,
@@ -320,30 +324,33 @@ export async function creerRendezVousGuichetAction(
     }
 
     const adresseTechnique = await adresseTechniqueCourante();
+    const professionnelIdRetenu = professionnelIdNettoye.length > 0 ? professionnelIdNettoye : null;
 
-    await prisma.$transaction(async (tx) => {
-      const rendezVous = await tx.rendezVous.create({
-        data: {
-          patientId,
-          etablissementId: admin.etablissementId,
-          professionnelId: professionnelIdNettoye.length > 0 ? professionnelIdNettoye : null,
-          date: dateRendezVous,
-          motif,
-          statut: "confirme",
-        },
-      });
+    await creerAvecCapacite(dateRendezVous, capacite, (dateCandidate) =>
+      prisma.$transaction(async (tx) => {
+        const rendezVous = await tx.rendezVous.create({
+          data: {
+            patientId,
+            etablissementId: admin.etablissementId,
+            professionnelId: professionnelIdRetenu,
+            date: dateCandidate,
+            motif,
+            statut: "confirme",
+          },
+        });
 
-      await journaliser(
-        {
-          utilisateurId: admin.userId,
-          action: "creation_rendez_vous_guichet",
-          donneeConcernee: `rendez_vous:${rendezVous.id}`,
-          adresseTechnique,
-          justification: "Rendez-vous pris au guichet par l'accueil de l'etablissement, confirme directement",
-        },
-        tx
-      );
-    });
+        await journaliser(
+          {
+            utilisateurId: admin.userId,
+            action: "creation_rendez_vous_guichet",
+            donneeConcernee: `rendez_vous:${rendezVous.id}`,
+            adresseTechnique,
+            justification: "Rendez-vous pris au guichet par l'accueil de l'etablissement, confirme directement",
+          },
+          tx
+        );
+      })
+    );
 
     return { error: null, success: true };
   } catch (erreur) {

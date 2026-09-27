@@ -53,8 +53,14 @@ import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
 import { dateDepuisChaineLocaleBenin } from "@/lib/fuseau-horaire";
-import { dateDansUnCreneauDisponible } from "@/modules/facility/creneau-disponible";
-import { STATUTS_QUI_LIBERENT_LE_CRENEAU, estConflitDeCreneau, MESSAGE_CRENEAU_PRIS } from "@/modules/facility/rendez-vous-etats";
+import { capaciteDuCreneau, dateDansUnCreneauDisponible } from "@/modules/facility/creneau-disponible";
+import {
+  STATUTS_QUI_LIBERENT_LE_CRENEAU,
+  creerAvecCapacite,
+  estConflitDeCreneau,
+  fenetreCandidats,
+  MESSAGE_CRENEAU_PRIS,
+} from "@/modules/facility/rendez-vous-etats";
 import { MESSAGE_ETABLISSEMENT_INACTIF } from "@/modules/facility/regles-rendez-vous";
 import { verifierReglesReservation } from "@/modules/facility/regles-reservation";
 import { CODES_IDENTIFIANT_PAR_ROLE, prefixeIdentifiant, prochainIdentifiant } from "@/modules/identity/identifiants";
@@ -457,6 +463,10 @@ export async function creerRendezVousPourProcheAction(
       return { error: refusRegles, success: false };
     }
 
+    // Capacite du creneau nominal (F-ETA-05) : 1 quand aucun professionnel
+    // n'est choisi (comportement inchange), sinon celle du creneau configure.
+    let capacite = 1;
+
     if (professionnelId.length > 0) {
       const professionnel = await prisma.professionnelSante.findUnique({
         where: { id: professionnelId },
@@ -480,39 +490,47 @@ export async function creerRendezVousPourProcheAction(
         };
       }
 
-      const dejaPris = await prisma.rendezVous.findFirst({
-        where: { professionnelId, date: dateRendezVous, statut: { notIn: [...STATUTS_QUI_LIBERENT_LE_CRENEAU] } },
+      capacite = await capaciteDuCreneau(professionnelId, dateRendezVous);
+      const compteActifs = await prisma.rendezVous.count({
+        where: {
+          professionnelId,
+          date: fenetreCandidats(dateRendezVous, capacite),
+          statut: { notIn: [...STATUTS_QUI_LIBERENT_LE_CRENEAU] },
+        },
       });
-      if (dejaPris) {
+      if (compteActifs >= capacite) {
         return { error: MESSAGE_CRENEAU_PRIS, success: false };
       }
     }
 
     const adresseTechnique = await adresseTechniqueCourante();
+    const professionnelIdRetenu = professionnelId.length > 0 ? professionnelId : null;
 
-    await prisma.$transaction(async (tx) => {
-      const rendezVous = await tx.rendezVous.create({
-        data: {
-          patientId: procheId,
-          etablissementId,
-          professionnelId: professionnelId.length > 0 ? professionnelId : null,
-          date: dateRendezVous,
-          motif,
-          statut: "demande",
-        },
-      });
+    await creerAvecCapacite(dateRendezVous, capacite, (dateCandidate) =>
+      prisma.$transaction(async (tx) => {
+        const rendezVous = await tx.rendezVous.create({
+          data: {
+            patientId: procheId,
+            etablissementId,
+            professionnelId: professionnelIdRetenu,
+            date: dateCandidate,
+            motif,
+            statut: "demande",
+          },
+        });
 
-      await journaliser(
-        {
-          utilisateurId: session.userId,
-          action: "creation_rendez_vous_proche",
-          donneeConcernee: `rendez_vous:${rendezVous.id}`,
-          adresseTechnique,
-          justification: `Demande de rendez-vous creee au nom de la personne a charge ${procheId}, aupres de l'etablissement ${etablissementId}`,
-        },
-        tx
-      );
-    });
+        await journaliser(
+          {
+            utilisateurId: session.userId,
+            action: "creation_rendez_vous_proche",
+            donneeConcernee: `rendez_vous:${rendezVous.id}`,
+            adresseTechnique,
+            justification: `Demande de rendez-vous creee au nom de la personne a charge ${procheId}, aupres de l'etablissement ${etablissementId}`,
+          },
+          tx
+        );
+      })
+    );
 
     return { error: null, success: true };
   } catch (erreur) {

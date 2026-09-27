@@ -15,7 +15,10 @@ vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Map()) }));
 vi.mock("@/lib/session", () => ({ getSession: vi.fn() }));
 vi.mock("@/modules/audit/journaliser", () => ({ journaliser: vi.fn() }));
 vi.mock("@/modules/notification/creer", () => ({ creerNotification: vi.fn(async () => undefined) }));
-vi.mock("./creneau-disponible", () => ({ dateDansUnCreneauDisponible: vi.fn(async () => true) }));
+vi.mock("./creneau-disponible", () => ({
+  dateDansUnCreneauDisponible: vi.fn(async () => true),
+  capaciteDuCreneau: vi.fn(async () => 1),
+}));
 vi.mock("./regles-reservation", () => ({ verifierReglesReservation: vi.fn(async () => null) }));
 
 vi.mock("@/lib/prisma", () => {
@@ -23,7 +26,7 @@ vi.mock("@/lib/prisma", () => {
     patient: { findUnique: vi.fn() },
     etablissementSanitaire: { findUnique: vi.fn() },
     professionnelSante: { findUnique: vi.fn() },
-    rendezVous: { findUnique: vi.fn(), findFirst: vi.fn(), create: vi.fn(), updateMany: vi.fn() },
+    rendezVous: { findUnique: vi.fn(), findFirst: vi.fn(), count: vi.fn(async () => 0), create: vi.fn(), updateMany: vi.fn() },
     consentement: { findFirst: vi.fn() },
     $transaction: vi.fn(),
   };
@@ -35,7 +38,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { journaliser } from "@/modules/audit/journaliser";
 import { creerNotification } from "@/modules/notification/creer";
-import { dateDansUnCreneauDisponible } from "./creneau-disponible";
+import { capaciteDuCreneau, dateDansUnCreneauDisponible } from "./creneau-disponible";
 import { verifierReglesReservation } from "./regles-reservation";
 import {
   annulerRendezVousAction,
@@ -52,13 +55,14 @@ const prismaMock = prisma as unknown as {
   patient: { findUnique: Mock };
   etablissementSanitaire: { findUnique: Mock };
   professionnelSante: { findUnique: Mock };
-  rendezVous: { findUnique: Mock; findFirst: Mock; create: Mock; updateMany: Mock };
+  rendezVous: { findUnique: Mock; findFirst: Mock; count: Mock; create: Mock; updateMany: Mock };
   consentement: { findFirst: Mock };
 };
 const getSessionMock = getSession as unknown as Mock;
 const journaliserMock = journaliser as unknown as Mock;
 const creerNotificationMock = creerNotification as unknown as Mock;
 const disponibiliteMock = dateDansUnCreneauDisponible as unknown as Mock;
+const capaciteMock = capaciteDuCreneau as unknown as Mock;
 const reglesMock = verifierReglesReservation as unknown as Mock;
 
 const ETAT = { error: null, success: false };
@@ -105,10 +109,12 @@ beforeEach(() => {
     statutValidation: "valide",
   });
   prismaMock.rendezVous.findFirst.mockResolvedValue(null);
+  prismaMock.rendezVous.count.mockResolvedValue(0);
   prismaMock.rendezVous.updateMany.mockResolvedValue({ count: 1 });
   prismaMock.rendezVous.create.mockResolvedValue({ id: "rdv-nouveau" });
   reglesMock.mockResolvedValue(null);
   disponibiliteMock.mockResolvedValue(true);
+  capaciteMock.mockResolvedValue(1);
 });
 
 describe("annulerRendezVousAction (patient)", () => {
@@ -335,13 +341,34 @@ describe("creerRendezVousAction : regles et double reservation", () => {
   });
 
   it("refuse un creneau deja pris detecte a la lecture, en ignorant les rendez-vous qui liberent le creneau", async () => {
-    prismaMock.rendezVous.findFirst.mockResolvedValue({ id: "rdv-existant" });
+    prismaMock.rendezVous.count.mockResolvedValue(1); // capacite par defaut 1, deja atteinte
 
     const resultat = await creerRendezVousAction(ETAT, formulaire(CHAMPS));
 
     expect(resultat).toEqual({ error: MESSAGE_CRENEAU_PRIS, success: false });
-    expect(prismaMock.rendezVous.findFirst.mock.calls[0][0].where.statut).toEqual({ notIn: ["annule", "refuse", "expire"] });
+    expect(prismaMock.rendezVous.count.mock.calls[0][0].where.statut).toEqual({ notIn: ["annule", "refuse", "expire"] });
     expect(prismaMock.rendezVous.create).not.toHaveBeenCalled();
+  });
+
+  it("autorise un deuxieme patient sur le meme creneau nominal quand la capacite configuree est de 2 (F-ETA-05)", async () => {
+    capaciteMock.mockResolvedValue(2);
+    prismaMock.rendezVous.count.mockResolvedValue(1); // 1 deja actif, capacite 2 : encore une place
+
+    const resultat = await creerRendezVousAction(ETAT, formulaire(CHAMPS));
+
+    expect(resultat).toEqual({ error: null, success: true });
+  });
+
+  it("retente a l'instant candidat suivant quand une reservation simultanee gagne le premier instant (capacite > 1)", async () => {
+    capaciteMock.mockResolvedValue(2);
+    prismaMock.rendezVous.create
+      .mockRejectedValueOnce(new Prisma.PrismaClientKnownRequestError("Unique constraint failed", { code: "P2002", clientVersion: "6" }))
+      .mockResolvedValueOnce({ id: "rdv-2" });
+
+    const resultat = await creerRendezVousAction(ETAT, formulaire(CHAMPS));
+
+    expect(resultat).toEqual({ error: null, success: true });
+    expect(prismaMock.rendezVous.create).toHaveBeenCalledTimes(2);
   });
 
   it("refuse proprement quand une demande simultanee a pris le creneau entre la lecture et l'ecriture (P2002)", async () => {
@@ -439,7 +466,7 @@ describe("deplacerRendezVousAction (F-RDV-02, RG-RDV-11)", () => {
     expect((await deplacerRendezVousAction(ETAT, formulaire(CHAMPS))).error).toContain("pas disponible");
 
     disponibiliteMock.mockResolvedValue(true);
-    prismaMock.rendezVous.findFirst.mockResolvedValue({ id: "autre" });
+    prismaMock.rendezVous.count.mockResolvedValue(1); // capacite par defaut 1, deja atteinte
     expect((await deplacerRendezVousAction(ETAT, formulaire(CHAMPS))).error).toBe(MESSAGE_CRENEAU_PRIS);
 
     expect(prismaMock.rendezVous.create).not.toHaveBeenCalled();

@@ -12,6 +12,7 @@ import {
   type CreneauDisponibiliteResume,
   type DisponibiliteActionState,
 } from "@/modules/facility/disponibilites";
+import { DUREES_CRENEAU_MINUTES } from "@/modules/facility/disponibilites-regles";
 
 const etatInitial: DisponibiliteActionState = { error: null, success: false };
 
@@ -24,6 +25,8 @@ const JOURS_SEMAINE = [
   { value: "6", label: "Samedi" },
   { value: "0", label: "Dimanche" },
 ];
+
+const OPTIONS_DUREE = DUREES_CRENEAU_MINUTES.map((minutes) => ({ value: String(minutes), label: `${minutes} min` }));
 
 const LIBELLE_JOUR: Record<number, string> = {
   0: "Dimanche",
@@ -64,6 +67,26 @@ export function FormulaireCreneaux({ professionnelId, creneaux }: FormulaireCren
           <TextField label="Heure de début" name="heureDebut" type="time" required defaultValue="08:00" />
           <TextField label="Heure de fin" name="heureFin" type="time" required defaultValue="12:00" />
         </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <SelectField
+            label="Durée d'un créneau"
+            name="dureeCreneauMinutes"
+            required
+            options={OPTIONS_DUREE}
+            defaultValue="30"
+            hint="Informatif pour l'instant : la prise de rendez-vous ne l'impose pas encore (aucun sélecteur visuel de créneaux)."
+          />
+          <TextField
+            label="Capacité (patients par créneau)"
+            name="capacite"
+            type="number"
+            min={1}
+            max={10}
+            required
+            defaultValue="1"
+            hint="Nombre de patients pouvant réserver le même créneau nominal."
+          />
+        </div>
         <Button type="submit" variant="primary" className="w-fit" disabled={ajoutEnCours}>
           {ajoutEnCours ? "Ajout..." : "Ajouter ce créneau"}
         </Button>
@@ -89,7 +112,8 @@ export function FormulaireCreneaux({ professionnelId, creneaux }: FormulaireCren
             >
               <span className="text-encre">
                 <span className="font-semibold">{LIBELLE_JOUR[creneau.jourSemaine]}</span> · {creneau.heureDebut} à{" "}
-                {creneau.heureFin}
+                {creneau.heureFin} · créneaux de {creneau.dureeCreneauMinutes} min
+                {creneau.capacite > 1 ? ` · ${creneau.capacite} patients par créneau` : ""}
               </span>
               <form action={actionSuppression}>
                 <input type="hidden" name="creneauId" value={creneau.id} />

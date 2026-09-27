@@ -13,7 +13,10 @@ vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Map()) }));
 vi.mock("@/lib/session", () => ({ getSession: vi.fn() }));
 vi.mock("@/modules/audit/journaliser", () => ({ journaliser: vi.fn() }));
 vi.mock("bcryptjs", () => ({ default: { hash: vi.fn(async () => "empreinte-bcrypt") } }));
-vi.mock("@/modules/facility/creneau-disponible", () => ({ dateDansUnCreneauDisponible: vi.fn(async () => true) }));
+vi.mock("@/modules/facility/creneau-disponible", () => ({
+  dateDansUnCreneauDisponible: vi.fn(async () => true),
+  capaciteDuCreneau: vi.fn(async () => 1),
+}));
 vi.mock("@/modules/facility/regles-reservation", () => ({ verifierReglesReservation: vi.fn(async () => null) }));
 
 vi.mock("@/lib/prisma", () => {
@@ -23,7 +26,7 @@ vi.mock("@/lib/prisma", () => {
     user: { create: vi.fn() },
     etablissementSanitaire: { findUnique: vi.fn() },
     professionnelSante: { findUnique: vi.fn() },
-    rendezVous: { findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn() },
+    rendezVous: { findFirst: vi.fn(), findMany: vi.fn(), count: vi.fn(), create: vi.fn() },
     $transaction: vi.fn(),
   };
   prisma.$transaction.mockImplementation(async (argument: unknown) =>
@@ -35,7 +38,7 @@ vi.mock("@/lib/prisma", () => {
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { journaliser } from "@/modules/audit/journaliser";
-import { dateDansUnCreneauDisponible } from "@/modules/facility/creneau-disponible";
+import { capaciteDuCreneau, dateDansUnCreneauDisponible } from "@/modules/facility/creneau-disponible";
 import { verifierReglesReservation } from "@/modules/facility/regles-reservation";
 import {
   creerPersonneAChargeAction,
@@ -52,11 +55,12 @@ const prismaMock = prisma as unknown as {
   user: { create: Mock };
   etablissementSanitaire: { findUnique: Mock };
   professionnelSante: { findUnique: Mock };
-  rendezVous: { findFirst: Mock; findMany: Mock; create: Mock };
+  rendezVous: { findFirst: Mock; findMany: Mock; count: Mock; create: Mock };
 };
 const getSessionMock = getSession as unknown as Mock;
 const journaliserMock = journaliser as unknown as Mock;
 const disponibiliteMock = dateDansUnCreneauDisponible as unknown as Mock;
+const capaciteMock = capaciteDuCreneau as unknown as Mock;
 const reglesMock = verifierReglesReservation as unknown as Mock;
 
 const ETAT = { error: null, success: false };
@@ -89,8 +93,10 @@ beforeEach(() => {
   reglesMock.mockResolvedValue(null);
   prismaMock.professionnelSante.findUnique.mockResolvedValue({ id: "pro-1", etablissementId: "etab-1", statutValidation: "valide" });
   prismaMock.rendezVous.findFirst.mockResolvedValue(null);
+  prismaMock.rendezVous.count.mockResolvedValue(0);
   prismaMock.rendezVous.create.mockResolvedValue({ id: "rdv-1" });
   disponibiliteMock.mockResolvedValue(true);
+  capaciteMock.mockResolvedValue(1);
 });
 
 describe("creerPersonneAChargeAction", () => {
@@ -321,14 +327,23 @@ describe("creerRendezVousPourProcheAction", () => {
   });
 
   it("refuse un creneau deja pris, et un conflit d'index unique (demande simultanee) avec le meme message", async () => {
-    prismaMock.rendezVous.findFirst.mockResolvedValue({ id: "rdv-existant" });
+    prismaMock.rendezVous.count.mockResolvedValue(1); // capacite par defaut 1, deja atteinte
     const pris = await cas();
     expect(pris.error).toContain("réservé par un autre patient");
 
-    prismaMock.rendezVous.findFirst.mockResolvedValue(null);
+    prismaMock.rendezVous.count.mockResolvedValue(0);
     prismaMock.rendezVous.create.mockRejectedValue(new Prisma.PrismaClientKnownRequestError("Unique", { code: "P2002", clientVersion: "6" }));
     const conflit = await cas();
     expect(conflit.error).toBe(pris.error);
+  });
+
+  it("autorise un deuxieme patient sur le meme creneau nominal quand la capacite configuree est de 2 (F-ETA-05)", async () => {
+    capaciteMock.mockResolvedValue(2);
+    prismaMock.rendezVous.count.mockResolvedValue(1);
+
+    const resultat = await cas();
+
+    expect(resultat).toEqual({ error: null, success: true });
   });
 
   it("cree la demande au nom de la personne a charge (heure locale de Porto-Novo) et la journalise", async () => {
