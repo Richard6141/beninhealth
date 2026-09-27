@@ -3665,3 +3665,26 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
 - Verifie : tsc 0 erreur, eslint 0 erreur, migration deployee et `migrate diff --exit-code` propre, 434 tests (recherche, action serveur, referentiel medicaments, catalogue de depart, empreinte, non substituable), deux scenarios navigateur reels sur le compte medecin de demonstration : recherche (moins de 3 lettres, DCI sans accent, nom commercial, plusieurs mots avec un dosage numerique exact, essentiels en tete, badge et code ATC affiches, choix clavier et souris, changement de medicament) et non substituable (champ motif absent puis affiche, blocage sous 10 caracteres, deblocage au-dela, remise a zero au decochage/recochage). Un bug reel trouve par le scenario et corrige : un mot de recherche purement numerique ("1" dans "1 g") matchait a tort une sous-chaine d'un autre dosage ("120 mg/5 ml") ; corrige par une correspondance de mot entier pour les mots numeriques (test de regression ajoute).
 - Reste dans mon perimetre (prescription/pharmacie) : etat DRAFT, "si besoin"/moments/traitement de fond/quantite calculee, PDF (etablissement, poids, validite, empreinte, "non substituable"), renouvellement editable, F-PHA-05 (stocks), F-PHA-01 (scan).
 - 2026-09-27.
+
+### Point projet-gouv-0a, fusion de dossiers reversible (F-ADM-06), 2026-09-27
+
+- Livre (`73657f3`) : reversibilite 30 jours (table de correspondance FusionDossier,
+  defusionnerAction) et seconde approbation obligatoire quand le sexe ou la date de naissance
+  different (RG-ADM-41, approuverFusionAction/refuserFusionAction). "Ce ne sont pas les memes
+  personnes" retire une paire definitivement (PaireDoublonIgnoree). Ecran /app/ministere/doublons
+  complete de trois sections (fusions en attente, doublons probables, fusions recentes reversibles).
+- Deux defauts corriges au passage (signales dans docs/reste-a-faire.md) : consentement.updateMany
+  pouvait violer l'unicite (patientId, acteurAutoriseId) ; codes de partage, de reclamation,
+  demandes d'acces et jetons de carte sante n'etaient jamais deplaces par une fusion.
+- Migrations a relire, 21 : `20260927130000_fusion_dossiers`, `20260927140000_fusion_attente_approbation`
+  (deux tables, aucune relation Prisma vers Patient/User pour survivre a toute suppression future).
+  Deja appliquees a la base partagee, `migrate diff` : aucune difference.
+- Incident sans consequence : 41 a embarque par erreur ces deux modeles dans son commit prescription
+  (`2f07519`), corrige seul (`45ac800`) avant que je committe ; verifie de mon cote, rien a refaire.
+- Verifie : 62 tests (regles pures + module avec prisma mocke), tsc et eslint propres, service-guard
+  et tirets-interdits verts, scenario reel sur la base (creation de deux patients, deplacement d'un
+  rendez-vous, verification du modele FusionDossier, nettoyage).
+- Suite pour moi : reste de F-ADM-01 (professionnels a valider, reinitialisations 2FA, file SMS,
+  erreurs 24h deja faits ce soir ; comptes par role a verifier), F-ADM-02 (fait ce soir, voir
+  commit anterieur), F-NOT-04 (emissions des 22 codes N-* jamais emis), puis premiere fiche P0/P1
+  libre de docs/reste-a-faire.md.
