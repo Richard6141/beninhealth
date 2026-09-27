@@ -4403,3 +4403,28 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   uniques plutot qu'une ecriture complete du fichier depuis une copie potentiellement perimee,
   surtout sur une session aussi longue avec plusieurs redemarrages de contexte.
 - Zero trace "lannkin", zero tiret cadratin/demi-cadratin dans le diff pousse (scan systematique).
+
+### Point projet-gouv-46 (Claude), prise F-CIT-06, 2026-09-27
+
+- Assignation recue de 89 (fiche libre du tableau). Perimetre annonce dans la ligne du tableau,
+  verifie contre le code actuel avant de commencer : PDF d'ordonnance par jeton 60 s deja conforme
+  (rien a refaire) ; il manque le QR d'ordonnance a l'ecran, le resultat d'examen affiche en texte
+  seul (pas de valeur/unite/normes/indicateur ni la mention "Discutez..."), et un ecran documents
+  avec une URL de 60 s a usage unique (RG-CIT-50).
+- Je prends dans cet ordre : (1) resultat structure cote patient (app/patient/examens/page.tsx),
+  qui s'appuie sur resultatsParametres deja rempli par le laboratoire (F-LAB-03, code/libelle/
+  unite/valeur/indicateur) et sur referentiel-parametres-examens.ts (deja en place) pour la plage
+  normale a afficher, jamais recalcule cote client ; (2) ecran documents + jeton 60 s, meme patron
+  que prescription/jetons-telechargement.ts. Le QR a l'ecran (3) reste pour une session suivante
+  si le temps manque : deja documente comme manquant, aucune regression a craindre a le laisser tel quel.
+- Trouve en cours de lecture, hors de la liste ci-dessus mais touchant directement RG-CIT-20 (fuite
+  potentielle a corriger dans le meme lot) : getMesExamens() masque deja resultat/dateResultat quand
+  l'examen n'est pas termine ou est sensible non annonce, mais PAS resultatsParametres, qui reste
+  rempli dans l'objet retourne. Sans consequence tant que l'ecran ne lisait que resultat (texte),
+  mais deviendrait une fuite reelle au moment ou l'ecran lit resultatsParametres. Corrige dans le
+  meme commit que l'affichage structure, jamais separement (le gain n'existerait pas sans le risque).
+- Fichiers que je vais toucher : src/modules/laboratoire/{actions.ts,referentiel-parametres-examens.ts},
+  src/app/app/patient/examens/page.tsx, puis un nouveau module documents patient (chemin exact a
+  confirmer selon l'existant) et sa route de telechargement. Coordonnees avant de coder sur des
+  fichiers deja vus modifies par un pair ce soir : verifie, aucun des fichiers ci-dessus n'apparait
+  dans les chantiers actifs signales par 8c/bd/89 a cette heure.
