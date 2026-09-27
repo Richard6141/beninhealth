@@ -3961,3 +3961,41 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   src/modules/laboratoire, suite complete 2062/2065 (les 3 echecs restants sont dans
   facility/actions.rendez-vous.test.ts, fichier de 3f/8c actuellement en edition active, pas de mon
   fait, non investigue plus avant).
+
+### Point projet-gouv-46 (ex 0a), F-PIL-01 livre : IND-11 et taux d'absence, 2026-09-27
+
+- Assigne par 89 : fondation deja ecrite par 8c avant la fin de sa session (calcul dans agregation.ts,
+  masquage RG-PIL-02 dans masquage.ts, lecture dans lecture.ts, ecran deja branche dans
+  SectionPilotage.tsx). Ce qui restait : le fichier plantait (recalculerJourEtablissement,
+  consultationsAvecArriveeDuJour, acces a rendezVous!.heureArrivee! sur une ligne ou rendezVous
+  n'etait pas garanti par un mock de test reutilise pour deux requetes consultation.findMany
+  differentes dans la meme fonction). Corrige par un filtre defensif avant le calcul plutot qu'un
+  "!" qui aurait fait echouer tout le recalcul du jour pour une seule ligne incomplete.
+- Ajoute : 4 tests sur recalculerJourEtablissement (IND-11 calcul, cas vide, IND-07 absences), et
+  un fichier de test entierement nouveau pour getTableauBordEtablissement
+  (lecture-tableau-bord-etablissement.test.ts, 11 cas) qui etait retrouve juste apres coup deja
+  ecrit sur disque par 8c avant son depart (verifie non commite au moment ou je l'ai trouve,
+  inclus dans mon commit).
+- Precision documentaire (deux commentaires de lecture.ts) : IND-07/IND-11 sont calcules
+  uniquement pour aujourd'hui (texte du pack, section 14.2, "rendez-vous du jour et taux
+  d'absence", meme rangee que IND-11), jamais sur la periode selectionnee du tableau de bord -
+  le commentaire d'origine disait a tort "sur la periode", corrige.
+- Verifie : tsc 0 (source, hors .next genere par next dev), eslint 0 erreur, tirets 0
+  (verification robuste par script node, voir plus bas), 134/134 sur src/modules/pilotage,
+  suite complete 2047/2047 (le seul echec du depot en ce moment, transfert/actions.test.ts, est
+  chez 89, deja signale).
+- Commits : `4e2129b`->`2d6320d` apres un rebase amont (contenu inchange, hash different, meme
+  phenomene que celui deja documente plus haut dans ce fichier), doc `26fa09c`.
+- Important pour tout le monde, erreur trouvee sur mon propre travail de ce soir : ma verification
+  "aucun tiret cadratin" sur les commits de documentation utilisait
+  `diff <(...) <(...) | grep -P "^\+..."`, or `diff` SANS `-u` prefixe ses lignes par `<`/`>`,
+  jamais par `+`/`-` : ce grep ne matchait donc RIEN, jamais, silencieusement, depuis le debut de
+  la session. Un tiret cadratin a bien echappe a ce controle casse dans la ligne F-PIL-01 que je
+  venais d'ecrire (corrige avant ce commit, verifie que le reste de reste-a-faire.md et de ce
+  fichier en sont indemnes avec une verification fiable, un petit script node qui compare
+  directement les caracteres U+2014/U+2013 dans le contenu complet du fichier, sans dependre du
+  format de diff). Si vous utilisez le meme motif `diff ... | grep "^+.*"` pour verifier vos
+  propres commits de documentation ce soir, il ne verifie rien non plus : passez `diff -u` (ou
+  mieux, verifiez le fichier complet directement, jamais seulement le diff).
+- Suite pour moi : je cherche la prochaine fiche P0/P1 non revendiquee, ou j'attends une
+  assignation de 89.
