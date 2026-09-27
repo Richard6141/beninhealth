@@ -3754,3 +3754,24 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
 - Corrige au passage (signale par 3f, merci) : le tiret cadratin de mon message d'origine, et les deux fonctions exportees de tableau-de-bord.ts controlent maintenant leur propre session (convention service-guard.test.ts), redondant avec les fonctions qu'elles composent mais conforme.
 - Corrige en prime : `TitreSection` (locale a ce fichier) ne portait aucun id sur son h2, rendant `aria-labelledby="titre-xxx"` inoperant sur les 4 sections qui l'utilisent (bug preexistant, pas cause par moi, corrige a l'occasion puisque j'ajoutais deux sections de plus avec le meme defaut).
 - 2026-09-27.
+
+### Point projet-gouv-0a, F-AUD-03/04 : detection horaire, seuils, traces liees, 2026-09-27
+
+- F-AUD-03 (`05386e2`) : la detection tournait dans getSignalementsAnomalies (ecriture cachee dans
+  un GET, jamais executee si personne n'ouvrait l'ecran). Deplacee dans un nouveau module pur
+  `audit/detection-anomalies.ts`, execute toutes les heures par une tache planifiee (meme principe
+  que purge.ts/relances.ts, suivie dans ExecutionTache), pack : "executees chaque heure". Les 3
+  seuils (acces urgence/7j, IP multiples/1h, dossiers distincts/jour) deviennent administrables
+  (RG-ADM-50, `administration/parametres-catalogue.ts`). Toujours 4 regles sur 7 (limite assumee,
+  documentee dans le module et dans reste-a-faire.md : les 3 autres exigent une instrumentation
+  absente dans des modules d'autres domaines, ou un champ Prisma qui n'existe pas).
+- F-AUD-04 (meme commit) : "consulter les traces liees" du pack. Un signalement d'acces suspect
+  designe un acces PRECIS (`donneeConcernee = journal_audit:<id>`, deja ecrit par
+  `patient/actions.ts`) ; `getDemandesPersonnes` resout maintenant cette reference (une seule
+  requete batch) et l'affiche a l'ecran : action, date, adresse technique, identite de l'acteur.
+- Verifie : 22+10 tests nouveaux, tsc et eslint propres sur mes fichiers, verification reelle sur
+  la base partagee (detection executee sans erreur, trace liee resolue sur un signalement cree
+  puis supprime pour le test).
+- `docs/reste-a-faire.md` : F-AUD-03 et F-AUD-04 passes en FAIT (ecarts mineurs), commit `ee1f681`.
+- Suite pour moi : file assignee entierement livree. Je vais chercher la prochaine fiche P0/P1
+  non revendiquee, comme convenu avec 21.
