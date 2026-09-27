@@ -57,6 +57,24 @@ export function libelleVoie(valeur: string): string {
 /** Longueur minimale du motif de retrait (RG-CLI-100 du pack). */
 export const LONGUEUR_MIN_MOTIF_RETRAIT = 10;
 
+/**
+ * Lieu d'administration d'une vaccination (F-CLI-11 / F-COM-04 du pack) : en
+ * etablissement, ou en campagne / strategie avancee (agent communautaire en
+ * terrain, mais aussi un professionnel d'etablissement en sortie organisee).
+ */
+export const LIEUX_VACCINATION = ["etablissement", "campagne"] as const;
+export type LieuVaccination = (typeof LIEUX_VACCINATION)[number];
+
+const LIBELLES_LIEU_VACCINATION: Record<LieuVaccination, string> = {
+  etablissement: "En établissement",
+  campagne: "Campagne / stratégie avancée",
+};
+
+export const OPTIONS_LIEUX_VACCINATION: OptionReferentiel[] = LIEUX_VACCINATION.map((valeur) => ({
+  value: valeur,
+  label: LIBELLES_LIEU_VACCINATION[valeur],
+}));
+
 /** Duree exprimee en semaines ou en mois, utilisee pour un age minimum ou un intervalle minimum. */
 export interface DureeCalendaire {
   valeur: number;
@@ -69,6 +87,12 @@ export interface ReglesAgeVaccin {
   ageMinimumPremiereDose: DureeCalendaire;
   /** Intervalle minimum depuis la dose precedente du meme vaccin ; null si une seule dose existe habituellement. */
   intervalleMinimumEntreDoses: DureeCalendaire | null;
+  /**
+   * Age au-dela duquel la 1ere dose est inhabituelle et merite un
+   * avertissement (pas un blocage dur, meme mecanisme que
+   * ageMinimumPremiereDose ci-dessus). Absent = aucun age maximum connu.
+   */
+  ageMaximumRecommandePremiereDose?: DureeCalendaire;
 }
 
 /**
@@ -89,9 +113,13 @@ export interface ReglesAgeVaccin {
  */
 export const REGLES_AGE_VACCINS: Partial<Record<string, ReglesAgeVaccin>> = {
   // BCG : "As soon as possible after birth", 1 dose, pas de rappel standard.
+  // Au-dela d'un an, la primo-vaccination sort de l'usage courant du
+  // calendrier PEV (un test tuberculinique prealable est alors recommande
+  // dans certains protocoles) : avertissement, jamais un blocage.
   BCG: {
     ageMinimumPremiereDose: { valeur: 0, unite: "semaines" },
     intervalleMinimumEntreDoses: null,
+    ageMaximumRecommandePremiereDose: { valeur: 12, unite: "mois" },
   },
   // Polio (bOPV/IPV) : 1ere dose de la serie primaire a 6 semaines minimum,
   // puis 4 semaines minimum entre deux doses consecutives.
@@ -168,6 +196,17 @@ export function controlerAgeVaccination(params: {
         conforme: false,
         message: `L'âge minimum habituel pour la 1ère dose du vaccin ${params.vaccin} est de ${libelleDuree(regles.ageMinimumPremiereDose)} : l'enfant est plus jeune que cela à la date choisie.`,
       };
+    }
+
+    if (regles.ageMaximumRecommandePremiereDose) {
+      const ageMaximumDepasseLe = ajouterDuree(params.dateNaissance, regles.ageMaximumRecommandePremiereDose);
+
+      if (params.dateAdministration >= ageMaximumDepasseLe) {
+        return {
+          conforme: false,
+          message: `La 1ère dose du vaccin ${params.vaccin} est habituellement donnée avant ${libelleDuree(regles.ageMaximumRecommandePremiereDose)} : l'enfant est plus âgé que cela à la date choisie.`,
+        };
+      }
     }
 
     return { conforme: true, message: null };

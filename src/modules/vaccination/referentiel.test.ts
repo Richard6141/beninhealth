@@ -71,3 +71,58 @@ describe("vaccins sans regle d'age", () => {
     }
   });
 });
+
+describe("controlerAgeVaccination : age maximum recommande pour la 1ere dose (BCG)", () => {
+  it("BCG a 11 mois reste conforme (sous le maximum de 12 mois)", () => {
+    expect(
+      controlerAgeVaccination({
+        vaccin: "BCG",
+        numeroDose: 1,
+        dateNaissance: naissance,
+        dateAdministration: midi("2026-11-25"),
+        dateDerniereDoseMemeVaccin: null,
+      }).conforme
+    ).toBe(true);
+  });
+
+  it("BCG a 1 an ou plus declenche un avertissement (age maximum atteint)", () => {
+    const unAn = controlerAgeVaccination({
+      vaccin: "BCG",
+      numeroDose: 1,
+      dateNaissance: naissance,
+      dateAdministration: midi("2027-01-01"),
+      dateDerniereDoseMemeVaccin: null,
+    });
+
+    expect(unAn.conforme).toBe(false);
+    expect(unAn.message).toContain("12 mois");
+  });
+
+  it("l'age maximum ne s'applique jamais a la 2e dose (BCG n'a pas de rappel standard)", () => {
+    expect(
+      controlerAgeVaccination({
+        vaccin: "BCG",
+        numeroDose: 2,
+        dateNaissance: naissance,
+        dateAdministration: midi("2028-01-01"),
+        dateDerniereDoseMemeVaccin: naissance,
+      }).conforme
+    ).toBe(true);
+  });
+
+  it("un vaccin sans age maximum connu (Polio) n'est jamais signale trop age", () => {
+    expect(
+      controlerAgeVaccination({
+        vaccin: "Polio",
+        numeroDose: 1,
+        dateNaissance: naissance,
+        dateAdministration: midi("2030-01-01"),
+        dateDerniereDoseMemeVaccin: null,
+      }).conforme
+    ).toBe(true);
+  });
+
+  it("REGLES_AGE_VACCINS.BCG expose bien la borne (verrou de regression)", () => {
+    expect(REGLES_AGE_VACCINS.BCG?.ageMaximumRecommandePremiereDose).toEqual({ valeur: 12, unite: "mois" });
+  });
+});

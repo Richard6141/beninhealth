@@ -10,8 +10,11 @@ import {
   type VaccinationResume,
 } from "@/modules/vaccination/actions";
 import {
+  LIEUX_VACCINATION,
+  OPTIONS_LIEUX_VACCINATION,
   OPTIONS_VOIES_ADMINISTRATION,
   VALEUR_VACCIN_AUTRE,
+  type LieuVaccination,
   type OptionReferentiel,
 } from "@/modules/vaccination/referentiel";
 import { Alert } from "@/components/ui/Alert";
@@ -83,6 +86,8 @@ export function FormulaireVaccination({
   const [numeroLot, setNumeroLot] = useState("");
   const [siteInjection, setSiteInjection] = useState("");
   const [voie, setVoie] = useState("");
+  const [lieu, setLieu] = useState<LieuVaccination>(LIEUX_VACCINATION[0]);
+  const [nomCampagne, setNomCampagne] = useState("");
   // Cle de la combinaison (patient, vaccin, dose) pour laquelle la case de
   // confirmation a ete cochee : comparee a la combinaison actuelle a chaque
   // rendu, plutot qu'un useEffect qui reinitialiserait confirmerDoublon a
@@ -268,6 +273,26 @@ export function FormulaireVaccination({
           onChange={(event: ChangeEvent<HTMLSelectElement>) => setVoie(event.target.value)}
         />
 
+        <div className="grid gap-4 sm:grid-cols-2">
+          <SelectField
+            label="Lieu"
+            name="lieu"
+            options={OPTIONS_LIEUX_VACCINATION}
+            value={lieu}
+            onChange={(event: ChangeEvent<HTMLSelectElement>) => setLieu(event.target.value as LieuVaccination)}
+          />
+          {lieu === "campagne" ? (
+            <TextField
+              label="Nom de la campagne"
+              name="nomCampagne"
+              required
+              placeholder="Ex. Riposte rougeole Cotonou"
+              value={nomCampagne}
+              onChange={(event: ChangeEvent<HTMLInputElement>) => setNomCampagne(event.target.value)}
+            />
+          ) : null}
+        </div>
+
         {doublonDetecte ? (
           <div className="flex flex-col gap-3">
             <Alert level="warning" title="Dose deja enregistree">
@@ -315,6 +340,7 @@ export function FormulaireVaccination({
             pending ||
             !patientId ||
             !vaccinFinal ||
+            (lieu === "campagne" && nomCampagne.trim().length < 3) ||
             (doublonDetecte && !confirmerDoublon) ||
             (avertissementAgeDetecte && !confirmerAge)
           }

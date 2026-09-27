@@ -675,6 +675,8 @@ model PersonneCommunautaire {
   chefMenage      String?
   dateCreation    DateTime  @default(now())
   visites         SuiviCommunautaire[]
+  // F-COM-04 : vaccinations administrees en campagne, voir Vaccination ci-dessous.
+  vaccinations    Vaccination[]
   @@schema("public")
 }
 
@@ -1020,10 +1022,20 @@ model EnvoiSms {
 // (calendrier PEV, section 18.4). Immuable une fois enregistree (RG-CLI-100) :
 // une erreur de saisie se corrige par un retrait motive, jamais une
 // modification ni une suppression.
+//
+// F-COM-04 : vaccination administree en campagne / strategie avancee par un
+// agent communautaire. Meme principe que SuiviCommunautaire.personneId (voir
+// plus haut) : jamais patientId (agent_communautaire n'a aucune permission
+// read:patient), une fiche PersonneCommunautaire a la place, verifiee
+// appartenir au meme etablissement que l'agent. Contrainte SQL en base
+// (voir la migration) : exactement une des deux cibles renseignee, jamais
+// les deux, jamais aucune.
 model Vaccination {
-  id                 String   @id @default(cuid())
-  patientId          String
-  patient            Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  id                     String   @id @default(cuid())
+  patientId              String?
+  patient                Patient? @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  personneCommunautaireId String?
+  personneCommunautaire  PersonneCommunautaire? @relation(fields: [personneCommunautaireId], references: [id], onDelete: Cascade)
   professionnelId    String
   professionnel      ProfessionnelSante @relation(fields: [professionnelId], references: [id])
   etablissementId    String
@@ -1034,9 +1046,14 @@ model Vaccination {
   numeroLot          String
   siteInjection      String
   voie               String
+  // etablissement | campagne (F-COM-04 : lieu impose par le pack, section 13).
+  lieu               String   @default("etablissement")
+  // Renseigne uniquement quand lieu = "campagne" (validation applicative, pas de contrainte SQL).
+  nomCampagne        String?
   saisieParErreur    Boolean  @default(false)
   motifRetrait       String?
   dateCreation       DateTime @default(now())
+  @@index([personneCommunautaireId])
   @@schema("public")
 }
 

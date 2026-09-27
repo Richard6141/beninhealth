@@ -84,6 +84,7 @@ export function ListeVaccinations({ vaccinations }: ListeVaccinationsProps) {
               </p>
               <p className="text-[13px] text-encre-attenuee">
                 {vaccination.professionnelNomComplet} · {vaccination.etablissementNom}
+                {vaccination.lieu === "campagne" ? ` · Campagne${vaccination.nomCampagne ? ` : ${vaccination.nomCampagne}` : ""}` : ""}
               </p>
 
               {vaccination.saisieParErreur && vaccination.motifRetrait ? (

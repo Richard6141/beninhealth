@@ -139,6 +139,11 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     // src/modules/communautaire/actions.ts).
     'read:personne_communautaire',
     'create:personne_communautaire',
+    // F-COM-04 : vaccination en campagne / strategie avancee, sur une fiche
+    // PersonneCommunautaire uniquement (voir vaccination/actions.ts,
+    // enregistrerVaccinationCommunautaireAction). Jamais read:patient.
+    'read:vaccination',
+    'create:vaccination',
   ]),
 
   pharmacien: new Set<Permission>([

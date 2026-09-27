@@ -13,6 +13,7 @@ import { Card } from "@/components/ui/Card";
 import { SelectField } from "@/components/ui/SelectField";
 import { TextField } from "@/components/ui/TextField";
 import { ModalNouvellePersonne } from "./ModalNouvellePersonne";
+import { FormulaireVaccinationCommunautaire } from "./FormulaireVaccinationCommunautaire";
 
 const etatInitial: SuiviCommunautaireActionState = { error: null, success: false };
 
@@ -73,6 +74,8 @@ function ContenuFormulaire({
   const router = useRouter();
   const [personnes, setPersonnes] = useState(personnesInitiales);
   const [personneId, setPersonneId] = useState(VALEUR_NOUVEAU_BENEFICIAIRE);
+  const [typeVisite, setTypeVisite] = useState("");
+  const [cleVaccination, setCleVaccination] = useState(0);
 
   useEffect(() => {
     if (state.success) {
@@ -104,55 +107,84 @@ function ContenuFormulaire({
   ];
 
   return (
-    <form action={formAction} aria-busy={pending} className="flex flex-col gap-4">
-      {state.error ? (
-        <Alert level="critical" title="Enregistrement impossible">
-          {state.error}
-        </Alert>
-      ) : null}
+    <div className="flex flex-col gap-4">
+      <form action={formAction} aria-busy={pending} className="flex flex-col gap-4">
+        {state.error ? (
+          <Alert level="critical" title="Enregistrement impossible">
+            {state.error}
+          </Alert>
+        ) : null}
 
-      <input type="hidden" name="personneId" value={personneId} />
+        <input type="hidden" name="personneId" value={personneId} />
 
-      <div className="flex flex-col gap-1.5">
+        <div className="flex flex-col gap-1.5">
+          <SelectField
+            label="Bénéficiaire"
+            name="personneSelection"
+            required
+            options={optionsPersonnes}
+            value={personneId}
+            onChange={(e) => setPersonneId(e.target.value)}
+          />
+        </div>
+
+        {personneId === VALEUR_NOUVEAU_BENEFICIAIRE ? (
+          <TextField
+            label="Nom du bénéficiaire"
+            name="beneficiaireNom"
+            required
+            placeholder="Nom et prénom"
+          />
+        ) : null}
+
         <SelectField
-          label="Bénéficiaire"
-          name="personneSelection"
+          label="Type de visite"
+          name="typeVisite"
           required
-          options={optionsPersonnes}
-          value={personneId}
-          onChange={(e) => setPersonneId(e.target.value)}
+          options={optionsTypeVisite}
+          placeholder="Choisir un type de visite"
+          value={typeVisite}
+          onChange={(e) => setTypeVisite(e.target.value)}
         />
-        <ModalNouvellePersonne
-          onPersonneCreee={(personne) => {
-            setPersonnes((liste) => [personne, ...liste]);
-            setPersonneId(personne.id);
-          }}
-        />
-      </div>
+        <TextField label="Localisation" name="localisation" placeholder="Quartier, village..." />
+        <ChampNotes />
 
-      {personneId === VALEUR_NOUVEAU_BENEFICIAIRE ? (
-        <TextField
-          label="Nom du bénéficiaire"
-          name="beneficiaireNom"
-          required
-          placeholder="Nom et prénom"
-        />
-      ) : null}
+        <Button type="submit" variant="primary" className="w-fit" disabled={pending}>
+          {pending ? "Enregistrement en cours..." : "Enregistrer la visite"}
+        </Button>
+      </form>
 
-      <SelectField
-        label="Type de visite"
-        name="typeVisite"
-        required
-        options={optionsTypeVisite}
-        placeholder="Choisir un type de visite"
+      {/*
+        En dehors du <form> ci-dessus : un <form> (celui de la modale) ne
+        peut jamais etre imbrique dans un autre <form> (HTML invalide, cause
+        une erreur d'hydratation et desactive silencieusement la soumission
+        du formulaire imbrique). Aucun changement visuel : <dialog> s'affiche
+        de toute facon par-dessus tout le reste une fois ouvert.
+      */}
+      <ModalNouvellePersonne
+        onPersonneCreee={(personne) => {
+          setPersonnes((liste) => [personne, ...liste]);
+          setPersonneId(personne.id);
+        }}
       />
-      <TextField label="Localisation" name="localisation" placeholder="Quartier, village..." />
-      <ChampNotes />
 
-      <Button type="submit" variant="primary" className="w-fit" disabled={pending}>
-        {pending ? "Enregistrement en cours..." : "Enregistrer la visite"}
-      </Button>
-    </form>
+      {typeVisite === "vaccination" ? (
+        personneId !== VALEUR_NOUVEAU_BENEFICIAIRE ? (
+          <FormulaireVaccinationCommunautaire
+            key={cleVaccination}
+            personneId={personneId}
+            onEnregistree={() => setCleVaccination((valeur) => valeur + 1)}
+          />
+        ) : (
+          <Alert level="info" title="Vaccin, dose et lot non enregistrés">
+            Ces informations détaillées ne peuvent être ajoutées au carnet de
+            vaccination que pour une personne enregistrée. Enregistrez
+            d&apos;abord cette personne (bouton ci-dessus) pour saisir le
+            vaccin, la dose et le lot.
+          </Alert>
+        )
+      ) : null}
+    </div>
   );
 }
 
