@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowLeft, ArrowRightLeft, FlaskConical, Phone, Pill, ShieldAlert, Stethoscope, Syringe, UserRound } from "lucide-react";
 import { getResumePatient } from "@/modules/clinical/actions";
 import { getVaccinationsDuPatient } from "@/modules/vaccination/actions";
+import { estFonctionnaliteActive } from "@/modules/administration/parametres";
 import { ListeDocuments } from "../../documents/ListeDocuments";
 import { Alert } from "@/components/ui/Alert";
 import { Avatar } from "@/components/ui/Avatar";
@@ -9,6 +10,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { cn } from "@/lib/cn";
 import { ListeVaccinations } from "../../vaccinations/ListeVaccinations";
+import { PanneauResumeIa } from "./PanneauResumeIa";
 
 interface PatientDetailPageProps {
   params: Promise<{ id: string }>;
@@ -55,7 +57,11 @@ function LienAction({
  */
 export default async function PatientDetailPage({ params }: PatientDetailPageProps) {
   const { id } = await params;
-  const [resume, vaccinations] = await Promise.all([getResumePatient(id), getVaccinationsDuPatient(id)]);
+  const [resume, vaccinations, resumeIaActif] = await Promise.all([
+    getResumePatient(id),
+    getVaccinationsDuPatient(id),
+    estFonctionnaliteActive("ai.summary"),
+  ]);
 
   if (!resume) {
     return (
@@ -132,6 +138,8 @@ export default async function PatientDetailPage({ params }: PatientDetailPagePro
           <Badge tone="accent">Groupe {resume.groupeSanguin}</Badge>
         </div>
       </header>
+
+      {resumeIaActif ? <PanneauResumeIa patientId={resume.id} /> : null}
 
       {resume.allergies.length > 0 ? (
         <Alert level="critical" title="Allergies connues">

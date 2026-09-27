@@ -57,6 +57,9 @@ const MOTIF_LIGNE_ELEMENT = /^\[(S\d+)\]\s+([^:]+?)\s*:\s*(.+)$/;
 /** Ordre de priorite des puces du resume par regles (le plus important d'abord). */
 const PRIORITE: TypeElement[] = ["allergie", "traitement", "maladie_chronique", "resultat_anormal", "antecedent", "consultation", "vaccination", "information_manquante"];
 
+/** Elements dont le texte ne dit pas de quoi il s'agit (un nom d'allergie, un libelle de maladie) : la puce reprend leur type. Les autres se decrivent eux-memes. */
+const TYPES_AVEC_LIBELLE = new Set<TypeElement>(["allergie", "antecedent", "maladie_chronique", "resultat_anormal", "vaccination"]);
+
 const TYPE_PAR_LIBELLE = new Map<string, TypeElement>(
   (Object.entries(LIBELLES_TYPE_ELEMENT) as [TypeElement, string][]).map(([type, libelle]) => [libelle, type])
 );
@@ -80,7 +83,9 @@ export const FournisseurReglesLocales: FournisseurIa = {
       }));
 
     const classes = PRIORITE.flatMap((type) => elements.filter((element) => element.type === type));
-    const lignes = classes.slice(0, NOMBRE_MAX_PUCES).map((element) => `- ${element.texte} [${element.etiquette}]`);
+    const lignes = classes
+      .slice(0, NOMBRE_MAX_PUCES)
+      .map((element) => `- ${TYPES_AVEC_LIBELLE.has(element.type) ? `${LIBELLES_TYPE_ELEMENT[element.type]} : ` : ""}${element.texte} [${element.etiquette}]`);
 
     return { texte: lignes.join("\n"), modele: "regles-locales-v1" };
   },

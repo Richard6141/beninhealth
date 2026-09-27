@@ -52,7 +52,7 @@ export const LIBELLES_TYPE_ELEMENT: Record<TypeElement, string> = {
   allergie: "Allergie",
   antecedent: "Antécédent",
   maladie_chronique: "Maladie chronique",
-  traitement: "Traitement en cours",
+  traitement: "Traitement prescrit",
   consultation: "Consultation",
   resultat_anormal: "Résultat anormal",
   vaccination: "Vaccination",

@@ -102,6 +102,11 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     'read:reference_patient',
     'create:reference_patient',
     'update:reference_patient',
+    // F-IA-01 : resume IA du dossier (assistance, jamais enregistre dans le
+    // dossier), voir src/modules/ai/actions.ts. Ressource dediee : elle ne
+    // donne aucun droit de lecture supplementaire sur le dossier.
+    'create:resume_ia',
+    'update:resume_ia',
   ]),
 
   infirmier: new Set<Permission>([
@@ -259,6 +264,11 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     'read:compte_plateforme',
     'create:compte_plateforme',
     'update:compte_plateforme',
+    // F-IA-05 : gouvernance de l'IA (fiches, suivi agrege, jeu d'evaluation,
+    // desactivation), voir src/modules/ai/gouvernance.ts. Aucune donnee de
+    // patient : seuls des compteurs et des taux sont lus.
+    'read:gouvernance_ia',
+    'update:gouvernance_ia',
   ]),
 };
 

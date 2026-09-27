@@ -23,6 +23,7 @@ import {
   Settings,
   ShieldAlert,
   ShieldCheck,
+  Sparkles,
   UserCog,
   Users,
   UserX,
@@ -316,6 +317,11 @@ const navigationAdminNational: ElementNavigation[] = [
     label: "Paramètres",
     href: "/app/ministere/parametres",
     icon: <Settings size={tailleIconeNav} aria-hidden="true" />,
+  },
+  {
+    label: "Gouvernance de l'IA",
+    href: "/app/ministere/ia",
+    icon: <Sparkles size={tailleIconeNav} aria-hidden="true" />,
   },
 ];
 

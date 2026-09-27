@@ -239,8 +239,17 @@ describe("fournisseurs", () => {
     const lignes = reponse.texte.split("\n");
 
     expect(lignes).toHaveLength(8);
-    expect(lignes[0]).toBe("- element 6 [S6]");
+    expect(lignes[0]).toBe("- Allergie : element 6 [S6]");
+    expect(lignes[1]).toBe("- Vaccination : element 1 [S1]");
     expect(reponse.modele).toBe("regles-locales-v1");
+  });
+
+  it("les regles locales ne prefixent pas les elements qui se decrivent eux-memes (traitement, consultation, information manquante)", async () => {
+    const entree = ["Éléments :", "[S1] Traitement prescrit : Prescrit en mars 2026 : Amlodipine 5 mg", "[S2] Information manquante : Aucune mesure de tension artérielle enregistrée"].join("\n");
+
+    const reponse = await FournisseurReglesLocales.generate({ system: "", input: entree, maxTokens: 100 });
+
+    expect(reponse.texte.split("\n")).toEqual(["- Prescrit en mars 2026 : Amlodipine 5 mg [S1]", "- Aucune mesure de tension artérielle enregistrée [S2]"]);
   });
 });
 

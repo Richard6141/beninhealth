@@ -1634,3 +1634,31 @@ model DiagnosticCim10 {
   @@index([groupeMaladie])
   @@schema("public")
 }
+
+// F-IA-01 et F-IA-05 du pack (chapitre 16), RG-IA-08 : une ligne par appel a
+// l'IA, SANS le texte envoye ni la reponse. Le patient est un identifiant simple
+// (pas de relation) pour que le journal survive a une suppression de dossier.
+// Le commentaire de retour est efface a 30 jours (voir src/modules/ai/journal.ts).
+model AppelIa {
+  id                String   @id @default(cuid())
+  utilisateurId     String
+  patientId         String?
+  // resume_dossier (F-IA-01) ; les autres fonctionnalites d'IA s'y ajouteront.
+  fonctionnalite    String
+  modele            String
+  versionConsigne   String
+  nombreSources     Int      @default(0)
+  pucesLues         Int      @default(0)
+  pucesSupprimees   Int      @default(0)
+  dureeMs           Int      @default(0)
+  // ok | indisponible | bloque | erreur
+  statut            String
+  // utile | inexact, null tant que le medecin n'a pas donne son retour.
+  retour            String?
+  commentaireRetour String?
+  date              DateTime @default(now())
+
+  @@index([fonctionnalite, date])
+  @@index([utilisateurId, fonctionnalite, date])
+  @@schema("public")
+}

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { purgerExecutionsAnciennes, suivreExecution } from "@/modules/administration/executions-taches";
+import { purgerCommentairesRetourExpires } from "@/modules/ai/journal";
 
 /**
  * Purge des notifications au-dela de la conservation prevue par le pack
@@ -41,6 +42,8 @@ async function executerPurgeAvecJournal(): Promise<void> {
       }
       // Le suivi des taches (F-ADM-01) se purge lui-meme, a 30 jours.
       await purgerExecutionsAnciennes();
+      // RG-IA-08 : les commentaires libres de retour sur l'IA sont effaces a 30 jours.
+      await purgerCommentairesRetourExpires();
       return nombreSupprime;
     });
   } catch (erreur) {
