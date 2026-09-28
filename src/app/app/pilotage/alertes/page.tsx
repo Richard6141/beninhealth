@@ -6,9 +6,10 @@ import { ListeAlertesEpidemiologiques } from "./ListeAlertesEpidemiologiques";
 
 /**
  * Ecran "Alertes épidémiologiques" (F-PIL-06 du pack), réservé à
- * admin_national. Détection relancée à chaque chargement (voir
- * src/modules/pilotage/alertes.ts pour le detail du seuil et sa limite
- * assumée).
+ * admin_national. Lecture seule : la détection tourne en tâche planifiée
+ * horaire, jamais au chargement de cette page (voir
+ * src/modules/pilotage/detection-alertes.ts pour le détail du seuil et ses
+ * limites assumées).
  */
 export default async function AlertesEpidemiologiquesPage() {
   const alertes = await getAlertesEpidemiologiques();
@@ -29,7 +30,8 @@ export default async function AlertesEpidemiologiquesPage() {
         <p className="max-w-2xl text-[15px] text-encre-secondaire">
           Signal automatique quand le nombre de cas d&apos;un groupe de maladies, sur une semaine et une
           zone sanitaire, dépasse un seuil par défaut. Un signal à vérifier par un humain, jamais une
-          communication automatique.
+          communication automatique. La détection s&apos;exécute automatiquement toutes les heures ; le
+          nombre de cas affiché est celui constaté au moment du signal.
         </p>
       </header>
 

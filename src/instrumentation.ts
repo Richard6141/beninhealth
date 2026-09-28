@@ -12,7 +12,8 @@
  * voir src/modules/laboratoire/relances.ts) et
  * detection d'anomalies d'acces (F-AUD-03, voir src/modules/audit/detection-anomalies.ts) et
  * escalade des demandes de rectification sans reponse sous 30 jours (F-CIT-13, voir
- * src/modules/patient/rectification-escalade.ts).
+ * src/modules/patient/rectification-escalade.ts) et detection horaire des alertes
+ * epidemiologiques (F-PIL-06, voir src/modules/pilotage/detection-alertes.ts).
  */
 export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME !== "nodejs") {
@@ -45,4 +46,7 @@ export async function register(): Promise<void> {
 
   const { demarrerEscaladeRectification } = await import("@/modules/patient/rectification-escalade");
   demarrerEscaladeRectification();
+
+  const { demarrerDetectionAlertesEpidemiologiques } = await import("@/modules/pilotage/detection-alertes");
+  demarrerDetectionAlertesEpidemiologiques();
 }

@@ -22,6 +22,7 @@ export const LIBELLES_TACHES: Record<string, string> = {
   remise_sms_differes: "Remise des SMS différés",
   reprises_sms: "Reprises des SMS en échec",
   detection_anomalies_acces: "Détection d'anomalies d'accès",
+  detection_alertes_epidemiologiques: "Détection des alertes épidémiologiques",
   relances_laboratoire: "Relances du laboratoire",
   rappels_rendez_vous: "Rappels de rendez-vous",
   marquage_absences: "Marquage des absences",

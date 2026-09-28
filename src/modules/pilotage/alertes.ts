@@ -2,34 +2,15 @@
 
 /**
  * Server Actions du module pilotage : alertes epidemiologiques simples
- * (F-PIL-06 du pack). Nouveau fichier autonome, aucun fichier existant de ce
- * module modifie (proprietaire d'une autre session ce soir, voir
- * docs/coordination-agents.md).
+ * (F-PIL-06 du pack), lecture et revue humaine uniquement.
  *
- * Version reduite et volontaire : detection a la demande (au chargement de
- * l'ecran admin), pas une tache planifiee horaire, meme choix que F-AUD-03
- * ce soir pour la meme raison (ne pas dependre du planificateur de F-PIL-07,
- * src/modules/pilotage/planificateur.ts). Lit uniquement AgregatQuotidien
- * (IND-03, deja calcule), aucune lecture directe de Consultation : respecte
- * RG-PIL-01 (jamais de donnee nominative dans les agregats de pilotage).
- *
- * Regle de detection du pack (fiche F-PIL-06) : pour chaque zone sanitaire
- * et chaque groupe de maladies surveille (paludisme, diarrhees, rougeole,
- * meningite, fievres hemorragiques suspectes), une alerte est levee si le
- * nombre de cas de la semaine ecoulee depasse la moyenne des 8 semaines
- * precedentes + 2 ecarts-types, avec un minimum de 10 cas ; pour les
- * maladies a declaration immediate (liste parametrable), 1 cas suffit.
- *
- * Limite assumee : la liste "declaration immediate" n'est pas fournie par
- * le pack au-dela de "liste parametrable" ; DECLARATION_IMMEDIATE ci-dessous
- * reprend les 3 groupes surveilles a caractere epidemique aigu (rougeole,
- * meningite, fievre hemorragique), en excluant paludisme et diarrhee
- * (endemiques, deja couverts par la regle statistique). A ajuster si le
- * ministere fournit une vraie liste. Avec un historique de demonstration de
- * moins de 8 semaines, la moyenne et l'ecart-type se calculent sur les
- * semaines reellement disponibles (jamais simules) : le seuil se ramene
- * alors naturellement au minimum de 10 cas, un comportement honnete plutot
- * qu'un calcul statistique trompeusement precis sur des donnees insuffisantes.
+ * La DETECTION ne vit plus ici depuis le 2026-09-28 : elle s'executait au
+ * chargement de l'ecran (ecriture pendant une lecture, jamais executee si
+ * personne n'ouvrait l'ecran). Elle tourne desormais en tache planifiee
+ * horaire, voir src/modules/pilotage/detection-alertes.ts (regle du pack,
+ * resolution de la zone, liste "declaration immediate" et limites
+ * assumees). Ce fichier ne fait plus que lire HealthAlertReview et
+ * enregistrer la decision humaine (RG-PIL-50).
  */
 
 import { prisma } from "@/lib/prisma";
@@ -37,139 +18,6 @@ import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
 import { GROUPES_MALADIES } from "./referentiel-groupes-maladies";
 import { z } from "zod";
-
-const GROUPES_SURVEILLES = ["paludisme", "diarrhee", "rougeole", "meningite", "fievre_hemorragique"];
-const DECLARATION_IMMEDIATE = new Set(["rougeole", "meningite", "fievre_hemorragique"]);
-const NB_SEMAINES_HISTORIQUE = 8;
-const MINIMUM_CAS = 10;
-const MINIMUM_CAS_DECLARATION_IMMEDIATE = 1;
-
-function ecartType(valeurs: number[], moyenne: number): number {
-  if (valeurs.length === 0) return 0;
-  const varianceTotale = valeurs.reduce((acc, v) => acc + (v - moyenne) ** 2, 0);
-  return Math.sqrt(varianceTotale / valeurs.length);
-}
-
-function semaineISO(date: Date): string {
-  const copie = new Date(date.getTime());
-  copie.setHours(0, 0, 0, 0);
-  // Jeudi de la semaine ISO courante (algorithme standard semaine ISO 8601).
-  copie.setDate(copie.getDate() + 3 - ((copie.getDay() + 6) % 7));
-  const anneeISO = copie.getFullYear();
-  const premierJeudi = new Date(anneeISO, 0, 4);
-  const numeroSemaine =
-    1 + Math.round(((copie.getTime() - premierJeudi.getTime()) / 86400000 - 3 + ((premierJeudi.getDay() + 6) % 7)) / 7);
-  return `${anneeISO}-W${String(numeroSemaine).padStart(2, "0")}`;
-}
-
-function bornesSemaineCourante(): { debut: Date; fin: Date } {
-  const maintenant = new Date();
-  const jourSemaine = (maintenant.getDay() + 6) % 7; // 0 = lundi
-  const debut = new Date(maintenant);
-  debut.setHours(0, 0, 0, 0);
-  debut.setDate(debut.getDate() - jourSemaine);
-  const fin = new Date(debut);
-  fin.setDate(fin.getDate() + 7);
-  return { debut, fin };
-}
-
-/**
- * Detecte les groupes de maladies surveilles dont le nombre de cas de la
- * semaine en cours, par zone sanitaire, depasse le seuil (moyenne des 8
- * semaines precedentes + 2 ecarts-types, minimum 10 cas, ou 1 cas pour les
- * maladies a declaration immediate), et cree une HealthAlertReview pour
- * chaque combinaison (zoneSanitaireId, groupeMaladies, semaine) pas encore
- * signalee (contrainte unique du schema : jamais de doublon pour la meme
- * semaine).
- */
-async function executerDetection(): Promise<void> {
-  const { debut: debutSemaineCourante, fin: finSemaineCourante } = bornesSemaineCourante();
-  const semaineCourante = semaineISO(new Date());
-  const debutHistorique = new Date(debutSemaineCourante);
-  debutHistorique.setDate(debutHistorique.getDate() - NB_SEMAINES_HISTORIQUE * 7);
-
-  try {
-    // Les lignes IND-03 sont ecrites par etablissement (agregation.ts) et ne
-    // portent jamais de zoneSanitaireId : la zone est resolue ici via
-    // l'etablissement. Un etablissement sans zone renseignee ne peut pas
-    // alimenter une alerte par zone et est ignore.
-    const lignes = await prisma.agregatQuotidien.findMany({
-      where: {
-        indicateur: "IND-03",
-        date: { gte: debutHistorique, lt: finSemaineCourante },
-        etablissementId: { not: null },
-        dimensionLibre: { in: GROUPES_SURVEILLES },
-      },
-      select: { date: true, etablissementId: true, dimensionLibre: true, valeur: true },
-    });
-
-    const etablissementIds = [
-      ...new Set(lignes.map((ligne) => ligne.etablissementId).filter((id): id is string => id !== null)),
-    ];
-    const etablissements = await prisma.etablissementSanitaire.findMany({
-      where: { id: { in: etablissementIds }, zoneSanitaireId: { not: null } },
-      select: { id: true, zoneSanitaireId: true },
-    });
-    const zoneParEtablissement = new Map<string, string>();
-    for (const etablissement of etablissements) {
-      if (etablissement.zoneSanitaireId) {
-        zoneParEtablissement.set(etablissement.id, etablissement.zoneSanitaireId);
-      }
-    }
-
-    // casParZoneEtGroupeEtSemaine["zone|groupe"]["AAAA-Wss"] = total de cas
-    // de cette semaine-la, pour cette zone et ce groupe.
-    const casParZoneEtGroupeEtSemaine = new Map<string, Map<string, number>>();
-    for (const ligne of lignes) {
-      const zoneSanitaireId = ligne.etablissementId ? zoneParEtablissement.get(ligne.etablissementId) : undefined;
-      if (!zoneSanitaireId) continue;
-      const cleZoneGroupe = `${zoneSanitaireId}|${ligne.dimensionLibre}`;
-      const semaineLigne = semaineISO(ligne.date);
-      const parSemaine = casParZoneEtGroupeEtSemaine.get(cleZoneGroupe) ?? new Map<string, number>();
-      parSemaine.set(semaineLigne, (parSemaine.get(semaineLigne) ?? 0) + ligne.valeur);
-      casParZoneEtGroupeEtSemaine.set(cleZoneGroupe, parSemaine);
-    }
-
-    for (const [cleZoneGroupe, parSemaine] of casParZoneEtGroupeEtSemaine) {
-      const casSemaineCourante = parSemaine.get(semaineCourante) ?? 0;
-      if (casSemaineCourante === 0) continue;
-
-      const [zoneSanitaireId, groupeMaladies] = cleZoneGroupe.split("|");
-
-      const casHistorique = [...parSemaine.entries()]
-        .filter(([semaine]) => semaine !== semaineCourante)
-        .map(([, cas]) => cas);
-      const moyenneHistorique = casHistorique.length > 0 ? casHistorique.reduce((a, b) => a + b, 0) / casHistorique.length : 0;
-      const seuilStatistique = moyenneHistorique + 2 * ecartType(casHistorique, moyenneHistorique);
-
-      const seuil = DECLARATION_IMMEDIATE.has(groupeMaladies)
-        ? MINIMUM_CAS_DECLARATION_IMMEDIATE
-        : Math.max(MINIMUM_CAS, seuilStatistique);
-
-      if (casSemaineCourante < seuil) continue;
-
-      const existante = await prisma.healthAlertReview.findUnique({
-        where: {
-          zoneSanitaireId_groupeMaladies_semaine: { zoneSanitaireId, groupeMaladies, semaine: semaineCourante },
-        },
-      });
-
-      if (existante) continue;
-
-      await prisma.healthAlertReview.create({
-        data: {
-          zoneSanitaireId,
-          groupeMaladies,
-          semaine: semaineCourante,
-          casObserves: casSemaineCourante,
-          seuilCalcule: seuil,
-        },
-      });
-    }
-  } catch (erreur) {
-    console.error("Erreur lors de la detection d'alertes epidemiologiques :", erreur);
-  }
-}
 
 const LIBELLES_GROUPE = new Map(GROUPES_MALADIES.map((g) => [g.code, g.libelle]));
 
@@ -194,9 +42,10 @@ function nomComplet(utilisateur: { nom: string; prenom: string }): string {
 }
 
 /**
- * Lance la detection puis renvoie toutes les alertes (nouvelles, vues et
- * fermees), les plus recentes en premier. Reserve a admin_national (meme
- * role que les autres ecrans du chapitre 14, RG-PIL-20).
+ * Renvoie toutes les alertes (nouvelles, vues et fermees), les plus recentes
+ * en premier, sans jamais rien ecrire (detection planifiee, voir
+ * detection-alertes.ts). Reserve a admin_national (meme role que les autres
+ * ecrans du chapitre 14, RG-PIL-20).
  */
 export async function getAlertesEpidemiologiques(): Promise<AlerteEpidemiologique[] | null> {
   const session = await getSession();
@@ -210,8 +59,6 @@ export async function getAlertesEpidemiologiques(): Promise<AlerteEpidemiologiqu
   if (!role) {
     return null;
   }
-
-  await executerDetection();
 
   const alertes = await prisma.healthAlertReview.findMany({
     include: { reviewer: true },
