@@ -113,6 +113,8 @@ vi.mock("bcryptjs", () => {
 vi.mock("@/modules/audit/journaliser", () => ({ journaliser: vi.fn() }));
 vi.mock("@/modules/notification/creer", () => ({ creerNotification: vi.fn() }));
 vi.mock("@/modules/administration/parametres", () => ({ estFonctionnaliteActive: vi.fn(async () => true) }));
+// F-PIL-07 : type "delivrance" declare mais jamais publie jusqu'ici, hors du perimetre de ce fichier.
+vi.mock("@/modules/pilotage/file-taches", () => ({ publierEvenementPilotage: vi.fn(async () => undefined) }));
 
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";

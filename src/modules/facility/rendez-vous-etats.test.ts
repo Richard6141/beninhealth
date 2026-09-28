@@ -1,6 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 import { Prisma } from "@prisma/client";
+// Frontiere du module (F-PIL-07) : la publication elle-meme n'est pas
+// l'objet de ce fichier, qui teste la machine a etats de RendezVous.
+vi.mock("@/modules/pilotage/file-taches", () => ({ publierEvenementPilotage: vi.fn(async () => undefined) }));
+import { publierEvenementPilotage } from "@/modules/pilotage/file-taches";
 import {
   STATUTS_QUI_LIBERENT_LE_CRENEAU,
   STATUTS_RENDEZ_VOUS,
@@ -20,10 +24,23 @@ import type { EvenementRendezVous } from "./rendez-vous-etats";
  * statut de depart dans la meme requete.
  */
 
+const RENDEZ_VOUS_FIXTURE = { date: new Date("2026-10-05T08:00:00.000Z"), etablissementId: "etab-1" };
+
 function clientSimule(count: number) {
   const updateMany: Mock = vi.fn().mockResolvedValue({ count });
-  return { client: { rendezVous: { updateMany } } as unknown as Parameters<typeof transitionnerRendezVous>[0], updateMany };
+  const findUnique: Mock = vi.fn().mockResolvedValue(RENDEZ_VOUS_FIXTURE);
+  return {
+    client: { rendezVous: { updateMany, findUnique } } as unknown as Parameters<typeof transitionnerRendezVous>[0],
+    updateMany,
+    findUnique,
+  };
 }
+
+const publierEvenementPilotageMock = publierEvenementPilotage as unknown as Mock;
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 describe("table de transitions", () => {
   // Matrice attendue, ecrite en dur (et non deduite de TRANSITIONS) pour que toute modification soit revue.
@@ -89,8 +106,22 @@ describe("transitionnerRendezVous", () => {
   });
 
   it("renvoie false quand aucune ligne n'a ete modifiee (statut deja change ou rendez-vous absent)", async () => {
-    const { client } = clientSimule(0);
+    const { client, findUnique } = clientSimule(0);
     expect(await transitionnerRendezVous(client, "rdv-1", "confirmer")).toBe(false);
+    expect(findUnique).not.toHaveBeenCalled();
+    expect(publierEvenementPilotageMock).not.toHaveBeenCalled();
+  });
+
+  it("F-PIL-07 : publie rendez_vous_change apres une transition reussie, jamais apres un echec", async () => {
+    const { client } = clientSimule(1);
+
+    await transitionnerRendezVous(client, "rdv-1", "annuler");
+
+    expect(publierEvenementPilotageMock).toHaveBeenCalledWith(client, {
+      type: "rendez_vous_change",
+      date: RENDEZ_VOUS_FIXTURE.date,
+      etablissementId: RENDEZ_VOUS_FIXTURE.etablissementId,
+    });
   });
 
   it("ajoute les champs et conditions demandes sans jamais pouvoir remplacer l'id ni le statut de depart", async () => {

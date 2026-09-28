@@ -16,6 +16,7 @@
 
 import { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
+import { publierEvenementPilotage } from "@/modules/pilotage/file-taches";
 
 export const STATUTS_RENDEZ_VOUS = [
   "demande",
@@ -135,6 +136,12 @@ export async function transitionnerRendezVousEnMasse(
 /**
  * Applique un evenement a un rendez-vous. Renvoie false (rien n'est modifie)
  * si le statut courant ne permet pas cet evenement ou si le rendez-vous n'existe pas.
+ *
+ * F-PIL-07 : publie l'evenement de pilotage "rendez_vous_change" a chaque
+ * transition reussie (IND-07 en depend), ici et non dans
+ * transitionnerRendezVousEnMasse (taches planifiees en volume, RG-RDV-20/40 :
+ * publier un evenement par ligne y serait couteux, laisse pour une session
+ * avec le budget dedie, documente dans reste-a-faire.md).
  */
 export async function transitionnerRendezVous(
   client: ClientRendezVous,
@@ -146,6 +153,21 @@ export async function transitionnerRendezVous(
     ...options,
     conditions: { ...options.conditions, id: rendezVousId },
   });
+
+  if (nombre === 1) {
+    const rendezVous = await client.rendezVous.findUnique({
+      where: { id: rendezVousId },
+      select: { date: true, etablissementId: true },
+    });
+    if (rendezVous) {
+      await publierEvenementPilotage(client, {
+        type: "rendez_vous_change",
+        date: rendezVous.date,
+        etablissementId: rendezVous.etablissementId,
+      });
+    }
+  }
+
   return nombre === 1;
 }
 

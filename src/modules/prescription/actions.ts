@@ -29,6 +29,7 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/modules/audit/journaliser";
+import { publierEvenementPilotage } from "@/modules/pilotage/file-taches";
 import { getSession, destroySession } from "@/lib/session";
 import { can } from "@/security/permissions";
 import { estFonctionnaliteActive } from "@/modules/administration/parametres";
@@ -1138,6 +1139,17 @@ export async function creerPrescriptionAction(
         },
         tx
       );
+
+      // F-PIL-07 : publie l'evenement qui declenchera le recalcul de IND-08
+      // (ordonnances) du jour et de l'etablissement concernes, meme principe
+      // que consultation_validee dans clinical/actions.ts. Pas de signature
+      // separee dans ce depot (creation = validee) : c'est ici, et seulement
+      // ici, que l'ordonnance existe.
+      await publierEvenementPilotage(tx, {
+        type: "prescription_signee",
+        date: dateCreation,
+        etablissementId: consultation.etablissementId,
+      });
 
       return prescriptionCreee.id;
     });
@@ -2596,6 +2608,17 @@ export async function delivrerPrescriptionAction(
         },
         tx
       );
+
+      // F-PIL-07 : type declare mais jamais publie jusqu'ici. Aucun
+      // indicateur ne depend specifiquement de la delivrance a ce jour
+      // (IND-08 compte les ordonnances signees, pas leur delivrance) : ce
+      // type declenche neanmoins un recalcul du jour/etablissement, sans
+      // effet visible tant qu'aucun indicateur n'en depend.
+      await publierEvenementPilotage(tx, {
+        type: "delivrance",
+        date: delivranceCreee.date,
+        etablissementId: delivranceCreee.etablissementId,
+      });
 
       return {
         ok: true as const,

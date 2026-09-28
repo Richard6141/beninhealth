@@ -24,6 +24,8 @@ vi.mock("@/lib/mail", () => ({ envoyerEmail: vi.fn() }));
 vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
 vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers({ "x-forwarded-for": "10.0.0.1" })) }));
 vi.mock("@/modules/audit/journaliser", () => ({ journaliser: vi.fn() }));
+// F-PIL-07 : IND-13 (comptes citoyens crees), hors du perimetre de ce fichier.
+vi.mock("@/modules/pilotage/file-taches", () => ({ publierEvenementPilotage: vi.fn(async () => undefined) }));
 vi.mock("bcryptjs", () => {
   const hash = vi.fn(async (valeur: string) => `hash:${valeur}`);
   const compare = vi.fn(async (valeur: string, empreinte: string) => empreinte === `hash:${valeur}`);

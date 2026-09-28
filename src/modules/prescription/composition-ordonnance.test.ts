@@ -28,6 +28,8 @@ vi.mock("bcryptjs", () => {
 });
 vi.mock("@/modules/audit/journaliser", () => ({ journaliser: vi.fn() }));
 vi.mock("@/modules/notification/creer", () => ({ creerNotification: vi.fn() }));
+// F-PIL-07 : IND-08 (ordonnances), hors du perimetre de ce fichier.
+vi.mock("@/modules/pilotage/file-taches", () => ({ publierEvenementPilotage: vi.fn(async () => undefined) }));
 // Frontiere du module : la fenetre de grace de 5 minutes et le compteur
 // d'echecs (RG-PRE-30) sont testes dans leur propre fichier
 // (reauthentification.test.ts), pas ici. Toujours "non recente, jamais

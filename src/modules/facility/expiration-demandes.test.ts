@@ -5,15 +5,18 @@ import type { Mock } from "vitest";
 
 vi.mock("@/modules/notification/creer", () => ({ creerNotification: vi.fn(async () => undefined) }));
 vi.mock("@/modules/administration/executions-taches", () => ({ suivreExecution: vi.fn() }));
+// F-PIL-07 : transitionnerRendezVous publie desormais un evenement de
+// pilotage a chaque transition reussie, hors du perimetre de ce fichier.
+vi.mock("@/modules/pilotage/file-taches", () => ({ publierEvenementPilotage: vi.fn(async () => undefined) }));
 vi.mock("@/lib/prisma", () => ({
-  prisma: { rendezVous: { findMany: vi.fn(), updateMany: vi.fn() } },
+  prisma: { rendezVous: { findMany: vi.fn(), updateMany: vi.fn(), findUnique: vi.fn() } },
 }));
 
 import { prisma } from "@/lib/prisma";
 import { creerNotification } from "@/modules/notification/creer";
 import { expirerDemandesSansReponse } from "./expiration-demandes";
 
-const prismaMock = prisma as unknown as { rendezVous: { findMany: Mock; updateMany: Mock } };
+const prismaMock = prisma as unknown as { rendezVous: { findMany: Mock; updateMany: Mock; findUnique: Mock } };
 const notificationMock = creerNotification as unknown as Mock;
 
 const MAINTENANT = new Date("2026-09-26T10:00:00.000Z");

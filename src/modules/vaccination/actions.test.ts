@@ -15,6 +15,8 @@ vi.mock("@/lib/prisma", () => {
 vi.mock("@/lib/session", () => ({ getSession: vi.fn() }));
 vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers()) }));
 vi.mock("@/modules/audit/journaliser", () => ({ journaliser: vi.fn() }));
+// F-PIL-07 : IND-10 (vaccinations), hors du perimetre de ce fichier.
+vi.mock("@/modules/pilotage/file-taches", () => ({ publierEvenementPilotage: vi.fn(async () => undefined) }));
 
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";

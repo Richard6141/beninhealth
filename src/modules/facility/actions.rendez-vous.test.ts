@@ -15,6 +15,9 @@ vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Map()) }));
 vi.mock("@/lib/session", () => ({ getSession: vi.fn() }));
 vi.mock("@/modules/audit/journaliser", () => ({ journaliser: vi.fn() }));
 vi.mock("@/modules/notification/creer", () => ({ creerNotification: vi.fn(async () => undefined) }));
+// F-PIL-07 : transitionnerRendezVous publie desormais un evenement de
+// pilotage a chaque transition reussie, hors du perimetre de ce fichier.
+vi.mock("@/modules/pilotage/file-taches", () => ({ publierEvenementPilotage: vi.fn(async () => undefined) }));
 vi.mock("./creneau-disponible", () => ({
   dateDansUnCreneauDisponible: vi.fn(async () => true),
   capaciteDuCreneau: vi.fn(async () => 1),

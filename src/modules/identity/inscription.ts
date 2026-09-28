@@ -30,6 +30,7 @@ import { verifierEtIncrementerDebit } from "@/lib/limite-debit";
 import { normaliserTelephoneBenin } from "@/lib/telephone";
 import { createSession } from "@/lib/session";
 import { journaliser } from "@/modules/audit/journaliser";
+import { publierEvenementPilotage } from "@/modules/pilotage/file-taches";
 import { VERSION_CONDITIONS } from "./conditions";
 import { genererIdentifiantSante } from "./identifiant-sante";
 import { adresseDeLaRequete } from "./limitation-connexion";
@@ -403,6 +404,14 @@ export async function verifierCodeInscriptionAction(
             tx
           );
           await tx.inscriptionEnAttente.delete({ where: { id: inscription.id } });
+
+          // F-PIL-07 : IND-13 (comptes citoyens crees, indicateur systeme,
+          // sans dimension etablissement, voir EvenementPilotage.etablissementId).
+          await publierEvenementPilotage(tx, {
+            type: "compte_cree",
+            date: new Date(),
+            etablissementId: null,
+          });
 
           return utilisateur;
         });

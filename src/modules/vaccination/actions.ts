@@ -21,6 +21,7 @@ import { headers } from "next/headers";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/modules/audit/journaliser";
+import { publierEvenementPilotage } from "@/modules/pilotage/file-taches";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
 import { estFonctionnaliteActive } from "@/modules/administration/parametres";
@@ -402,6 +403,14 @@ export async function enregistrerVaccinationAction(
         },
         tx
       );
+
+      // F-PIL-07 : publie l'evenement qui declenchera le recalcul de IND-10
+      // (vaccinations) du jour et de l'etablissement concernes.
+      await publierEvenementPilotage(tx, {
+        type: "vaccination",
+        date: vaccinationCreee.dateAdministration,
+        etablissementId: vaccinationCreee.etablissementId,
+      });
     });
 
     return { error: null, success: true };
@@ -774,6 +783,15 @@ export async function enregistrerVaccinationCommunautaireAction(
         },
         tx
       );
+
+      // F-PIL-07 : IND-10 compte deja les vaccinations communautaires
+      // (F-COM-04), qui doivent donc publier le meme evenement que la
+      // vaccination en etablissement pour declencher leur recalcul.
+      await publierEvenementPilotage(tx, {
+        type: "vaccination",
+        date: vaccinationCreee.dateAdministration,
+        etablissementId: vaccinationCreee.etablissementId,
+      });
     });
 
     return { error: null, success: true };

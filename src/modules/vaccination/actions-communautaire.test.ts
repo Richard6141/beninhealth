@@ -14,6 +14,8 @@ vi.mock("@/lib/prisma", () => {
 vi.mock("@/lib/session", () => ({ getSession: vi.fn() }));
 vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers()) }));
 vi.mock("@/modules/audit/journaliser", () => ({ journaliser: vi.fn() }));
+// F-PIL-07 : IND-10 (vaccinations, y compris communautaires), hors du perimetre de ce fichier.
+vi.mock("@/modules/pilotage/file-taches", () => ({ publierEvenementPilotage: vi.fn(async () => undefined) }));
 vi.mock("@/modules/administration/parametres", () => ({ estFonctionnaliteActive: vi.fn(async () => true) }));
 vi.mock("@/modules/administration/modules-actifs", () => ({ MESSAGE_MODULE_INACTIF: "Ce module est desactive." }));
 
