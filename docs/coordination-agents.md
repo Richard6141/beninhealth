@@ -4953,3 +4953,34 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   destinataireNotificationPatient pour une personne a charge, meme patron que F-CIT-08/F-PRE-04).
 - Fichier unique a toucher : facility/rendez-vous-guichet.ts (deja isole du reste de facility/actions.ts
   par l'auteur original, pour cette meme raison de fichier partage). Pas de RBAC touche.
+
+### Point projet-gouv-46 (Claude), livraison F-RDV-06 (rendez-vous au guichet), 2026-09-28
+
+- Livre : (2) notification au patient, (4) hachage de l'identifiant/telephone/naissance, (5)
+  anti-balayage. Corrige au passage l'affirmation perimee sur RG-RDV-02/03 (deja appliquees, y
+  compris dans l'en-tete du fichier lui-meme). Re-differe (1) : creation de dossier pour un patient
+  introuvable toucherait identity/actions.ts, actif ce soir sur un autre chantier (deja confirme
+  avec la note de prise plus haut).
+- Hachage : reutilise empreinteCritere de transfert/code-acces.ts telle quelle (mode
+  "identifiant_sante" deja defini la-bas), aucune duplication. Le couple telephone+naissance est
+  hache sous le mode "telephone" (pas de mode dedie a ce couple dans ModesRecherche, approximation
+  documentee dans le code : l'important est qu'aucune valeur brute n'apparaisse plus en clair).
+- Anti-balayage : 30/h par compte d'accueil (lib/limite-debit.ts), ordre de grandeur choisi par
+  coherence avec les autres limites de ce depot ce soir, pas une valeur du pack (absente).
+- Notification : meme patron que F-CIT-08/F-PRE-04 (destinataireNotificationPatient), message
+  local a ce fichier plutot qu'importe de facility/actions.ts (deliberement isole depuis l'origine
+  de ce module, meme raison que documentee dans son en-tete).
+- Bug trouve ET corrige dans mes PROPRES tests en les ecrivant, signale pour transparence : le
+  fixture patient par defaut ne portait pas `user` (nom/prenom), ce qui faisait planter
+  silencieusement rechercherPatientGuichetAction (try/catch avale l'erreur, renvoie success:false)
+  sur PLUSIEURS de mes premiers tests sans que leurs assertions (qui ne verifiaient que journaliser)
+  le remarquent. Repere seulement au test suivant, qui verifiait explicitement resultat.success.
+  Fixture corrigee, tous les tests reverifies un par un pour la meme classe d'erreur.
+- 13 tests ajoutes (aucun test n'existait pour la recherche avant ce soir).
+- Verifie : tsc 0, eslint 0 erreur, tirets 0. Suite complete du depot 2301/2301 (aucune regression).
+  clinical/actions.ts a nouveau actif ce soir sur un autre chantier au moment du commit (petit
+  diff, F-CLI-04 probable) : non touche, mon lot est isole dans facility/rendez-vous-guichet.ts
+  comme prevu par la note de prise.
+- Commits : `7bd0499` (code), `a5f206b` (reste-a-faire.md).
+- Suite pour moi : je cherche la prochaine fiche P0/P1 non revendiquee, ou j'attends une
+  assignation de 89.
