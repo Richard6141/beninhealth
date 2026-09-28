@@ -6,10 +6,11 @@
  * - Document "normal" : l'auteur, le patient proprietaire, ou un professionnel
  *   titulaire d'un consentement actif "dossier_complet" ou "documents".
  * - Document "sensible" : l'auteur, le patient proprietaire, ou un
- *   professionnel titulaire d'un consentement actif "dossier_complet" SEUL.
- *   Un consentement limite aux documents ouvre les documents ordinaires,
- *   jamais ceux que l'auteur a marques sensibles (equivalent du niveau
- *   FULL_SENSITIVE du pack).
+ *   professionnel titulaire d'un consentement actif "dossier_complet" ET du
+ *   niveau d'acces "FULL_SENSITIVE" (F-CIT-10, RG-ACC-11/13). Un consentement
+ *   limite aux documents, ou un "dossier_complet" de niveau SUMMARY/FULL,
+ *   ouvre les documents ordinaires, jamais ceux que l'auteur a marques
+ *   sensibles.
  *
  * L'auteur et le patient proprietaire n'ont pas besoin de consentement et ne
  * passent donc pas par cette fonction.
@@ -20,6 +21,11 @@ export const TYPES_ACCES_DOCUMENT = ["dossier_complet", "documents"] as const;
 export interface ConsentementDocument {
   statut: string;
   typeAcces: string;
+  // Absent sur d'anciens appels de test non mis a jour : traite comme
+  // "FULL_SENSITIVE" par defaut, comportement d'origine de ce module avant
+  // l'ajout des niveaux (voir migration 20260928030000_niveau_acces_consentement,
+  // qui reclasse deja toutes les lignes "dossier_complet" existantes ainsi).
+  niveauAcces?: string | null;
   dateFin: Date | null;
 }
 
@@ -37,7 +43,8 @@ export function consentementPermetLeDocument(
   }
 
   if (niveauConfidentialite === "sensible") {
-    return consentement.typeAcces === "dossier_complet";
+    const niveauAcces = consentement.niveauAcces ?? "FULL_SENSITIVE";
+    return consentement.typeAcces === "dossier_complet" && niveauAcces === "FULL_SENSITIVE";
   }
 
   return (TYPES_ACCES_DOCUMENT as readonly string[]).includes(consentement.typeAcces);

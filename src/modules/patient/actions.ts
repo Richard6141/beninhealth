@@ -23,6 +23,11 @@ import { getSession } from "@/lib/session";
 import { creerNotification } from "@/modules/notification/creer";
 import type { ContactUrgence, GroupeSanguin, NomRole, TypeAccesConsentement } from "@/types";
 import { calculerDateFinConsentement, DUREES_CONSENTEMENT_CONNUES } from "./consentement-durees";
+import {
+  LIBELLES_NIVEAU_ACCES,
+  NIVEAU_VERIFICATION_MINIMAL_FULL_SENSITIVE,
+  NIVEAUX_ACCES_CONNUS,
+} from "./consentement-niveaux";
 import { clesAuditDuPatient } from "./cles-audit-patient";
 import {
   MAX_RESULTATS_RECHERCHE_PROFESSIONNEL,
@@ -68,6 +73,8 @@ export interface ConsentementAvecActeur {
   acteurNomComplet: string; // "Dr. Prenom Nom" ou "Prenom Nom"
   acteurSpecialite: string | null; // specialite si ProfessionnelSante, sinon null
   typeAcces: string;
+  /** Profondeur d'information accordee : "SUMMARY", "FULL" ou "FULL_SENSITIVE" (F-CIT-10, RG-ACC-11). */
+  niveauAcces: string;
   /** Statut brut stocke en base ("actif" ou "retire"), voir statutEffectif pour l'affichage. */
   statut: string;
   /**
@@ -130,6 +137,7 @@ const schemaMiseAJourDossier = z.object({
 const schemaOctroiConsentement = z.object({
   acteurAutoriseId: z.string().trim().min(1, "Le professionnel de sante est obligatoire."),
   typeAcces: z.enum(TYPES_ACCES_CONNUS, { message: "Type d'acces invalide." }),
+  niveauAcces: z.enum(NIVEAUX_ACCES_CONNUS, { message: "Niveau d'acces invalide." }),
   duree: z.enum(DUREES_CONSENTEMENT_CONNUES, { message: "Duree d'autorisation invalide." }),
 });
 
@@ -230,6 +238,28 @@ export async function getMonDossierPatient(): Promise<DossierPatientResume | nul
 }
 
 /**
+ * Niveau de verification d'identite (User.niveauVerification, N0 a N3, voir
+ * F-AUTH-03) du patient connecte. Utilise par l'ecran d'octroi (F-CIT-10)
+ * pour griser cote client l'option "Tout, y compris les informations
+ * sensibles" (RG-ACC-13, CA-2) : le controle definitif reste server-side
+ * dans grantConsentAction, cet appel n'est qu'un confort d'affichage.
+ */
+export async function getNiveauVerificationPatientCourantAction(): Promise<string | null> {
+  const session = await getSession();
+
+  if (!session) {
+    return null;
+  }
+
+  const patient = await prisma.patient.findUnique({
+    where: { userId: session.userId },
+    include: { user: true },
+  });
+
+  return patient?.user.niveauVerification ?? null;
+}
+
+/**
  * Recupere les consentements du patient connecte, avec le nom et la
  * specialite de chaque acteur autorise, du plus recent au plus ancien.
  */
@@ -255,6 +285,7 @@ export async function getMesConsentements(): Promise<ConsentementAvecActeur[]> {
     ),
     acteurSpecialite: consentement.acteurAutorise.professionnel?.specialite ?? null,
     typeAcces: consentement.typeAcces,
+    niveauAcces: consentement.niveauAcces,
     statut: consentement.statut,
     statutEffectif: calculerStatutEffectifConsentement(consentement.statut, consentement.dateFin),
     dateDebut: consentement.dateDebut.toISOString(),
@@ -512,6 +543,7 @@ export async function grantConsentAction(
   const validation = schemaOctroiConsentement.safeParse({
     acteurAutoriseId: formData.get("acteurAutoriseId"),
     typeAcces: formData.get("typeAcces"),
+    niveauAcces: formData.get("niveauAcces"),
     duree: formData.get("duree"),
   });
 
@@ -522,7 +554,7 @@ export async function grantConsentAction(
     };
   }
 
-  const { acteurAutoriseId, typeAcces, duree } = validation.data;
+  const { acteurAutoriseId, typeAcces, niveauAcces, duree } = validation.data;
 
   try {
     const patient = await prisma.patient.findUnique({
@@ -532,6 +564,16 @@ export async function grantConsentAction(
 
     if (!patient) {
       return { error: "Aucun dossier patient associe a ce compte.", success: false };
+    }
+
+    // RG-ACC-13, CA-2 : le niveau "tout, y compris sensible" exige un compte
+    // patient verifie (N2), jamais un patient N0/N1 (identite non confirmee).
+    if (niveauAcces === "FULL_SENSITIVE" && patient.user.niveauVerification !== NIVEAU_VERIFICATION_MINIMAL_FULL_SENSITIVE) {
+      return {
+        error:
+          "Le niveau « Tout, y compris les informations sensibles » nécessite un compte vérifié (niveau N2). Faites vérifier votre identité avant de l'utiliser.",
+        success: false,
+      };
     }
 
     const professionnelCible = await prisma.professionnelSante.findUnique({
@@ -560,12 +602,14 @@ export async function grantConsentAction(
         patientId: patient.id,
         acteurAutoriseId,
         typeAcces,
+        niveauAcces,
         statut: "actif",
         dateDebut: maintenant,
         dateFin,
       },
       update: {
         typeAcces,
+        niveauAcces,
         statut: "actif",
         dateDebut: maintenant,
         dateFin,
@@ -577,14 +621,14 @@ export async function grantConsentAction(
       action: "consentement_accorde",
       donneeConcernee: `consentement:${consentement.id}`,
       adresseTechnique,
-      justification: `Consentement accorde (${typeAcces}, ${duree}) a l'acteur ${acteurAutoriseId}, jusqu'au ${dateFin.toISOString()}`,
+      justification: `Consentement accorde (${typeAcces}, niveau ${niveauAcces}, ${duree}) a l'acteur ${acteurAutoriseId}, jusqu'au ${dateFin.toISOString()}`,
     });
 
     // N-CONSENT-GRANTED (catalogue F-NOT-04) : notification interne seule, pas de SMS.
     await creerNotification(
       acteurAutoriseId,
       "consentement_accorde",
-      `${patient.user.prenom} ${patient.user.nom} vous a accordé l'accès à son dossier (${LIBELLES_TYPE_ACCES[typeAcces] ?? typeAcces}) jusqu'au ${dateFin.toLocaleDateString("fr-FR")}.`,
+      `${patient.user.prenom} ${patient.user.nom} vous a accordé l'accès à son dossier (${LIBELLES_TYPE_ACCES[typeAcces] ?? typeAcces}, niveau : ${LIBELLES_NIVEAU_ACCES[niveauAcces] ?? niveauAcces}) jusqu'au ${dateFin.toLocaleDateString("fr-FR")}.`,
       "/app/medecin/patients"
     );
 

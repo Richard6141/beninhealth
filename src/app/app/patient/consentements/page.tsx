@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ArrowLeft, Eye, ShieldCheck, UserCheck } from "lucide-react";
-import { getMesConsentements } from "@/modules/patient/actions";
+import { getMesConsentements, getNiveauVerificationPatientCourantAction } from "@/modules/patient/actions";
 import { Card } from "@/components/ui/Card";
 import { ListeConsentements } from "./ListeConsentements";
 import { FormulaireNouveauConsentement } from "./FormulaireNouveauConsentement";
@@ -35,7 +35,10 @@ const principesConsentement = [
  * confirmation via Modal avant soumission.
  */
 export default async function ConsentementsPage() {
-  const consentements = await getMesConsentements();
+  const [consentements, niveauVerification] = await Promise.all([
+    getMesConsentements(),
+    getNiveauVerificationPatientCourantAction(),
+  ]);
 
   const consentementsActifs = consentements.filter((c) => c.statutEffectif === "actif");
 
@@ -99,7 +102,7 @@ export default async function ConsentementsPage() {
           <h2 id="titre-nouveau" className="text-[20px] font-bold text-encre">
             Accorder un nouvel accès
           </h2>
-          <FormulaireNouveauConsentement />
+          <FormulaireNouveauConsentement niveauVerification={niveauVerification} />
         </section>
       </div>
 

@@ -13,6 +13,7 @@ import type { BadgeTone } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Modal, type ModalHandle } from "@/components/ui/Modal";
+import { LIBELLES_NIVEAU_ACCES } from "@/modules/patient/consentement-niveaux";
 
 const etatInitial: PatientActionState = { error: null, success: false };
 
@@ -96,6 +97,12 @@ function CarteConsentement({
           <span className="text-[13px] text-encre-secondaire">Type d&apos;accès :</span>
           <Badge tone="accent">
             {libellesTypeAcces[consentement.typeAcces] ?? consentement.typeAcces}
+          </Badge>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[13px] text-encre-secondaire">Niveau :</span>
+          <Badge tone={consentement.niveauAcces === "FULL_SENSITIVE" ? "critical" : "neutral"}>
+            {LIBELLES_NIVEAU_ACCES[consentement.niveauAcces] ?? consentement.niveauAcces}
           </Badge>
         </div>
         <p className="text-[13px] text-encre-secondaire">

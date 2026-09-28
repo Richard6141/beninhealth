@@ -42,4 +42,48 @@ describe("consentementPermetLeDocument", () => {
   it("traite un niveau inconnu comme un document ordinaire", () => {
     expect(consentementPermetLeDocument(consentement({ typeAcces: "documents" }), "autre", MAINTENANT)).toBe(true);
   });
+
+  it("F-CIT-10 : sans niveauAcces precise, un dossier_complet ouvre le document sensible (comportement d'origine, lignes anterieures a la migration)", () => {
+    expect(consentementPermetLeDocument(consentement({ typeAcces: "dossier_complet" }), "sensible", MAINTENANT)).toBe(true);
+  });
+
+  it("F-CIT-10 : un dossier_complet de niveau FULL (hors sensible) n'ouvre pas un document sensible", () => {
+    expect(
+      consentementPermetLeDocument(
+        consentement({ typeAcces: "dossier_complet", niveauAcces: "FULL" }),
+        "sensible",
+        MAINTENANT
+      )
+    ).toBe(false);
+  });
+
+  it("F-CIT-10 : un dossier_complet de niveau SUMMARY n'ouvre pas un document sensible", () => {
+    expect(
+      consentementPermetLeDocument(
+        consentement({ typeAcces: "dossier_complet", niveauAcces: "SUMMARY" }),
+        "sensible",
+        MAINTENANT
+      )
+    ).toBe(false);
+  });
+
+  it("F-CIT-10 : un dossier_complet de niveau FULL_SENSITIVE ouvre le document sensible", () => {
+    expect(
+      consentementPermetLeDocument(
+        consentement({ typeAcces: "dossier_complet", niveauAcces: "FULL_SENSITIVE" }),
+        "sensible",
+        MAINTENANT
+      )
+    ).toBe(true);
+  });
+
+  it("F-CIT-10 : le niveau d'acces n'a aucun effet sur un document normal", () => {
+    expect(
+      consentementPermetLeDocument(
+        consentement({ typeAcces: "dossier_complet", niveauAcces: "SUMMARY" }),
+        "normal",
+        MAINTENANT
+      )
+    ).toBe(true);
+  });
 });

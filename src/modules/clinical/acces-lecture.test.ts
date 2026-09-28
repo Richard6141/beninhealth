@@ -289,6 +289,58 @@ describe("resume du patient", () => {
   });
 });
 
+describe("F-CIT-10 : niveaux d'acces SUMMARY/FULL/FULL_SENSITIVE (RG-ACC-11)", () => {
+  it("un niveau SUMMARY n'ouvre jamais l'historique, sans lire aucune donnee d'historique", async () => {
+    prismaMock.consentement.findUnique.mockResolvedValue(consentement("dossier_complet", { niveauAcces: "SUMMARY" }));
+
+    expect(await getHistoriquePatient("pat-1")).toBeNull();
+
+    expect(prismaMock.consultation.findMany).not.toHaveBeenCalled();
+    expect(prismaMock.examenMedical.findMany).not.toHaveBeenCalled();
+  });
+
+  it("un niveau SUMMARY ouvre quand meme le resume", async () => {
+    prismaMock.consentement.findUnique.mockResolvedValue(consentement("dossier_complet", { niveauAcces: "SUMMARY" }));
+
+    expect(await getResumePatient("pat-1")).not.toBeNull();
+  });
+
+  it("un niveau FULL ouvre le resume et l'historique, mais masque les consultations et examens sensibles", async () => {
+    prismaMock.consentement.findUnique.mockResolvedValue(consentement("dossier_complet", { niveauAcces: "FULL" }));
+
+    await getResumePatient("pat-1");
+    expect(prismaMock.consultation.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { patientId: "pat-1", statut: "terminee", sensible: false } })
+    );
+
+    prismaMock.examenMedical.findMany.mockResolvedValue([examen("ex-normal"), examen("ex-vih", { sensible: true })]);
+    const historique = await getHistoriquePatient("pat-1");
+    expect(historique?.evenements.map((e) => e.id)).toEqual(["ex-normal"]);
+  });
+
+  it("un niveau FULL_SENSITIVE ouvre le resume et l'historique sans rien masquer", async () => {
+    prismaMock.consentement.findUnique.mockResolvedValue(consentement("dossier_complet", { niveauAcces: "FULL_SENSITIVE" }));
+
+    await getResumePatient("pat-1");
+    expect(prismaMock.consultation.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { patientId: "pat-1", statut: "terminee" } })
+    );
+
+    prismaMock.examenMedical.findMany.mockResolvedValue([examen("ex-normal"), examen("ex-vih", { sensible: true })]);
+    const historique = await getHistoriquePatient("pat-1");
+    expect(historique?.evenements.map((e) => e.id).sort()).toEqual(["ex-normal", "ex-vih"]);
+  });
+
+  it("sans niveauAcces precise, se comporte comme FULL_SENSITIVE (lignes anterieures a la migration)", async () => {
+    prismaMock.consentement.findUnique.mockResolvedValue(consentement("dossier_complet"));
+
+    await getResumePatient("pat-1");
+    expect(prismaMock.consultation.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { patientId: "pat-1", statut: "terminee" } })
+    );
+  });
+});
+
 describe("historique du patient", () => {
   it("n'inclut que les consultations terminees (RG-CLI-41 : jamais un brouillon d'un autre)", async () => {
     await getHistoriquePatient("pat-1");

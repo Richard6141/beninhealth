@@ -417,6 +417,13 @@ model Consentement {
   acteurAutoriseId   String
   acteurAutorise     User      @relation(fields: [acteurAutoriseId], references: [id])
   typeAcces          String
+  // F-CIT-10 / RG-ACC-11, RG-ACC-13 : profondeur d'information accordee,
+  // independante du type d'acces ci-dessus (qui reste la portee par module).
+  // "SUMMARY" (l'essentiel), "FULL" (tout sauf sensible), "FULL_SENSITIVE"
+  // (tout, y compris sensible). Migration additive : les lignes existantes
+  // sont reclassees par la migration elle-meme (voir son fichier SQL),
+  // jamais laissees a une valeur ambigue.
+  niveauAcces        String    @default("FULL")
   dateDebut          DateTime  @default(now())
   dateFin            DateTime?
   statut             String    @default("actif")

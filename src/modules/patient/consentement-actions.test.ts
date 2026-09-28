@@ -40,7 +40,7 @@ function formulaire(champs: Record<string, string>): FormData {
 const patientAvecUser = {
   id: "pat-1",
   userId: "user-pat",
-  user: { nom: "Adjovi", prenom: "Awa" },
+  user: { nom: "Adjovi", prenom: "Awa", niveauVerification: "N2" },
 };
 
 beforeEach(() => {
@@ -59,17 +59,22 @@ describe("grantConsentAction", () => {
   it("accorde le consentement et notifie le beneficiaire (N-CONSENT-GRANTED), sans exposer le patient a un autre professionnel", async () => {
     const resultat = await grantConsentAction(
       ETAT,
-      formulaire({ acteurAutoriseId: "pro-1", typeAcces: "dossier_complet", duree: "12mois" })
+      formulaire({ acteurAutoriseId: "pro-1", typeAcces: "dossier_complet", niveauAcces: "FULL", duree: "12mois" })
     );
 
     expect(resultat.success).toBe(true);
     expect(p.consentement.upsert).toHaveBeenCalledTimes(1);
+    expect(p.consentement.upsert.mock.calls[0][0]).toMatchObject({
+      create: expect.objectContaining({ niveauAcces: "FULL" }),
+      update: expect.objectContaining({ niveauAcces: "FULL" }),
+    });
     expect(creerNotificationMock).toHaveBeenCalledTimes(1);
     const [destinataire, type, message, lien] = creerNotificationMock.mock.calls[0];
     expect(destinataire).toBe("pro-1");
     expect(type).toBe("consentement_accorde");
     expect(message).toContain("Awa Adjovi");
     expect(message).toContain("dossier complet");
+    expect(message).toContain("Tout le dossier (hors informations sensibles)");
     expect(lien).toBe("/app/medecin/patients");
   });
 
@@ -78,7 +83,7 @@ describe("grantConsentAction", () => {
 
     const resultat = await grantConsentAction(
       ETAT,
-      formulaire({ acteurAutoriseId: "pro-1", typeAcces: "dossier_complet", duree: "12mois" })
+      formulaire({ acteurAutoriseId: "pro-1", typeAcces: "dossier_complet", niveauAcces: "FULL", duree: "12mois" })
     );
 
     expect(resultat.success).toBe(false);
@@ -91,7 +96,7 @@ describe("grantConsentAction", () => {
 
     const resultat = await grantConsentAction(
       ETAT,
-      formulaire({ acteurAutoriseId: "inconnu", typeAcces: "dossier_complet", duree: "12mois" })
+      formulaire({ acteurAutoriseId: "inconnu", typeAcces: "dossier_complet", niveauAcces: "FULL", duree: "12mois" })
     );
 
     expect(resultat.success).toBe(false);
@@ -103,18 +108,59 @@ describe("grantConsentAction", () => {
 
     const resultat = await grantConsentAction(
       ETAT,
-      formulaire({ acteurAutoriseId: "pro-1", typeAcces: "dossier_complet", duree: "12mois" })
+      formulaire({ acteurAutoriseId: "pro-1", typeAcces: "dossier_complet", niveauAcces: "FULL", duree: "12mois" })
     );
 
     expect(resultat.success).toBe(false);
     expect(p.patient.findUnique).not.toHaveBeenCalled();
   });
 
-  it("refuse des donnees invalides (type d'acces ou duree absents)", async () => {
+  it("refuse des donnees invalides (type d'acces, niveau ou duree absents)", async () => {
     const resultat = await grantConsentAction(ETAT, formulaire({ acteurAutoriseId: "pro-1" }));
 
     expect(resultat.success).toBe(false);
     expect(p.consentement.upsert).not.toHaveBeenCalled();
+  });
+
+  it("refuse un niveau invalide", async () => {
+    const resultat = await grantConsentAction(
+      ETAT,
+      formulaire({ acteurAutoriseId: "pro-1", typeAcces: "dossier_complet", niveauAcces: "TOUT", duree: "12mois" })
+    );
+
+    expect(resultat.success).toBe(false);
+    expect(p.consentement.upsert).not.toHaveBeenCalled();
+  });
+
+  describe("niveau FULL_SENSITIVE (RG-ACC-13, CA-2)", () => {
+    it("l'accorde a un patient de compte verifie N2", async () => {
+      const resultat = await grantConsentAction(
+        ETAT,
+        formulaire({ acteurAutoriseId: "pro-1", typeAcces: "dossier_complet", niveauAcces: "FULL_SENSITIVE", duree: "12mois" })
+      );
+
+      expect(resultat.success).toBe(true);
+      expect(p.consentement.upsert.mock.calls[0][0]).toMatchObject({
+        create: expect.objectContaining({ niveauAcces: "FULL_SENSITIVE" }),
+      });
+    });
+
+    it("le refuse a un patient de compte non verifie (N0/N1), sans creer ni notifier", async () => {
+      p.patient.findUnique.mockResolvedValue({
+        ...patientAvecUser,
+        user: { ...patientAvecUser.user, niveauVerification: "N1" },
+      });
+
+      const resultat = await grantConsentAction(
+        ETAT,
+        formulaire({ acteurAutoriseId: "pro-1", typeAcces: "dossier_complet", niveauAcces: "FULL_SENSITIVE", duree: "12mois" })
+      );
+
+      expect(resultat.success).toBe(false);
+      expect(resultat.error).toContain("N2");
+      expect(p.consentement.upsert).not.toHaveBeenCalled();
+      expect(creerNotificationMock).not.toHaveBeenCalled();
+    });
   });
 });
 

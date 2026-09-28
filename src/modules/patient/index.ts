@@ -8,6 +8,7 @@
 export {
   getMonDossierPatient,
   getMesConsentements,
+  getNiveauVerificationPatientCourantAction,
   rechercherProfessionnelsPourPartageAction,
   updatePatientProfileAction,
   grantConsentAction,

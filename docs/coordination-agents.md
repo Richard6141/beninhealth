@@ -5541,3 +5541,27 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   frappe elargi (`userEvent.type` sous charge machine). Stable sur 2 executions.
 - Verifie a l'integration par 89 : vitest 5/5, eslint 0 erreur (2 avertissements preexistants sans
   rapport, parametres prefixes `_`), tirets 0.
+
+### Livraison agent lance par 89 (CEO), F-CIT-10 (niveaux d'acces), 2026-09-28
+
+- Lot livre par un agent lance par 89 (worktree isole), verifie et integre. Applique par-dessus le
+  lot re-authentification/F-CLI-08/F-PIL-05 et F-CLI-07 deja committes sur `clinical/actions.ts` :
+  patch verifie sans collision avant application.
+- Niveaux d'acces `SUMMARY/FULL/FULL_SENSITIVE` (RG-ACC-11, RG-ACC-13, CA-2) : nouvelle colonne
+  `Consentement.niveauAcces` (migration additive, valeur par defaut `FULL`, retro-classement des
+  consentements `dossier_complet` existants en `FULL_SENSITIVE` pour ne pas changer silencieusement
+  leur comportement deja accorde). Applique en lecture en reutilisant le marquage "sensible" deja
+  present (`Consultation.sensible`, `ExamenMedical.sensible`, `DocumentMedical.niveauConfidentialite`)
+  plutot qu'un nouveau mecanisme. `FULL_SENSITIVE` refuse cote serveur si le compte du patient n'est
+  pas verifie N2.
+- Ecran de confirmation dedie avant l'octroi (recapitulatif professionnel/niveau/duree, etape 5 du
+  pack). Lien de menu manquant vers `/app/patient/demandes-acces` ajoute.
+- Restent hors perimetre, documentes dans le code : partage a un etablissement entier (aucun
+  mecanisme d'octroi de ce type dans ce depot) ; RG-CIT-80 (listes separees, fenetre de 90 jours) ;
+  RG-CIT-81 (affichage au patient de l'acces de contexte de soins B4, deja existant cote serveur dans
+  `clinical/actions.ts`, RG-ACC-15, mais jamais affiche au patient avec un bouton "Mettre fin").
+- Verifie a l'integration : `npx prisma generate` relance apres application du patch (le type
+  `niveauAcces` n'existait pas encore dans le client genere), eslint 0 probleme sur 12 fichiers, tsc 0
+  hors l'erreur deja confirmee sans rapport (chantier actif de c0/F-ETA-04), vitest 532/532 elargi a
+  patient+clinical+document+laboratoire, migration rejouee depuis zero (`replay.sh`) : "No difference
+  detected", strictement additive.

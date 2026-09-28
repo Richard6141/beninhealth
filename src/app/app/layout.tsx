@@ -15,6 +15,7 @@ import {
   Gauge,
   History,
   Hospital,
+  Inbox,
   LayoutDashboard,
   HeartPulse,
   Lock,
@@ -109,6 +110,11 @@ const navigationPatient: ElementNavigation[] = [
     label: "Mes consentements",
     href: "/app/patient/consentements",
     icon: <ShieldCheck size={tailleIconeNav} aria-hidden="true" />,
+  },
+  {
+    label: "Demandes d'accès reçues",
+    href: "/app/patient/demandes-acces",
+    icon: <Inbox size={tailleIconeNav} aria-hidden="true" />,
   },
   {
     label: "Qui a consulté mon dossier",

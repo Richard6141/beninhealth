@@ -637,8 +637,22 @@ const NOMBRE_DERNIERS_EVENEMENTS = 5;
 
 /** Base d'acces effective au dossier d'un patient, quelle que soit son origine. */
 type AccesPatient =
-  | { source: "consentement"; typeAcces: string; dateFin: Date | null }
+  | { source: "consentement"; typeAcces: string; niveauAcces: string; dateFin: Date | null }
   | { source: "reference"; referenceId: string; dateFinAcces: Date };
+
+/**
+ * Un consentement dont le niveau d'acces (F-CIT-10, RG-ACC-11) n'ouvre pas
+ * les elements sensibles : "SUMMARY" et "FULL" (par opposition a
+ * "FULL_SENSITIVE"). Absence de niveauAcces (anciennes lignes non migrees ou
+ * fixtures de test) traitee comme "FULL_SENSITIVE", comportement d'origine
+ * de ce module avant l'ajout des niveaux (voir migration
+ * 20260928030000_niveau_acces_consentement, qui reclasse deja toutes les
+ * lignes "dossier_complet" existantes ainsi).
+ */
+function niveauAccesRestreintAuxNonSensibles(niveauAcces: string | null | undefined): boolean {
+  const niveau = niveauAcces ?? "FULL_SENSITIVE";
+  return niveau === "SUMMARY" || niveau === "FULL";
+}
 
 /**
  * Verifie l'acces d'un professionnel au dossier d'un patient : Consentement
@@ -675,7 +689,12 @@ async function accesPatientAutorise(
   // "documents") ne donne acces qu'a son propre type de donnee, via le module
   // concerne. Il n'ouvre ni le resume ni l'historique du dossier.
   if (consentementValide && (TYPES_ACCES_LECTURE_DOSSIER as readonly string[]).includes(consentement.typeAcces)) {
-    return { source: "consentement", typeAcces: consentement.typeAcces, dateFin: consentement.dateFin };
+    return {
+      source: "consentement",
+      typeAcces: consentement.typeAcces,
+      niveauAcces: consentement.niveauAcces,
+      dateFin: consentement.dateFin,
+    };
   }
 
   const reference = await prisma.referencePatient.findFirst({
@@ -699,10 +718,11 @@ async function accesPatientAutorise(
  * s'il detient un Consentement actif pour ce patient, ou une base d'acces
  * temporaire via reference (F-CLI-14, voir accesPatientAutorise ci-dessus)
  * (Zero Trust, RG-CLI-30 : jamais de donnee envoyee sans base d'acces valide
- * - retourne null plutot que de filtrer partiellement, ce depot n'ayant
- * qu'un seul niveau d'acces "dossier_complet"/"consultations", pas les
- * niveaux SUMMARY/FULL du pack). Journalise la consultation du resume
- * (RG-CLI-31).
+ * - retourne null plutot que de filtrer partiellement). Le niveau d'acces du
+ * consentement (F-CIT-10, RG-ACC-11 : SUMMARY/FULL/FULL_SENSITIVE) masque les
+ * elements sensibles hors du niveau FULL_SENSITIVE, voir
+ * niveauAccesRestreintAuxNonSensibles ci-dessus. Journalise la consultation
+ * du resume (RG-CLI-31).
  */
 export async function getResumePatient(patientId: string): Promise<ResumePatient | null> {
   const session = await getSession();
@@ -732,7 +752,13 @@ export async function getResumePatient(patientId: string): Promise<ResumePatient
     return null;
   }
 
-  const accesRestreint = acces.source === "reference" || acces.typeAcces === "urgence";
+  // F-CIT-10 (RG-ACC-11) : en plus de l'urgence et de la reference, un
+  // consentement normal de niveau SUMMARY ou FULL (par opposition a
+  // FULL_SENSITIVE) masque aussi les elements sensibles.
+  const accesRestreint =
+    acces.source === "reference" ||
+    acces.typeAcces === "urgence" ||
+    niveauAccesRestreintAuxNonSensibles(acces.niveauAcces);
 
   const [prescriptionsActives, consultationsRecentes, elementsSensiblesMasques] = await Promise.all([
     prisma.prescription.findMany({
@@ -905,6 +931,14 @@ export async function getHistoriquePatient(
     return null;
   }
 
+  // F-CIT-10 (CA-1, 10-fiches-clinique.md) : un consentement de niveau
+  // SUMMARY n'ouvre que le resume (getResumePatient), jamais l'historique
+  // complet. Aucune requete supplementaire n'est lancee, meme motif que
+  // "acces" absent ci-dessus.
+  if (acces.source === "consentement" && acces.niveauAcces === "SUMMARY") {
+    return null;
+  }
+
   const [consultations, prescriptions, examens, suivis, vaccinations, documents, delivrances] = await Promise.all([
     prisma.consultation.findMany({
       where: { patientId, statut: "terminee" },
@@ -956,7 +990,10 @@ export async function getHistoriquePatient(
   // exclus entierement de la chronologie plutot que masques partiellement.
   // Meme restriction pour un acces via reference (F-CLI-14) : ni l'un ni
   // l'autre n'est un consentement explicite et specifique du patient.
-  const accesRestreint = acces.source === "reference" || acces.typeAcces === "urgence";
+  const accesRestreint =
+    acces.source === "reference" ||
+    acces.typeAcces === "urgence" ||
+    niveauAccesRestreintAuxNonSensibles(acces.niveauAcces);
   const examensAccessibles = accesRestreint ? examens.filter((e) => !e.sensible) : examens;
   const consultationsAccessibles = accesRestreint ? consultations.filter((c) => !c.sensible) : consultations;
   // Meme principe RG-CLI-91 applique a DocumentMedical.niveauConfidentialite :
