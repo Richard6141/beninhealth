@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft, ArrowRightLeft, FlaskConical, Phone, Pill, ShieldAlert, Stethoscope, Syringe, UserRound } from "lucide-react";
+import { ArrowLeft, ArrowRightLeft, FlaskConical, Phone, Pill, ShieldAlert, ShieldCheck, Stethoscope, Syringe, UserRound } from "lucide-react";
 import { getResumePatient } from "@/modules/clinical/actions";
 import { getVaccinationsDuPatient } from "@/modules/vaccination/actions";
 import { estFonctionnaliteActive } from "@/modules/administration/parametres";
@@ -22,6 +22,34 @@ function formaterDate(date: string): string {
   } catch {
     return date;
   }
+}
+
+/**
+ * RG-ACC-50 : niveau de verification d'identite affiche au professionnel
+ * (N0 a N3, chapitre 5.6 du pack, voir le commentaire de
+ * User.niveauVerification dans prisma/schema.prisma). N0 signale l'absence
+ * de verification (aucune piece ni telephone confirmes), les autres niveaux
+ * sont une confirmation croissante.
+ */
+const LIBELLES_NIVEAU_VERIFICATION: Record<string, string> = {
+  N0: "Déclaratif",
+  N1: "Téléphone vérifié",
+  N2: "Vérifié en établissement",
+  N3: "Vérifié ANIP",
+};
+
+function badgeNiveauVerification(niveau: string) {
+  const libelle = LIBELLES_NIVEAU_VERIFICATION[niveau] ?? niveau;
+  const tone = niveau === "N0" ? "warning" : niveau === "N1" ? "info" : "good";
+  const Icon = niveau === "N0" ? ShieldAlert : ShieldCheck;
+  return (
+    <Badge tone={tone}>
+      <span className="flex items-center gap-1.5">
+        <Icon size={13} aria-hidden="true" />
+        Identité {niveau} · {libelle}
+      </span>
+    </Badge>
+  );
 }
 
 function LienAction({
@@ -142,6 +170,7 @@ export default async function PatientDetailPage({ params }: PatientDetailPagePro
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          {badgeNiveauVerification(resume.niveauVerification)}
           <Badge tone="accent">Groupe {resume.groupeSanguin}</Badge>
         </div>
       </header>

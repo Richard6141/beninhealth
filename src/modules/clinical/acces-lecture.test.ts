@@ -63,7 +63,7 @@ const PATIENT = {
   antecedents: "[]",
   maladiesChroniques: "[]",
   contactsUrgence: "[]",
-  user: { nom: "Adjovi", prenom: "Rose", telephone: "+22997000000", avatarUrl: null },
+  user: { nom: "Adjovi", prenom: "Rose", telephone: "+22997000000", avatarUrl: null, niveauVerification: "N1" },
 };
 
 const medecin = { user: { nom: "Ahouansou", prenom: "Koffi" } };
@@ -200,6 +200,9 @@ describe("reference (F-CLI-14) comme base d'acces", () => {
     expect(resume?.accesReferenceExpirationLe).toBe(dans(24 * HEURE).toISOString());
     expect(resume?.accesUrgenceExpirationLe).toBeNull();
     expect(journaliserMock.mock.calls[0][0].justification).toContain("reference ref-1");
+    // RG-ACC-50 : le niveau de verification reste affiche meme sous un acces
+    // restreint (reference) - ce n'est pas une donnee clinique sensible.
+    expect(resume?.niveauVerification).toBe("N1");
   });
 });
 
@@ -207,7 +210,7 @@ describe("resume du patient", () => {
   it("renvoie l'identite, les allergies et l'age, et journalise la consultation du resume (RG-CLI-31)", async () => {
     const resume = await getResumePatient("pat-1");
 
-    expect(resume).toMatchObject({ id: "pat-1", nomComplet: "Rose Adjovi", identifiantSante: "BJ-SANTE-PAT-0001", allergies: ["Penicilline"], age: 36, accesUrgenceExpirationLe: null });
+    expect(resume).toMatchObject({ id: "pat-1", nomComplet: "Rose Adjovi", identifiantSante: "BJ-SANTE-PAT-0001", allergies: ["Penicilline"], age: 36, accesUrgenceExpirationLe: null, niveauVerification: "N1" });
     expect(journaliserMock).toHaveBeenCalledTimes(1);
     expect(journaliserMock.mock.calls[0][0]).toMatchObject({
       utilisateurId: "user-pro",

@@ -4984,3 +4984,15 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
 - Commits : `7bd0499` (code), `a5f206b` (reste-a-faire.md).
 - Suite pour moi : je cherche la prochaine fiche P0/P1 non revendiquee, ou j'attends une
   assignation de 89.
+
+### Livraison projet-gouv-8c, F-CLI-04 : niveau de verification affiche (RG-ACC-50), 2026-09-28
+
+- Assigne par 89, lot simple comme annonce. `User.niveauVerification` (ajoute ce soir par le lot
+  F-AUTH-03 de bd) deja inclus via le `include: { user: true }` existant de la lecture du resume
+  patient, aucune requete supplementaire.
+- Badge ajoute dans le bandeau patient (`app/medecin/patients/[id]/page.tsx`) : N0 orange, N1
+  bleu, N2/N3 vert, libelle complet. Reste visible meme sous acces restreint (donnee non clinique,
+  pas masquee par RG-CLI-91). 2 tests ajoutes.
+- Verifie : tsc 0, eslint 0 erreur, vitest 2288/2288 (repo entier au moment de la livraison, hors
+  `rendez-vous-guichet.test.ts` : 1 echec confirme non lie, fichier en cours d'ecriture chez 46
+  pour F-RDV-06 au moment du test, non touche). Tirets 0, aucune migration.

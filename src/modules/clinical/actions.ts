@@ -576,6 +576,10 @@ export interface ResumePatient {
   age: number;
   sexe: string;
   groupeSanguin: string;
+  // RG-ACC-50 : niveau de verification d'identite (N0 a N3, voir le
+  // commentaire de User.niveauVerification dans prisma/schema.prisma), a
+  // afficher au professionnel dans le bandeau patient.
+  niveauVerification: string;
   allergies: string[];
   antecedents: string[];
   maladiesChroniques: string[];
@@ -768,6 +772,7 @@ export async function getResumePatient(patientId: string): Promise<ResumePatient
     age: ageAnnees(patient.dateNaissance, new Date()),
     sexe: patient.sexe,
     groupeSanguin: patient.groupeSanguin,
+    niveauVerification: patient.user.niveauVerification,
     allergies: parseListeJSON(patient.allergies),
     antecedents: parseListeJSON(patient.antecedents),
     maladiesChroniques: parseListeJSON(patient.maladiesChroniques),
