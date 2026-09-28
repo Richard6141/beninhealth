@@ -37,6 +37,7 @@ import {
   controlerGlycemie,
   controlerIMC,
   controlerPoids,
+  controlerVariationPoids,
   controlerPouls,
   controlerSaturationOxygene,
   controlerTaille,
@@ -119,6 +120,8 @@ const MOTIFS_ADDENDUM = [
 ] as const;
 
 const LONGUEUR_MAX_ADDENDUM = 2000;
+/** F-CLI-06 : motif limite a 200 caracteres (section "Sections de saisie" du pack). */
+const LONGUEUR_MAX_MOTIF = 200;
 
 const schemaAjoutAddendum = z.object({
   consultationId: z.string().trim().min(1, "La consultation est obligatoire."),
@@ -173,7 +176,7 @@ const schemaEnregistrementBrouillon = z.object({
   // ce formulaire, marquee "recuperee" a la creation du brouillon uniquement
   // (jamais a une simple mise a jour d'un brouillon deja existant).
   priseEnChargeId: z.string().trim().optional().default(""),
-  motif: z.string().trim().optional().default(""),
+  motif: z.string().trim().max(LONGUEUR_MAX_MOTIF, `${LONGUEUR_MAX_MOTIF} caracteres maximum.`).optional().default(""),
   symptomes: z.string().trim().optional().default(""),
   temperatureCelsius: champNumeriqueOptionnel,
   pouls: champNumeriqueOptionnel,
@@ -1539,7 +1542,31 @@ export async function enregistrerConsultationAction(
       controles.push(controlerFrequenceRespiratoire(frequenceRespiratoire, patient.dateNaissance, dateReference));
     }
     if (saturationOxygene !== undefined) controles.push(controlerSaturationOxygene(saturationOxygene));
-    if (poidsKg !== undefined) controles.push(controlerPoids(poidsKg));
+    if (poidsKg !== undefined) {
+      controles.push(controlerPoids(poidsKg));
+
+      // F-CLI-06 : alerte si le poids varie de plus de 10% par rapport a la
+      // derniere mesure de moins de 30 jours. Lecture separee de
+      // controlerPoids (module pur, pas d'acces base) : cherche la consultation
+      // la plus recente de CE patient avec un poids renseigne dans les 30
+      // derniers jours (n'importe quel professionnel, meme principe que le
+      // reste de l'historique clinique du patient).
+      const ilYA30Jours = new Date(dateReference.getTime() - 30 * 24 * 60 * 60 * 1000);
+      const derniereMesurePoids = await prisma.consultation.findFirst({
+        where: {
+          patientId,
+          // Exclut ce brouillon lui-meme : une correction de saisie (poids
+          // deja enregistre puis modifie sur le meme brouillon) n'est pas une
+          // "derniere mesure" anterieure, juste la meme mesure corrigee.
+          ...(consultationId ? { id: { not: consultationId } } : {}),
+          poidsKg: { not: null },
+          date: { gte: ilYA30Jours, lte: dateReference },
+        },
+        orderBy: { date: "desc" },
+        select: { poidsKg: true },
+      });
+      controles.push(controlerVariationPoids(poidsKg, derniereMesurePoids?.poidsKg ?? null));
+    }
     if (tailleCm !== undefined) controles.push(controlerTaille(tailleCm));
     if (glycemieGL !== undefined) controles.push(controlerGlycemie(glycemieGL));
 

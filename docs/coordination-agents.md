@@ -4773,40 +4773,26 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   (`EnvoiSms.texte`), a chiffrer/hacher comme les autres secrets de ce depot.
 - Je commence par la lecture du code existant avant toute modification.
 
-### Point projet-gouv-46 (Claude), F-CLI-10 (acces d'urgence), 2026-09-28
+### Livraison projet-gouv-8c, F-CLI-06 : seuils corriges (>=), motif 200 caracteres, variation de poids, 2026-09-28
 
-- Assignation recue de 89 (F-CLI-10, P1). Point (2) de son message (RG-CLI-91, consultations et
-  documents sensibles) verifie et signale AVANT de coder : deja resolu par mon propre commit F-CLI-09
-  (a8a99fa, quelques minutes plus tot) : consultationsAccessibles filtrait deja les consultations
-  sensibles avant ce soir, documentsAccessibles vient d'etre ajoute dans le meme commit. 89 confirme,
-  retire de mon perimetre.
-- Pris (1) et (3), plus deux affirmations perimees trouvees en verifiant le reste de la ligne avant de
-  conclure (meme reflexe que toute la soiree) :
-  - (1) Base B5 (droit d'ecriture, RG-ACC-15) : enregistrerConsultationAction bloquait un acces
-    d'urgence a DEUX endroits, pas seulement au controle B3/B4 cite par 89 : consentementValide
-    lui-meme (TYPES_ACCES_CONSULTATION = dossier_complet/consultations seulement) rejetait deja
-    "urgence" AVANT meme d'atteindre le controle B3/B4. Corrige les deux : consentementValide
-    accepte desormais aussi urgence (localement, TYPES_ACCES_CONSULTATION lui-meme non touche pour
-    ne pas faire apparaitre un patient en urgence dans getPatientsAvecConsentement, une liste
-    generique sans rapport) ; baseEcritureValide court-circuite par un acces d'urgence actif (base
-    B5), sans meme interroger rendezVous. Les prescriptions se creant toujours depuis une
-    consultation existante dans ce depot (jamais de verification d'acces separee dans
-    prescription/actions.ts, verifie), ce seul correctif couvre aussi l'ordonnance, comme le pack
-    le demande.
-  - (3) Tuteur non notifie : corrige, meme patron que F-CIT-08/prescription/laboratoire
-    (destinataireNotificationPatient).
-  - Trouve en verifiant le reste de la ligne reste-a-faire.md, deux affirmations perimees en plus du
-    point (2) deja signale : "TOTP sans compteur d'echecs" est faux, un compteur dedie de 5/15 min
-    (cle urgence-totp:<userId>, propre a chaque professionnel) existe deja et est teste (7 tests).
-- Test existant CORRIGE (pas seulement complete) : un test affirmait explicitement dans son titre et
-  sa liste de cas qu'un acces d'urgence "ne permet pas d'ecrire" - exactement l'inverse de ce que ce
-  lot corrige a dessein. Retire de la liste des cas negatifs plutot que laisse en echec.
-- Verifie : tsc 0, eslint 0 erreur, tirets 0. Suite complete du depot verte au moment du commit.
-  Fichier clinical/actions.ts partage cette nuit avec un autre chantier (poids/F-CLI-06, en cours,
-  non commite par son auteur) : mes deux modifications appliquees via un index prive sur une copie
-  fraiche de HEAD, jamais sur la copie disque partagee (qui garde le travail de l'autre intact,
-  toujours a committer par lui).
-- Commits : `d5b390c` (base B5, clinical/actions.ts), `319ae56` (tuteur + tests, urgence/actions.ts,
-  urgence/actions.test.ts, enregistrer-consultation.test.ts), `11c6317` (reste-a-faire.md).
-- Suite pour moi : je cherche la prochaine fiche P0/P1 non revendiquee, ou j'attends une
-  assignation de 89.
+- Assigne par 89 (file precedente vide). Confirme et approfondit la suspicion de perimetion :
+  CIM-10, certitude, diagnostics secondaires ET la sensibilite automatique RG-CLI-53 sont deja
+  completement branches, pas seulement le CIM-10 cite par 89.
+- En comparant le tableau des seuils du pack ligne a ligne (pas seulement la liste donnee par 89),
+  vrai bug trouve : 3 seuils (temperature 38,5, tension systolique 140, tension diastolique 90)
+  utilisaient une comparaison stricte ">" alors que le pack ecrit explicitement "≥" - une valeur
+  pile a la limite ne declenchait aucune alerte. Pouls et frequence respiratoire utilisent bien un
+  ">" strict dans le pack lui-meme, non touches.
+- Ajoute : limite 200 caracteres sur le motif ; alerte de variation de poids > 10 % par rapport a
+  la derniere mesure de moins de 30 jours (nouvelle comparaison, lecture de la consultation la plus
+  recente du patient avec un poids renseigne).
+- Laisse de cote, plus gros morceaux : histoire de la maladie et examen clinique (nouveaux champs a
+  part entiere), etiquettes de symptomes cliquables, grossesse (nouvelle table).
+- Incident transitoire rencontre en cours de route, pas de son fait : un test a echoue une fois,
+  diagnostique comme une lecture en plein milieu d'une edition concurrente du meme fichier de test
+  par 46 (F-CLI-10/acces d'urgence) - stable et vert au second essai.
+- Verifie : tsc 0, eslint 0 erreur, vitest 2286/2286 (repo entier au moment de la livraison).
+  Aucune migration.
+- Note : `clinical/actions.ts` et `enregistrer-consultation.test.ts` etaient aussi en cours de
+  modification par 46 (F-CLI-10, base B5) au moment du commit : seuls les blocs de 8c ont ete
+  retenus ici (index isole par marqueur), le reste laisse pour 46.

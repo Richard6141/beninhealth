@@ -466,7 +466,8 @@ export function FormulaireConsultation({
           name="motif"
           value={motif}
           onChange={(event: ChangeEvent<HTMLInputElement>) => setMotif(event.target.value)}
-          hint="Obligatoire pour valider la consultation, facultatif pour un simple brouillon."
+          maxLength={200}
+          hint="Obligatoire pour valider la consultation, facultatif pour un simple brouillon (200 caracteres maximum)."
         />
 
         <ChampTexteMultiligne

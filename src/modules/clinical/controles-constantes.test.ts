@@ -12,6 +12,7 @@ import {
   controlerTemperature,
   controlerTensionDiastolique,
   controlerTensionSystolique,
+  controlerVariationPoids,
 } from "./controles-constantes";
 
 /**
@@ -30,7 +31,7 @@ const nouveauNe1Mois = new Date(2026, 7, 26); // 1 mois
 
 const statut = (resultat: { statut: string }) => resultat.statut;
 
-describe("temperature (30 a 45 C acceptee, alerte sous 35,5 et au-dessus de 38,5)", () => {
+describe("temperature (30 a 45 C acceptee, alerte sous 35,5 et a partir de 38,5 inclus)", () => {
   it("refuse hors de la plage acceptee", () => {
     expect(statut(controlerTemperature(29.9))).toBe("refus");
     expect(statut(controlerTemperature(45.1))).toBe("refus");
@@ -39,12 +40,16 @@ describe("temperature (30 a 45 C acceptee, alerte sous 35,5 et au-dessus de 38,5
   it("alerte aux extremes de la plage acceptee et pres des seuils", () => {
     expect(statut(controlerTemperature(30))).toBe("alerte");
     expect(statut(controlerTemperature(35.4))).toBe("alerte");
-    expect(statut(controlerTemperature(38.6))).toBe("alerte");
     expect(statut(controlerTemperature(45))).toBe("alerte");
   });
 
-  it("accepte une temperature normale, bornes des seuils incluses", () => {
-    for (const valeur of [35.5, 36.6, 38.5]) expect(statut(controlerTemperature(valeur))).toBe("ok");
+  it("le pack ecrit '≥ 38,5' : 38,5 pile declenche deja l'alerte, pas seulement au-dessus", () => {
+    expect(statut(controlerTemperature(38.5))).toBe("alerte");
+    expect(statut(controlerTemperature(38.6))).toBe("alerte");
+  });
+
+  it("accepte une temperature normale, borne basse incluse", () => {
+    for (const valeur of [35.5, 36.6, 38.4]) expect(statut(controlerTemperature(valeur))).toBe("ok");
   });
 
   it("le refus porte le message du pack", () => {
@@ -92,12 +97,16 @@ describe("tension arterielle", () => {
     expect(statut(controlerTensionSystolique(70, 90, adulte, REFERENCE))).toBe("refus");
   });
 
-  it("adulte : alerte sous 90 et au-dessus de 140, refus hors de 50 a 300", () => {
+  it("adulte : alerte sous 90 et a partir de 140 inclus, refus hors de 50 a 300", () => {
     expect(statut(controlerTensionSystolique(120, 80, adulte, REFERENCE))).toBe("ok");
     expect(statut(controlerTensionSystolique(89, 60, adulte, REFERENCE))).toBe("alerte");
     expect(statut(controlerTensionSystolique(141, 80, adulte, REFERENCE))).toBe("alerte");
     expect(statut(controlerTensionSystolique(49, 30, adulte, REFERENCE))).toBe("refus");
     expect(statut(controlerTensionSystolique(301, 80, adulte, REFERENCE))).toBe("refus");
+  });
+
+  it("le pack ecrit '≥ 140' : 140 pile declenche deja l'alerte, pas seulement au-dessus", () => {
+    expect(statut(controlerTensionSystolique(140, 80, adulte, REFERENCE))).toBe("alerte");
   });
 
   it("enfant de 4 ans : seuil bas 70 + 2 x age = 78, pas de seuil haut", () => {
@@ -106,12 +115,16 @@ describe("tension arterielle", () => {
     expect(statut(controlerTensionSystolique(200, 100, enfant4Ans, REFERENCE))).toBe("ok");
   });
 
-  it("diastolique : refus hors de 20 a 200, alerte sous 60 et au-dessus de 90", () => {
+  it("diastolique : refus hors de 20 a 200, alerte sous 60 et a partir de 90 inclus", () => {
     expect(statut(controlerTensionDiastolique(19))).toBe("refus");
     expect(statut(controlerTensionDiastolique(201))).toBe("refus");
     expect(statut(controlerTensionDiastolique(59))).toBe("alerte");
     expect(statut(controlerTensionDiastolique(91))).toBe("alerte");
     expect(statut(controlerTensionDiastolique(80))).toBe("ok");
+  });
+
+  it("le pack ecrit '≥ 90' pour la diastolique aussi : 90 pile declenche deja l'alerte", () => {
+    expect(statut(controlerTensionDiastolique(90))).toBe("alerte");
   });
 });
 
@@ -186,5 +199,26 @@ describe("ageAnnees", () => {
     expect(ageAnnees(new Date(1990, 8, 27), REFERENCE)).toBe(35);
     expect(ageAnnees(new Date(1990, 8, 26), REFERENCE)).toBe(36);
     expect(ageAnnees(new Date(1990, 8, 25), REFERENCE)).toBe(36);
+  });
+});
+
+describe("controlerVariationPoids (F-CLI-06, variation de plus de 10% depuis la derniere mesure de moins de 30 jours)", () => {
+  it("ok sans mesure recente connue (rien a comparer)", () => {
+    expect(statut(controlerVariationPoids(70, null))).toBe("ok");
+  });
+
+  it("ok pour une variation de 10% ou moins", () => {
+    expect(statut(controlerVariationPoids(77, 70))).toBe("ok"); // +10% pile
+    expect(statut(controlerVariationPoids(63, 70))).toBe("ok"); // -10% pile
+    expect(statut(controlerVariationPoids(70, 70))).toBe("ok");
+  });
+
+  it("alerte au-dela de 10%, a la hausse comme a la baisse", () => {
+    expect(statut(controlerVariationPoids(77.1, 70))).toBe("alerte");
+    expect(statut(controlerVariationPoids(62.9, 70))).toBe("alerte");
+  });
+
+  it("le message est celui de la variation de poids, distinct du message generique", () => {
+    expect(controlerVariationPoids(100, 70).message).toBe("Variation de poids inhabituelle, confirmez-vous ?");
   });
 });

@@ -34,7 +34,11 @@ function controlerPlage(
   valeur: number,
   accepte: Plage,
   alerteBas: number | null,
-  alerteHaut: number | null
+  alerteHaut: number | null,
+  // Vrai si la borne haute d'alerte elle-meme declenche l'alerte (le pack
+  // ecrit alors "≥"), faux si elle ne fait que la delimiter sans en faire
+  // partie (le pack ecrit alors ">", ex. pouls, frequence respiratoire).
+  hautInclus = false
 ): ResultatControleConstante {
   if (valeur < accepte.min || valeur > accepte.max) {
     return { statut: "refus", message: "Valeur impossible, verifiez la saisie." };
@@ -44,7 +48,7 @@ function controlerPlage(
     return { statut: "alerte", message: "Valeur inhabituelle, confirmez-vous ?" };
   }
 
-  if (alerteHaut !== null && valeur > alerteHaut) {
+  if (alerteHaut !== null && (hautInclus ? valeur >= alerteHaut : valeur > alerteHaut)) {
     return { statut: "alerte", message: "Valeur inhabituelle, confirmez-vous ?" };
   }
 
@@ -69,7 +73,8 @@ function ageMois(dateNaissance: Date, dateReference: Date): number {
 }
 
 export function controlerTemperature(valeurCelsius: number): ResultatControleConstante {
-  return controlerPlage(valeurCelsius, { min: 30.0, max: 45.0 }, 35.5, 38.5);
+  // Pack : "< 35,5 ou ≥ 38,5" - 38,5 pile declenche l'alerte.
+  return controlerPlage(valeurCelsius, { min: 30.0, max: 45.0 }, 35.5, 38.5, true);
 }
 
 /** Plage d'alerte du pouls (bpm), dependante de l'age (section 18.7 pour < 12 ans, F-CLI-06 sinon). */
@@ -114,11 +119,13 @@ export function controlerTensionSystolique(
   if (mois < 12) return controlerPlage(systolique, accepte, 70, null);
   if (annees < 5) return controlerPlage(systolique, accepte, 70 + 2 * annees, null);
   if (annees < 12) return controlerPlage(systolique, accepte, 80, null);
-  return controlerPlage(systolique, accepte, 90, 140);
+  // Pack : "< 90/60 ou ≥ 140/90" - 140 pile declenche l'alerte (adulte, section 18.7 sans borne haute pour les tranches pediatriques ci-dessus).
+  return controlerPlage(systolique, accepte, 90, 140, true);
 }
 
 export function controlerTensionDiastolique(valeurMmHg: number): ResultatControleConstante {
-  return controlerPlage(valeurMmHg, { min: 20, max: 200 }, 60, 90);
+  // Pack : "< 90/60 ou ≥ 140/90" - 90 pile declenche l'alerte.
+  return controlerPlage(valeurMmHg, { min: 20, max: 200 }, 60, 90, true);
 }
 
 /** Frequence respiratoire (/min), plage d'alerte dependante de l'age (section 18.7). */
@@ -149,6 +156,31 @@ export function controlerSaturationOxygene(valeurPourcent: number): ResultatCont
 
 export function controlerPoids(valeurKg: number): ResultatControleConstante {
   return controlerPlage(valeurKg, { min: 0.3, max: 300 }, null, null);
+}
+
+export const SEUIL_VARIATION_POIDS = 0.1;
+
+/**
+ * Alerte de variation de poids (F-CLI-06) : "Variation > 10 % depuis la
+ * derniere mesure de moins de 30 jours". Fonction separee de
+ * controlerPoids ci-dessus (qui reste une simple plage physiologique) :
+ * celle-ci a besoin du dernier poids connu, que ce module pur ne peut pas
+ * aller chercher lui-meme (aucun acces base ici) - l'appelant
+ * (clinical/actions.ts) le fournit apres l'avoir lu, deja filtre sur les 30
+ * derniers jours. `null` si aucune mesure recente n'existe (rien a comparer).
+ */
+export function controlerVariationPoids(nouveauKg: number, dernierPoidsConnuKg: number | null): ResultatControleConstante {
+  if (dernierPoidsConnuKg === null || dernierPoidsConnuKg <= 0) {
+    return OK;
+  }
+
+  const variation = Math.abs(nouveauKg - dernierPoidsConnuKg) / dernierPoidsConnuKg;
+
+  if (variation > SEUIL_VARIATION_POIDS) {
+    return { statut: "alerte", message: "Variation de poids inhabituelle, confirmez-vous ?" };
+  }
+
+  return OK;
 }
 
 export function controlerTaille(valeurCm: number): ResultatControleConstante {
