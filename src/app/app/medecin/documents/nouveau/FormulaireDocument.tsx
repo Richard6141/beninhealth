@@ -5,6 +5,7 @@ import type { ChangeEvent } from "react";
 import Link from "next/link";
 import { ajouterDocumentAction, type DocumentActionState } from "@/modules/document/actions";
 import { OPTIONS_NIVEAU_CONFIDENTIALITE, OPTIONS_TYPE_DOCUMENT } from "@/modules/document/types-documents";
+import { LIBELLE_TAILLE_MAX_DOCUMENT, TAILLE_MAX_DOCUMENT_OCTETS } from "@/modules/document/stockage-fichiers";
 import { ModalNouveauPatient, type PatientCree } from "@/app/app/medecin/patients/ModalNouveauPatient";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
@@ -74,6 +75,7 @@ export function FormulaireDocument({
   const [patientId, setPatientId] = useState(patientIdPreselectionne);
   const [consultationId, setConsultationId] = useState(consultationIdPreselectionnee);
   const [nomFichierSelectionne, setNomFichierSelectionne] = useState("");
+  const [erreurTailleFichier, setErreurTailleFichier] = useState<string | null>(null);
 
   const optionsPatients = patients.map((patient) => ({
     value: patient.patientId,
@@ -110,7 +112,23 @@ export function FormulaireDocument({
   }
 
   function handleChangementFichier(event: ChangeEvent<HTMLInputElement>) {
-    setNomFichierSelectionne(event.target.files?.[0]?.name ?? "");
+    const fichierChoisi = event.target.files?.[0];
+
+    // Aide a la saisie seulement (le serveur reverifie toujours la taille) :
+    // au-dela de la limite, la requete serait rejetee par Next.js avant meme
+    // d'atteindre ajouterDocumentAction, sans message comprehensible. Le
+    // champ est vide pour que le formulaire ne puisse pas partir en l'etat.
+    if (fichierChoisi && fichierChoisi.size > TAILLE_MAX_DOCUMENT_OCTETS) {
+      event.target.value = "";
+      setNomFichierSelectionne("");
+      setErreurTailleFichier(
+        `Ce fichier depasse la taille maximale de ${LIBELLE_TAILLE_MAX_DOCUMENT}. Reduisez-le (scan en resolution plus basse, compression) puis choisissez-le de nouveau.`
+      );
+      return;
+    }
+
+    setErreurTailleFichier(null);
+    setNomFichierSelectionne(fichierChoisi?.name ?? "");
   }
 
   const erreurConsentement =
@@ -239,7 +257,10 @@ export function FormulaireDocument({
               *
             </span>
           </label>
-          <p className="text-[13px] text-encre-secondaire">PDF, JPEG ou PNG, 10 Mo maximum.</p>
+          <p className="text-[13px] text-encre-secondaire">
+            PDF, JPEG ou PNG, {LIBELLE_TAILLE_MAX_DOCUMENT} maximum. La localisation et les autres
+            metadonnees des photos sont retirees avant enregistrement.
+          </p>
           <input
             id="fichier"
             name="fichier"
@@ -251,6 +272,11 @@ export function FormulaireDocument({
           />
           {nomFichierSelectionne ? (
             <p className="text-[13px] text-encre-secondaire">Fichier selectionne : {nomFichierSelectionne}</p>
+          ) : null}
+          {erreurTailleFichier ? (
+            <p role="alert" className="text-[13px] font-semibold text-critique">
+              {erreurTailleFichier}
+            </p>
           ) : null}
         </div>
 

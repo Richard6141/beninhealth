@@ -97,6 +97,14 @@ describe("GET /api/documents/[id]/telecharger (F-CIT-06, RG-CIT-50)", () => {
     expect(reponse.headers.get("Cache-Control")).toBe("private, no-store");
   });
 
+  it("annonce la longueur des octets reellement servis, meme si la taille enregistree differe", async () => {
+    p.documentMedical.findUnique.mockResolvedValue(document({ tailleOctets: CONTENU.length + 5000 }));
+
+    const reponse = await appeler();
+
+    expect(reponse.headers.get("Content-Length")).toBe(String(CONTENU.length));
+  });
+
   it("journalise le telechargement avec l'utilisateur proprietaire du document, jamais patientId brut", async () => {
     await appeler();
 

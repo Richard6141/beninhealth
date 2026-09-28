@@ -132,6 +132,11 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     'create:vaccination',
     'read:prise_en_charge_infirmiere',
     'create:prise_en_charge_infirmiere',
+    // F-CLI-13 (roles du pack : DOCTOR, NURSE) : ajouter un document au
+    // dossier d'un patient, sous le meme Consentement actif que le medecin,
+    // verifie en base par ajouterDocumentAction (jamais deduit de ce seul droit).
+    'read:document_medical',
+    'create:document_medical',
     'create:acces_urgence',
     // F-CIT-11 : utiliser le code de partage temporaire presente par un
     // patient (RG-CIT-91 : medecin ou infirmier valide uniquement).

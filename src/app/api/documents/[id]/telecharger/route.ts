@@ -103,7 +103,8 @@ export async function GET(request: Request, { params }: RouteContext) {
     headers: {
       "Content-Type": document.typeMime,
       "Content-Disposition": `attachment; filename="${assainirNomFichier(document.nomFichierOriginal)}"`,
-      "Content-Length": String(document.tailleOctets),
+      // Octets reellement renvoyes (voir la meme ligne dans ../route.ts).
+      "Content-Length": String(octets.length),
       "Cache-Control": "private, no-store",
     },
   });

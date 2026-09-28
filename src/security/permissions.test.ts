@@ -46,6 +46,19 @@ describe("can (permissions RBAC)", () => {
     it("refuse la creation d'une consultation (droit reserve au medecin)", () => {
       expect(can("infirmier", "create", "consultation")).toBe(false);
     });
+
+    it("F-CLI-13 : autorise l'ajout et la lecture d'un document medical (roles DOCTOR, NURSE du pack)", () => {
+      expect(can("infirmier", "create", "document_medical")).toBe(true);
+      expect(can("infirmier", "read", "document_medical")).toBe(true);
+    });
+  });
+
+  describe("document medical (F-CLI-13), reserve aux soignants", () => {
+    it("refuse l'ajout au laboratoire, au pharmacien, a l'agent communautaire et au patient", () => {
+      for (const role of ["laboratoire", "pharmacien", "agent_communautaire", "patient"] as const) {
+        expect(can(role, "create", "document_medical")).toBe(false);
+      }
+    });
   });
 
   describe("role agent_communautaire", () => {

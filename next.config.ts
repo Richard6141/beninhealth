@@ -19,6 +19,11 @@ const nextConfig: NextConfig = {
       // jusqu'a 3 Mo (TAILLE_MAX_AVATAR_OCTETS, src/modules/identity/actions.ts) ;
       // la limite par defaut de Next.js pour le corps d'une Server Action est
       // 1 Mo, plus basse que ce que l'UI annonce elle-meme.
+      // Le document medical (F-CLI-13) en depend aussi : son plafond,
+      // TAILLE_MAX_DOCUMENT_OCTETS (src/modules/document/stockage-fichiers.ts),
+      // est fixe a 4 000 000 octets pour tenir sous cette limite avec
+      // l'enveloppe multipart. Relever cette valeur au-dela de 10 Mo exigerait
+      // aussi experimental.proxyClientMaxBodySize (proxy.ts couvre /app/*).
       bodySizeLimit: "4mb",
     },
   },

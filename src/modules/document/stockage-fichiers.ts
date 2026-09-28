@@ -10,8 +10,29 @@
  * pas ici : ce fichier ne s'occupe plus que de la detection de type.
  */
 
-/** Taille maximale d'un document medical, en octets (RG-CLI-110 : 10 Mo). */
-export const TAILLE_MAX_DOCUMENT_OCTETS = 10 * 1024 * 1024;
+/**
+ * Taille maximale d'un document medical, en octets : 4 Mo (4 000 000 octets).
+ *
+ * RG-CLI-110 fixe un plafond de 10 Mo ; 4 Mo reste sous ce plafond et
+ * correspond a ce que la plateforme accepte reellement. Le fichier transite
+ * par une Server Action, dont le corps est limite par
+ * experimental.serverActions.bodySizeLimit ("4mb", soit 4 194 304 octets,
+ * next.config.ts) : 4 000 000 octets laissent environ 190 Ko pour
+ * l'enveloppe multipart et les autres champs du formulaire. Au-dela, Next.js
+ * rejette la requete avant meme que ajouterDocumentAction ne s'execute.
+ *
+ * Passer a 10 Mo demanderait de relever deux reglages globaux (et non propres
+ * aux documents) : bodySizeLimit pour TOUTES les Server Actions, et
+ * experimental.proxyClientMaxBodySize, car le formulaire est poste sous
+ * /app/*, route couverte par proxy.ts, qui tamponne le corps a 10 Mo par
+ * defaut et le TRONQUE silencieusement au-dela (documentation Next.js 16).
+ * Plus la limite de taille de fichier du forfait Cloudinary, non verifiable
+ * depuis le depot. Choix le moins risque retenu : annoncer et appliquer 4 Mo.
+ */
+export const TAILLE_MAX_DOCUMENT_OCTETS = 4_000_000;
+
+/** Libelle affiche a l'utilisateur, toujours coherent avec TAILLE_MAX_DOCUMENT_OCTETS. */
+export const LIBELLE_TAILLE_MAX_DOCUMENT = "4 Mo";
 
 export interface SignatureFichierDetectee {
   typeMime: string;

@@ -53,6 +53,24 @@ const etatInitial = { error: null, success: false };
 const PDF = [0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37];
 const EXECUTABLE = [0x4d, 0x5a, 0x90, 0x00, 0x03, 0x00, 0x00, 0x00];
 
+/** Segment JPEG (marqueur + longueur sur 2 octets + donnees). */
+function segment(marqueur: number, donnees: number[]): number[] {
+  const longueur = donnees.length + 2;
+  return [0xff, marqueur, longueur >> 8, longueur & 0xff, ...donnees];
+}
+
+/** JPEG minimal portant un bloc EXIF avec une "localisation" reperable. */
+const JPEG_AVEC_EXIF = [
+  0xff, 0xd8,
+  ...segment(0xe0, [...Buffer.from("JFIF\0"), 1, 1, 0, 0, 1, 0, 1, 0, 0]),
+  ...segment(0xe1, [...Buffer.from("Exif\0\0"), ...Buffer.from("GPS-Cotonou-6.36N-2.43E")]),
+  ...segment(0xdb, [0x00, ...new Array(64).fill(1)]),
+  ...segment(0xc0, [8, 0, 1, 0, 1, 1, 1, 0x11, 0]),
+  ...segment(0xda, [1, 1, 0, 0, 63, 0]),
+  0x12, 0x34, 0xff, 0x00, 0x56,
+  0xff, 0xd9,
+];
+
 function fichier(octets: number[], nom = "compte-rendu.pdf", type = "application/pdf"): File {
   return new File([new Uint8Array(octets)], nom, { type });
 }
@@ -94,13 +112,55 @@ afterEach(() => {
 });
 
 describe("ajouterDocumentAction (F-CLI-13)", () => {
-  it("refuse un role qui ne peut pas creer de document", async () => {
-    getSessionMock.mockResolvedValue({ userId: "user-inf", roles: ["infirmier"] });
+  it("refuse un role qui ne peut pas creer de document (laboratoire, pharmacien)", async () => {
+    for (const role of ["laboratoire", "pharmacien"]) {
+      getSessionMock.mockResolvedValue({ userId: "user-autre", roles: [role] });
 
-    const resultat = await ajouterDocumentAction(etatInitial, ajout());
+      const resultat = await ajouterDocumentAction(etatInitial, ajout());
+
+      expect(resultat.success).toBe(false);
+      expect(resultat.error).toBe("Action reservee aux medecins et aux infirmiers.");
+    }
+    expect(televerserMock).not.toHaveBeenCalled();
+  });
+
+  it("accepte un infirmier sous consentement actif, avec le meme controle que le medecin", async () => {
+    getSessionMock.mockResolvedValue({ userId: "user-inf", roles: ["infirmier"] });
+    p.professionnelSante.findUnique.mockResolvedValue({ id: "pro-inf", etablissementId: "etab-1" });
+
+    expect((await ajouterDocumentAction(etatInitial, ajout())).success).toBe(true);
+    const { data } = p.documentMedical.create.mock.calls[0][0] as { data: Record<string, unknown> };
+    expect(data.auteurId).toBe("user-inf");
+    expect(p.consentement.findUnique).toHaveBeenCalledWith({
+      where: { patientId_acteurAutoriseId: { patientId: "pat-1", acteurAutoriseId: "user-inf" } },
+    });
+
+    p.consentement.findUnique.mockResolvedValue(null);
+    expect((await ajouterDocumentAction(etatInitial, ajout())).error).toContain("Aucun consentement actif");
+  });
+
+  it("purge les metadonnees EXIF d'un JPEG avant l'envoi au stockage et enregistre la taille reellement stockee", async () => {
+    const recu = fichier(JPEG_AVEC_EXIF, "photo.jpg", "image/jpeg");
+
+    expect((await ajouterDocumentAction(etatInitial, ajout(recu))).success).toBe(true);
+
+    const envoye = televerserMock.mock.calls[0][0] as Buffer;
+    expect(envoye.includes(Buffer.from("Exif"))).toBe(false);
+    expect(envoye.includes(Buffer.from("GPS-Cotonou"))).toBe(false);
+    expect(envoye.length).toBeLessThan(JPEG_AVEC_EXIF.length);
+    const { data } = p.documentMedical.create.mock.calls[0][0] as { data: Record<string, unknown> };
+    expect(data).toMatchObject({ typeMime: "image/jpeg", tailleOctets: envoye.length });
+  });
+
+  it("refuse une image a la structure incoherente plutot que de la stocker avec ses metadonnees", async () => {
+    const tronque = fichier(JPEG_AVEC_EXIF.slice(0, 12), "photo.jpg", "image/jpeg");
+
+    const resultat = await ajouterDocumentAction(etatInitial, ajout(tronque));
 
     expect(resultat.success).toBe(false);
+    expect(resultat.error).toContain("illisible");
     expect(televerserMock).not.toHaveBeenCalled();
+    expect(p.documentMedical.create).not.toHaveBeenCalled();
   });
 
   it("refuse l'absence de fichier et un fichier vide", async () => {
@@ -109,13 +169,13 @@ describe("ajouterDocumentAction (F-CLI-13)", () => {
     expect(televerserMock).not.toHaveBeenCalled();
   });
 
-  it("refuse un fichier de plus de 10 Mo", async () => {
+  it("refuse un fichier de plus de 4 Mo (limite reellement acceptee par la plateforme)", async () => {
     const gros = fichier(PDF);
     Object.defineProperty(gros, "size", { value: TAILLE_MAX_DOCUMENT_OCTETS + 1 });
 
     const resultat = await ajouterDocumentAction(etatInitial, ajout(gros));
 
-    expect(resultat.error).toContain("10 Mo");
+    expect(resultat.error).toContain("4 Mo");
     expect(televerserMock).not.toHaveBeenCalled();
   });
 
@@ -301,6 +361,20 @@ describe("getDocumentsDuPatient", () => {
       action: "consultation_liste_documents_medicaux",
       donneeConcernee: "patient:pat-1",
     });
+  });
+
+  it("n'attribue le titre Dr. qu'a un auteur medecin, jamais a un infirmier", async () => {
+    p.documentMedical.findMany.mockResolvedValue([
+      documentEnBase({ id: "d-med", auteurId: "user-med", auteur: { nom: "Ahouansou", prenom: "Julien", roles: [{ nom: "medecin" }] } }),
+      documentEnBase({ id: "d-inf", auteurId: "user-inf", auteur: { nom: "Dossou", prenom: "Afi", roles: [{ nom: "infirmier" }] } }),
+    ]);
+
+    const liste = await getDocumentsDuPatient("pat-1");
+
+    expect(liste?.map((document) => document.auteurNomComplet)).toEqual(["Dr. Julien Ahouansou", "Afi Dossou"]);
+    expect(p.documentMedical.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ include: { auteur: { include: { roles: true } } } })
+    );
   });
 });
 

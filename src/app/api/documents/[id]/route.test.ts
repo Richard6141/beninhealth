@@ -180,6 +180,16 @@ describe("GET /api/documents/[id]", () => {
     expect(reponse.headers.get("Content-Disposition")).toBe('attachment; filename="compte-rendu.pdf"');
   });
 
+  it("annonce la longueur des octets reellement servis, meme si la taille enregistree differe (purge des metadonnees)", async () => {
+    getSessionMock.mockResolvedValue({ userId: "user-auteur", roles: ["medecin"] });
+    p.documentMedical.findUnique.mockResolvedValue(document({ tailleOctets: CONTENU.length + 5000 }));
+
+    const reponse = await appeler();
+
+    expect(reponse.headers.get("Content-Length")).toBe(String(CONTENU.length));
+    expect(new Uint8Array(await reponse.arrayBuffer())).toEqual(CONTENU);
+  });
+
   it("assainit le nom de fichier dans Content-Disposition (guillemets et sauts de ligne)", async () => {
     getSessionMock.mockResolvedValue({ userId: "user-auteur", roles: ["medecin"] });
     p.documentMedical.findUnique.mockResolvedValue(document({ nomFichierOriginal: 'a"b\r\nSet-Cookie: x=1.pdf' }));

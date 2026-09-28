@@ -5318,3 +5318,14 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   mineur, RG-CIT-12 jamais mesure). Verifie : tsc 0 sur les fichiers du lot (l'unique erreur du depot
   est dans le chantier actif de c0/F-ETA-04, non liee, non touchee par ce lot), eslint 0 erreur sur
   les 13 fichiers, vitest 316/316 (facility + patient + proches), tirets 0.
+- **F-CLI-13** (document medical, limite/EXIF/roles) : lot livre par un agent lance par 89 (worktree
+  isole), verifie et integre. Limite reunifiee a 4 Mo partout (formulaire et message d'erreur, l'ecart
+  de 10 Mo n'etait que dans le formulaire) ; purge EXIF/metadonnees JPEG/PNG sans dependance externe
+  (`purge-metadonnees.ts`, avant l'envoi a Cloudinary) ; infirmier ajoute a `permissions.ts`
+  (`create:document_medical`/`read:document_medical`, meme Consentement verifie en base que le
+  medecin, jamais deduit du seul droit, fichier partage revu specifiquement avant integration, aucune
+  collision avec un autre chantier en cours dessus). Restent hors perimetre, documentes explicitement
+  dans le code par l'agent : laboratoire exclu, depot en une etape, stockage Cloudinary sans
+  chiffrement applicatif. Verifie : eslint 0 erreur, vitest 105/105 sur les 6 fichiers touches, tsc 0
+  hors l'erreur deja confirmee sans rapport (chantier actif de c0/F-ETA-04), tirets 0. Aucune
+  migration.

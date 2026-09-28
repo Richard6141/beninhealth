@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  LIBELLE_TAILLE_MAX_DOCUMENT,
   TAILLE_MAX_DOCUMENT_OCTETS,
   detecterTypeReelFichier,
   extensionDepuisTypeMime,
@@ -63,7 +64,21 @@ describe("extensionDepuisTypeMime", () => {
 });
 
 describe("taille maximale", () => {
-  it("est de 10 Mo", () => {
-    expect(TAILLE_MAX_DOCUMENT_OCTETS).toBe(10 * 1024 * 1024);
+  it("est de 4 Mo, sous le plafond de 10 Mo du pack (RG-CLI-110)", () => {
+    expect(TAILLE_MAX_DOCUMENT_OCTETS).toBe(4_000_000);
+    expect(TAILLE_MAX_DOCUMENT_OCTETS).toBeLessThanOrEqual(10 * 1024 * 1024);
+    expect(LIBELLE_TAILLE_MAX_DOCUMENT).toBe("4 Mo");
+  });
+
+  it("tient sous bodySizeLimit (4mb) de next.config.ts avec une marge pour l'enveloppe multipart", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const { resolve } = await import("node:path");
+    const config = await readFile(resolve(__dirname, "../../../next.config.ts"), "utf8");
+    const limite = /bodySizeLimit:\s*"(\d+)mb"/.exec(config);
+
+    expect(limite).not.toBeNull();
+    const limiteOctets = Number(limite?.[1]) * 1024 * 1024;
+    // Au moins 64 Ko pour les limites multipart, les en-tetes et les autres champs.
+    expect(limiteOctets - TAILLE_MAX_DOCUMENT_OCTETS).toBeGreaterThanOrEqual(64 * 1024);
   });
 });

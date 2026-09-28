@@ -919,8 +919,8 @@ export async function getHistoriquePatient(
       include: { professionnel: { include: { user: true } }, etablissement: true },
     }),
     // DocumentMedical n'a pas d'etablissement propre : resolu via
-    // auteur -> professionnel -> etablissement (toujours un medecin
-    // aujourd'hui, voir create:document_medical dans permissions.ts).
+    // auteur -> professionnel -> etablissement (medecin ou infirmier, voir
+    // create:document_medical dans permissions.ts).
     prisma.documentMedical.findMany({
       where: { patientId },
       include: { auteur: { include: { professionnel: { include: { etablissement: true } } } } },

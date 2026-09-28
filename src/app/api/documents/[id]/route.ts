@@ -132,7 +132,9 @@ export async function GET(request: Request, { params }: RouteContext) {
     headers: {
       "Content-Type": document.typeMime,
       "Content-Disposition": `attachment; filename="${assainirNomFichier(document.nomFichierOriginal)}"`,
-      "Content-Length": String(document.tailleOctets),
+      // Octets reellement renvoyes : le stockage peut differer de la taille
+      // enregistree a l'ajout (purge des metadonnees, force_strip Cloudinary).
+      "Content-Length": String(octets.length),
       "Cache-Control": "private, no-store",
     },
   });

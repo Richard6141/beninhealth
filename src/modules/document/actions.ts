@@ -3,11 +3,13 @@
 /**
  * Server Actions du module document : documents medicaux ajoutes au dossier
  * d'un patient (F-CLI-13 du pack : compte rendu, resultat, imagerie,
- * courrier, certificat, autre). Perimetre de cette phase : role medecin
- * uniquement (le pack mentionne aussi l'infirmier et le laboratoire pour un
- * televersement de compte rendu, hors perimetre ici - voir le role de ces
- * deux profils dans src/security/permissions.ts, qui n'accorde
- * create:document_medical qu'au medecin pour le moment).
+ * courrier, certificat, autre). Roles habilites (src/security/permissions.ts,
+ * create:document_medical) : medecin et infirmier, comme le demande le pack
+ * (DOCTOR, NURSE), tous deux soumis au meme Consentement verifie en base. Le
+ * laboratoire (LAB_*, "compte rendu" dans le pack) reste exclu : il n'accede
+ * jamais au dossier par Consentement mais par l'examen qui lui est adresse,
+ * et le depot d'un compte rendu rattache a un examen releve du module
+ * laboratoire (resultat aujourd'hui en texte libre), pas de ce formulaire.
  *
  * Meme principe applique de bout en bout que src/modules/clinical/actions.ts
  * et src/modules/laboratoire/actions.ts : Zero Trust. Le professionnel
@@ -18,16 +20,16 @@
  *
  * RG-CLI-110 : le type reel d'un fichier televerse est verifie par signature
  * binaire (src/modules/document/stockage-fichiers.ts), jamais par son
- * extension ni le type MIME declare par le navigateur ; 10 Mo maximum,
- * applique cote serveur. RG-CLI-112 : le fichier est stocke hors de public/,
- * sous un nom aleatoire, jamais le nom original (garde uniquement comme
- * metadonnee d'affichage). RG-CLI-113 : un document n'est jamais supprime,
- * seulement retire "ajoute par erreur" par son auteur, motif obligatoire.
- *
- * Limite assumee (a documenter, voir rapport de l'agent) : les metadonnees
- * EXIF des images (dont la localisation GPS) ne sont pas retirees ici, ce
- * depot n'ayant aucune dependance de traitement d'image installee (ni sharp
- * ni equivalent dans package.json, fichier hors perimetre de cet agent).
+ * extension ni le type MIME declare par le navigateur ; 4 Mo maximum
+ * applique cote serveur (sous le plafond de 10 Mo du pack, voir
+ * TAILLE_MAX_DOCUMENT_OCTETS pour la raison). Les metadonnees d'une image
+ * (EXIF, dont la localisation GPS, XMP, IPTC, commentaires) sont retirees
+ * par le code avant tout envoi vers le stockage (purge-metadonnees.ts), en
+ * plus du flag "force_strip" de Cloudinary. RG-CLI-112 : le fichier est
+ * stocke hors de public/, sous un nom aleatoire, jamais le nom original
+ * (garde uniquement comme metadonnee d'affichage). RG-CLI-113 : un document
+ * n'est jamais supprime, seulement retire "ajoute par erreur" par son
+ * auteur, motif obligatoire.
  */
 
 import { headers } from "next/headers";
@@ -38,7 +40,12 @@ import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
 import { supprimerFichierPriveCloudinary, televerserFichierPriveCloudinary } from "@/lib/cloudinary";
-import { detecterTypeReelFichier, TAILLE_MAX_DOCUMENT_OCTETS } from "./stockage-fichiers";
+import {
+  detecterTypeReelFichier,
+  LIBELLE_TAILLE_MAX_DOCUMENT,
+  TAILLE_MAX_DOCUMENT_OCTETS,
+} from "./stockage-fichiers";
+import { purgerMetadonneesImage } from "./purge-metadonnees";
 import { NIVEAUX_CONFIDENTIALITE_CONNUS, TYPES_DOCUMENT_CONNUS } from "./types-documents";
 import { TYPES_ACCES_DOCUMENT, consentementPermetLeDocument } from "./acces-documents";
 
@@ -111,9 +118,23 @@ function texte(formData: FormData, cle: string): string {
   return typeof valeur === "string" ? valeur : "";
 }
 
-/** Nom complet d'un professionnel de sante, prefixe de "Dr." (meme convention que les autres modules). */
-function nomCompletProfessionnel(utilisateur: { nom: string; prenom: string }): string {
-  return `Dr. ${utilisateur.prenom} ${utilisateur.nom}`;
+/** Message renvoye a un role qui ne peut ni ajouter ni retirer de document. */
+const MESSAGE_ROLE_NON_HABILITE = "Action reservee aux medecins et aux infirmiers.";
+
+/**
+ * Nom complet de l'auteur d'un document, prefixe de "Dr." seulement s'il est
+ * medecin (meme convention que les autres modules) : un document depose par
+ * un infirmier ne doit jamais etre attribue a un "Dr." dans le dossier.
+ */
+function nomCompletProfessionnel(utilisateur: {
+  nom: string;
+  prenom: string;
+  roles?: { nom: string }[];
+}): string {
+  const estMedecin = utilisateur.roles?.some((role) => role.nom === "medecin") ?? false;
+  return estMedecin
+    ? `Dr. ${utilisateur.prenom} ${utilisateur.nom}`
+    : `${utilisateur.prenom} ${utilisateur.nom}`;
 }
 
 function premierMessageErreur(erreur: z.ZodError, messageParDefaut: string): string {
@@ -133,15 +154,17 @@ async function professionnelDeLaSessionCourante() {
 
 /**
  * Ajoute un document au dossier d'un patient (F-CLI-13 du pack), a
- * l'initiative du medecin connecte (derive de getSession(), jamais d'un id
- * transmis par le client). Verification obligatoire avant toute ecriture :
- * un Consentement actif (dossier_complet ou documents) doit exister pour
- * (patientId, acteurAutoriseId = medecin connecte). Si un consultationId est
- * fourni, verifie qu'il appartient bien a ce patient et a ce medecin.
+ * l'initiative du medecin ou de l'infirmier connecte (derive de getSession(),
+ * jamais d'un id transmis par le client). Verification obligatoire avant
+ * toute ecriture : un Consentement actif (dossier_complet ou documents) doit
+ * exister pour (patientId, acteurAutoriseId = professionnel connecte). Si un
+ * consultationId est fourni, verifie qu'il appartient bien a ce patient et a
+ * ce professionnel.
  *
  * RG-CLI-110 : le fichier transmis est d'abord verifie par signature binaire
- * (PDF/JPEG/PNG uniquement) et par sa taille reelle (10 Mo maximum), jamais
- * par son extension ni le type MIME declare par le navigateur. Le fichier est
+ * (PDF/JPEG/PNG uniquement) et par sa taille reelle (4 Mo maximum), jamais
+ * par son extension ni le type MIME declare par le navigateur, puis une image
+ * est purgee de ses metadonnees (purge-metadonnees.ts). Le fichier est
  * televerse vers Cloudinary en prive (type "authenticated", RG-CLI-112 :
  * jamais accessible par une URL publique statique, voir src/lib/cloudinary.ts)
  * sous un identifiant aleatoire avant toute ecriture en base : si la creation
@@ -160,9 +183,9 @@ export async function ajouterDocumentAction(
   }
 
   // RBAC (voir src/security/permissions.ts) : ajouter un document medical est
-  // reserve au role medecin pour cette phase.
+  // reserve aux roles medecin et infirmier (F-CLI-13 : DOCTOR, NURSE).
   if (!session.roles.some((role) => can(role, "create", "document_medical"))) {
-    return { error: "Action reservee aux medecins.", success: false };
+    return { error: MESSAGE_ROLE_NON_HABILITE, success: false };
   }
 
   const validation = schemaAjoutDocument.safeParse({
@@ -195,7 +218,10 @@ export async function ajouterDocumentAction(
   }
 
   if (fichier.size > TAILLE_MAX_DOCUMENT_OCTETS) {
-    return { error: "Le fichier depasse la taille maximale de 10 Mo.", success: false };
+    return {
+      error: `Le fichier depasse la taille maximale de ${LIBELLE_TAILLE_MAX_DOCUMENT}.`,
+      success: false,
+    };
   }
 
   // RG-CLI-110 : verification par contenu reel du fichier, jamais par
@@ -206,6 +232,19 @@ export async function ajouterDocumentAction(
     return {
       error:
         "Format de fichier non pris en charge. Seuls les fichiers PDF, JPEG ou PNG sont acceptes (verifie par le contenu reel du fichier, pas son extension).",
+      success: false,
+    };
+  }
+
+  // RG-CLI-110 : metadonnees d'image (EXIF dont GPS, XMP, IPTC, commentaires)
+  // retirees ici, avant toute requete en base et avant tout envoi vers le
+  // stockage. Une image a la structure incoherente est refusee plutot que
+  // stockee avec ses metadonnees. Un PDF est renvoye inchange.
+  const octetsPurges = purgerMetadonneesImage(new Uint8Array(await fichier.arrayBuffer()), signature.typeMime);
+
+  if (!octetsPurges) {
+    return {
+      error: "Cette image est illisible ou endommagee. Enregistrez-la de nouveau (JPEG ou PNG) puis reessayez.",
       success: false,
     };
   }
@@ -267,7 +306,7 @@ export async function ajouterDocumentAction(
       consultationIdValide = consultation.id;
     }
 
-    const octets = Buffer.from(await fichier.arrayBuffer());
+    const octets = Buffer.from(octetsPurges);
     const { publicId: identifiantCloudinary } = await televerserFichierPriveCloudinary(octets, {
       dossierComplement: "documents",
       identifiantPublic: randomUUID(),
@@ -289,7 +328,9 @@ export async function ajouterDocumentAction(
             cheminFichier: identifiantCloudinary,
             nomFichierOriginal: fichier.name || "document",
             typeMime: signature.typeMime,
-            tailleOctets: fichier.size,
+            // Taille reellement stockee (apres purge des metadonnees), pas
+            // celle du fichier recu.
+            tailleOctets: octets.length,
           },
         });
 
@@ -344,7 +385,7 @@ export async function retirerDocumentAction(
   }
 
   if (!session.roles.some((role) => can(role, "create", "document_medical"))) {
-    return { error: "Action reservee aux medecins.", success: false };
+    return { error: MESSAGE_ROLE_NON_HABILITE, success: false };
   }
 
   const validation = schemaRetraitDocument.safeParse({
@@ -447,7 +488,7 @@ export async function getDocumentsDuPatient(patientId: string): Promise<Document
 
   const tousLesDocuments = await prisma.documentMedical.findMany({
     where: { patientId },
-    include: { auteur: true },
+    include: { auteur: { include: { roles: true } } },
     orderBy: { dateCreation: "desc" },
   });
 
@@ -514,7 +555,7 @@ export async function getMesDocuments(): Promise<DocumentResume[]> {
 
   const documents = await prisma.documentMedical.findMany({
     where: { patientId: patient.id },
-    include: { auteur: true },
+    include: { auteur: { include: { roles: true } } },
     orderBy: { dateCreation: "desc" },
   });
 
@@ -533,7 +574,8 @@ export async function getMesDocuments(): Promise<DocumentResume[]> {
     retirePourErreur: document.retirePourErreur,
     motifRetrait: document.motifRetrait,
     // Un patient n'est jamais l'auteur d'un DocumentMedical (cree exclusivement
-    // par un medecin, voir ajouterDocumentAction) : jamais habilite au retrait.
+    // par un medecin ou un infirmier, voir ajouterDocumentAction) : jamais
+    // habilite au retrait.
     estAuteur: false,
   }));
 }
