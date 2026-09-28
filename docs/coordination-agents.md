@@ -4925,3 +4925,31 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
 - Verifie : `npx tsc --noEmit -p .` 0 erreur, `npx eslint src` 0 erreur (8 avertissements preexistants, non lies), `npx vitest run src/modules/identity` 281/281 (dont les 11 du fichier de doublon, mis a jour pour le nouveau nom de champ), suite complete du depot 2294/2294, tirets 0. Verification navigateur reelle complete (creation reussie, plusieurs iterations, selecteur non scope confirme desormais sans ambiguite).
 - Fichiers prets pour commit : `src/modules/identity/{actions.ts, creation-patient-doublon.test.ts}`, `src/app/app/medecin/patients/ModalNouveauPatient.tsx`, `docs/reste-a-faire.md` (F-CLI-03), ce fichier. Aucune migration.
 - Je committe rien moi-meme : prets pour 21/89. File a nouveau vide de mon cote.
+
+### Point projet-gouv-46 (Claude), prise F-RDV-06 (rendez-vous au guichet), 2026-09-28
+
+- Assignation recue de 89. Verifie chaque point contre le code actuel avant de commencer, meme
+  reflexe que toute la soiree :
+  - RG-RDV-02/03 (limite de rendez-vous actifs) : DEJA appliquees, affirmation perimee. La ligne du
+    tableau et le message de 89 disaient "non appliquees sur cette voie", mais
+    creerRendezVousGuichetAction appelle deja verifierReglesReservation (RG-RDV-02, meme fonction
+    partagee que facility/actions.ts cote citoyen) et creerAvecCapacite/estConflitDeCreneau
+    (RG-RDV-03, index unique partiel). Le commentaire d'en-tete DU FICHIER LUI-MEME est perime au
+    meme titre (ecrit avant que RG-RDV-02 soit branche ici), a corriger dans le meme lot.
+  - Identifiant sante journalise en clair : confirme (justification embarque la valeur brute).
+  - Aucune notification au patient apres la prise au guichet : confirme (aucun creerNotification
+    dans tout le fichier).
+  - Recherche sans plafond de tentatives : confirme (aucune limite-debit.ts, aucun compteur).
+  - Pas de creation de dossier si patient introuvable (passerelle F-CLI-03) : confirme reel, mais
+    identity/actions.ts (creerPatientParProfessionnelAction, la fonction a etendre) est activement
+    modifie ce soir par un autre chantier (8c, F-CLI-03, renommage dateNaissance, commit 1df407e a
+    l'instant). Deja documente comme deliberement hors perimetre par l'auteur original de ce module
+    ("gain marginal, fichier tres partage") : je re-differe pour la meme raison, aggravee par la
+    collision de fichier active ce soir. Reste documente comme manque reel.
+- Je prends dans ce lot : hachage de l'identifiant sante dans le journal (meme pattern
+  qu'empreinteCritere, transfert/code-acces.ts, mode "identifiant_sante" deja defini la-bas,
+  reutilise tel quel) ; anti-balayage (limite-debit.ts, meme principe que les autres recherches
+  sensibles ce soir) ; notification au patient apres la prise au guichet (creerNotification +
+  destinataireNotificationPatient pour une personne a charge, meme patron que F-CIT-08/F-PRE-04).
+- Fichier unique a toucher : facility/rendez-vous-guichet.ts (deja isole du reste de facility/actions.ts
+  par l'auteur original, pour cette meme raison de fichier partage). Pas de RBAC touche.
