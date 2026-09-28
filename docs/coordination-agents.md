@@ -5033,3 +5033,12 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
      laboratoire - pour l'autre), documentes comme tels plutot que bricoles.
 - Fichier unique a toucher : proches/actions.ts (et ses tests). Verifie non touche par un autre
   chantier ce soir avant de commencer.
+
+### Livraison projet-gouv-8c, F-PHA-02 : journalisation de l'ouverture d'une ordonnance presentee, 2026-09-28
+
+- Assigne par 89, lot simple comme annonce. `getDetailPrescriptionPourDelivrance` journalise
+  desormais chaque ouverture reelle du detail (`ordonnance_presentee_consultee`), placee apres la
+  verification d'acces : couvre les 2 chemins (jeton de presentation valide ET « deja delivre
+  ici »), pas seulement le premier. Justification sans donnee sensible, verifie par test.
+- 3 tests ajoutes. Verifie : tsc 0, eslint 0 erreur, vitest 2309/2309 (repo entier au moment de la
+  livraison, aucune regression). Tirets 0, aucune migration.

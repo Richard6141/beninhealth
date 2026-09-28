@@ -2205,6 +2205,27 @@ export async function getDetailPrescriptionPourDelivrance(
     return null;
   }
 
+  // RG-AUD-01 : l'ouverture du detail d'une ordonnance presentee est une
+  // lecture de donnee sensible (allergies, prescripteur, etablissement), au
+  // meme titre que consultation_resume_patient (clinical/actions.ts) ou la
+  // lecture d'un document medical : jusqu'ici seule la RECHERCHE etait
+  // journalisee (rechercherOrdonnancePresenteeAction ci-dessus), jamais
+  // chaque ouverture reelle du detail, qui peut pourtant survenir plusieurs
+  // fois pour un meme jeton (rechargement de l'ecran) ou sans jeton du tout
+  // quand la pharmacie a deja delivre dessus. Trace ici, pas dans
+  // l'ecran (Server Component) qui appelle cette fonction, pour ne jamais
+  // dependre du bon vouloir de chaque appelant (meme principe Zero Trust que
+  // le reste de ce fichier).
+  await journaliser({
+    utilisateurId: session.userId,
+    action: "ordonnance_presentee_consultee",
+    donneeConcernee: `prescription:${prescription.id}`,
+    adresseTechnique: await adresseTechniqueCourante(),
+    justification: dejaServieIci
+      ? `Detail de l'ordonnance ${prescription.numero} consulte (deja delivree par cet etablissement, sans jeton).`
+      : `Detail de l'ordonnance ${prescription.numero} consulte via jeton de presentation.`,
+  });
+
   // RG-PHA-13 : une delivrance annulee ne compte plus dans les quantites
   // deja livrees (l'annulation restitue la quantite au niveau du calcul).
   const dejaLivreParLigne = new Map<string, number>();

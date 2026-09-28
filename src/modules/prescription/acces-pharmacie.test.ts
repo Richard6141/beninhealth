@@ -26,6 +26,7 @@ vi.mock("@/modules/notification/creer", () => ({ creerNotification: vi.fn() }));
 
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
+import { journaliser } from "@/modules/audit/journaliser";
 import {
   getDetailPrescriptionPourDelivrance,
   getTableauDeBordPharmacie,
@@ -41,6 +42,7 @@ const p = prisma as unknown as {
   journalAudit: { count: Mock };
 };
 const getSessionMock = getSession as unknown as Mock;
+const journaliserMock = journaliser as unknown as Mock;
 
 const MAINTENANT = new Date("2026-09-26T12:00:00.000Z");
 const ilYaJours = (jours: number) => new Date(MAINTENANT.getTime() - jours * 24 * 60 * 60 * 1000);
@@ -220,6 +222,43 @@ describe("getDetailPrescriptionPourDelivrance (RG-PHA-02, F-PHA-02)", () => {
     );
 
     expect(await getDetailPrescriptionPourDelivrance("presc-1")).toBeNull();
+  });
+
+  it("RG-AUD-01 : journalise l'ouverture du detail par jeton, sans reveler de donnee sensible dans la justification", async () => {
+    p.prescription.findUnique.mockResolvedValue(ordonnanceEnBase());
+
+    await getDetailPrescriptionPourDelivrance("presc-1", creerJetonPresentation("user-ph", "presc-1"));
+
+    expect(journaliserMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        utilisateurId: "user-ph",
+        action: "ordonnance_presentee_consultee",
+        donneeConcernee: "prescription:presc-1",
+      })
+    );
+    const justification = journaliserMock.mock.calls[0][0].justification as string;
+    expect(justification).not.toContain("Penicilline");
+    expect(justification).not.toContain("BJ-SANTE-PAT-0001");
+  });
+
+  it("RG-AUD-01 : journalise aussi l'ouverture sans jeton (deja delivre par cet etablissement)", async () => {
+    p.prescription.findUnique.mockResolvedValue(
+      ordonnanceEnBase({ statut: "delivree_partiellement", delivrances: [delivranceEnBase("etab-ph")] })
+    );
+
+    await getDetailPrescriptionPourDelivrance("presc-1");
+
+    expect(journaliserMock).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "ordonnance_presentee_consultee", donneeConcernee: "prescription:presc-1" })
+    );
+  });
+
+  it("ne journalise rien quand l'acces est refuse (aucun jeton valide, jamais delivre ici)", async () => {
+    p.prescription.findUnique.mockResolvedValue(ordonnanceEnBase());
+
+    await getDetailPrescriptionPourDelivrance("presc-1", "jeton.invalide");
+
+    expect(journaliserMock).not.toHaveBeenCalled();
   });
 });
 
