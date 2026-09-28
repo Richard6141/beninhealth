@@ -123,7 +123,7 @@ export function ModalNouveauPatient({ onPatientCree, libelleBouton }: ModalNouve
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <SelectField label="Sexe" name="sexe" required options={OPTIONS_SEXE} placeholder="Choisir" />
-            <TextField label="Date de naissance" name="dateNaissance" type="date" required />
+            <TextField label="Date de naissance" name="dateNaissanceNouveauPatient" type="date" required />
           </div>
           <TextField label="Téléphone" name="telephone" hint="Facultatif." />
           <div className="grid gap-4 sm:grid-cols-2">

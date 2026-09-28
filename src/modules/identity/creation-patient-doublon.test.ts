@@ -53,7 +53,7 @@ const champsValides = {
   nom: "Adjovi",
   prenom: "Awa",
   sexe: "F",
-  dateNaissance: "1990-04-23",
+  dateNaissanceNouveauPatient: "1990-04-23",
   telephone: "",
   contactUrgenceNom: "",
   contactUrgenceTelephone: "",
@@ -156,7 +156,7 @@ describe("creerPatientParProfessionnelAction : detection de doublon (RG-CLI-20)"
       ETAT,
       formulaire({
         ...champsValides,
-        dateNaissance: "1991-05-10",
+        dateNaissanceNouveauPatient: "1991-05-10",
         confirmerMalgreDoublon: "on",
         justificationDoublon: "Deuxieme personne, verifiee sur pièce",
         doublonToken: premier.doublonToken!,

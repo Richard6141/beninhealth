@@ -186,7 +186,16 @@ const schemaCreationPatientParProfessionnel = z.object({
   nom: z.string().trim().min(1, "Le nom est obligatoire."),
   prenom: z.string().trim().min(1, "Le prenom est obligatoire."),
   sexe: z.enum(["M", "F"], { message: "Sexe invalide (M ou F attendu)." }),
-  dateNaissance: z
+  // Nom de champ deliberement distinct du "dateNaissance" de
+  // FormulaireAccesParCode.tsx (meme page /app/medecin/patients, formulaire
+  // totalement independant) : bug F-CLI-03 investigue le 2026-09-28 (voir
+  // coordination-agents.md) ou une collision de nom entre ces deux <form>
+  // faisait echouer tout selecteur non scope (Playwright, testing-library) a
+  // cibler le bon champ, laissant a tort croire a un formulaire qui ne
+  // soumettait jamais rien. Le formulaire lui-meme n'avait aucun bug une
+  // fois le bon champ vise ; renomme ici par hygiene pour ne jamais
+  // reproduire cette confusion.
+  dateNaissanceNouveauPatient: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Date de naissance invalide (format attendu : AAAA-MM-JJ)."),
   telephone: z.string().trim().optional().default(""),
@@ -305,7 +314,7 @@ export async function creerPatientParProfessionnelAction(
     nom: formData.get("nom"),
     prenom: formData.get("prenom"),
     sexe: formData.get("sexe"),
-    dateNaissance: formData.get("dateNaissance"),
+    dateNaissanceNouveauPatient: formData.get("dateNaissanceNouveauPatient"),
     telephone: formData.get("telephone") ?? undefined,
     contactUrgenceNom: formData.get("contactUrgenceNom") ?? undefined,
     contactUrgenceTelephone: formData.get("contactUrgenceTelephone") ?? undefined,
@@ -322,7 +331,7 @@ export async function creerPatientParProfessionnelAction(
   }
 
   const donnees = validation.data;
-  const dateNaissance = new Date(donnees.dateNaissance);
+  const dateNaissance = new Date(donnees.dateNaissanceNouveauPatient);
 
   if (Number.isNaN(dateNaissance.getTime()) || dateNaissance > new Date()) {
     return { error: "Date de naissance invalide.", success: false };
