@@ -4861,3 +4861,41 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   reclamation-emission.test.ts,actions.ts,creation-patient-doublon.test.ts}` (actions.ts isole du
   reste du fichier partage), `docs/reste-a-faire.md` (F-AUTH-03, isole du reste du fichier partage).
 - Je pars chercher la prochaine fiche P0/P1 non revendiquee, ou j'attends une assignation de 89.
+
+### Point projet-gouv-46 (Claude), F-PIL-07 (calcul des agregats), 2026-09-28
+
+- Fiche libre du tableau, prise et livree dans le meme lot (pas de note de prise separee, chantier
+  cible et rapide : 5 types d'evenements a publier, deja tous declares dans TypeEvenementPilotage,
+  jamais appeles a part consultation_validee/retiree).
+- Ajoute chacun au point de creation/transition reel, meme principe que clinical/actions.ts deja en
+  place :
+  - prescription_signee : creerPrescriptionAction (creation = signature dans ce depot, pas de
+    DRAFT). Declenche le recalcul de IND-08.
+  - vaccination : enregistrerVaccinationAction ET enregistrerVaccinationCommunautaireAction
+    (verifie que IND-10 compte deja les deux, F-COM-04, avant de dupliquer l'appel dans les deux
+    fonctions).
+  - delivrance : delivrerPrescriptionAction. Verifie avant de conclure : aucun indicateur ne
+    depend specifiquement de la delivrance a ce jour (IND-08 compte les ordonnances signees, pas
+    leur delivrance) ; publie quand meme le type declare, documente que l'effet reste invisible
+    tant qu'aucun indicateur n'en depend, plutot que de sauter ce type.
+  - rendez_vous_change : dans transitionnerRendezVous (le chemin par id unique, utilise par toutes
+    les actions explicites de l'ecran), pas dans transitionnerRendezVousEnMasse (taches planifiees
+    en volume, ex. expiration de masse) : publier par ligne y serait couteux, laisse documente
+    comme limite plutot que traite a la va-vite. Necessite une requete findUnique supplementaire
+    apres le updateMany conditionnel existant (le compte ne suffit pas a connaitre la date/
+    l'etablissement).
+  - compte_cree : verifierCodeInscriptionAction, etablissementId a null (evenement systeme, IND-13)
+    - exactement l'exemple deja donne par la docstring de EvenementPilotage.etablissementId, jamais
+    exploite jusqu'ici.
+- Trouve en verifiant avant de coder : aucun test n'existait pour file-taches.ts lui-meme (le
+  module qui publie/regroupe/marque les taches), malgre son role central dans cette fiche. Corrige
+  au meme titre que le reste : 7 tests ajoutes (publication des 7 types, regroupement par jour UTC
+  et etablissement dont le cas etablissement null, marquage).
+- 9 fichiers de tests existants adaptes (mock de @/modules/pilotage/file-taches a la frontiere du
+  module, meme convention etablie plusieurs fois ce soir) plus rendez-vous-etats.test.ts (findUnique
+  ajoute au client simule de ce fichier, teste explicitement avec 2 nouveaux cas).
+- Verifie : tsc 0, eslint 0 erreur (deux fois, la machine est chargee ce soir), tirets 0. Suite
+  complete du depot 2294/2294 (aucune regression).
+- Commits : `5462d40` (code), `635010a` (reste-a-faire.md).
+- Suite pour moi : je cherche la prochaine fiche P0/P1 non revendiquee, ou j'attends une
+  assignation de 89.
