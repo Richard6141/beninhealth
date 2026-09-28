@@ -11,6 +11,12 @@ vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Map()) }));
 vi.mock("@/lib/session", () => ({ getSession: vi.fn() }));
 vi.mock("@/modules/audit/journaliser", () => ({ journaliser: vi.fn() }));
 vi.mock("@/modules/notification/creer", () => ({ creerNotification: vi.fn(async () => undefined) }));
+// Frontiere du module : la logique interne (routage vers le tuteur d'une
+// personne a charge) est testee dans son propre fichier
+// (facility/destinataire-notification-patient.test.ts), pas ici.
+vi.mock("@/modules/facility/destinataire-notification-patient", () => ({
+  destinataireNotificationPatient: vi.fn(async (patientId: string) => `destinataire-de-${patientId}`),
+}));
 vi.mock("@/modules/identity/mfa-totp", () => ({ verifierCodeMfaPourConnexion: vi.fn() }));
 vi.mock("@/modules/administration/parametres-lecture", () => ({ lireParametre: vi.fn(async () => 5) }));
 
@@ -32,6 +38,7 @@ import { getSession } from "@/lib/session";
 import { journaliser } from "@/modules/audit/journaliser";
 import { creerNotification } from "@/modules/notification/creer";
 import { verifierCodeMfaPourConnexion } from "@/modules/identity/mfa-totp";
+import { destinataireNotificationPatient } from "@/modules/facility/destinataire-notification-patient";
 import { lireParametre } from "@/modules/administration/parametres-lecture";
 import { viderCompteursDebit } from "@/lib/limite-debit";
 import { declencherAccesUrgenceAction } from "./actions";
@@ -47,6 +54,7 @@ const getSessionMock = getSession as unknown as Mock;
 const journaliserMock = journaliser as unknown as Mock;
 const creerNotificationMock = creerNotification as unknown as Mock;
 const verifierMfaMock = verifierCodeMfaPourConnexion as unknown as Mock;
+const destinataireNotificationPatientMock = destinataireNotificationPatient as unknown as Mock;
 const lireParametreMock = lireParametre as unknown as Mock;
 
 const ETAT = { error: null, success: false };
@@ -387,12 +395,19 @@ describe("notifications immediates", () => {
     await declencherAccesUrgenceAction(ETAT, formulaire());
 
     expect(creerNotificationMock).toHaveBeenCalledWith(
-      "user-pat",
+      "destinataire-de-pat-1",
       "acces_urgence",
       expect.stringContaining("CHU de Parakou")
     );
     const message = creerNotificationMock.mock.calls[0][2] as string;
     expect(message).not.toContain("user-med");
+  });
+
+  it("F-CLI-10 : la notification du patient est routee via destinataireNotificationPatient (personne a charge)", async () => {
+    await declencherAccesUrgenceAction(ETAT, formulaire());
+
+    expect(destinataireNotificationPatientMock).toHaveBeenCalledWith("pat-1");
+    expect(creerNotificationMock.mock.calls[0][0]).toBe("destinataire-de-pat-1");
   });
 
   it("previent les administrateurs de l'etablissement du professionnel, avec l'heure d'expiration et un lien vers le dossier", async () => {

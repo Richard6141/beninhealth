@@ -25,6 +25,7 @@ import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
 import { creerNotification } from "@/modules/notification/creer";
+import { destinataireNotificationPatient } from "@/modules/facility/destinataire-notification-patient";
 import { verifierCodeMfaPourConnexion } from "@/modules/identity/mfa-totp";
 import { enregistrerEvenement, limiteAtteinte } from "@/lib/limite-debit";
 import { MOTIFS_URGENCE } from "./motifs-urgence";
@@ -76,6 +77,12 @@ function texte(formData: FormData, cle: string): string {
  * est applique cote lecture par getResumePatient/getHistoriquePatient sur
  * le typeAcces "urgence", pas ici. RG-CLI-93 (pas de prolongation) est
  * applique en refusant si un acces urgence est deja actif pour ce couple.
+ *
+ * Base B5 (droit d'ECRITURE, RG-ACC-15, corrige le 2026-09-28) : ce
+ * Consentement "urgence" suffit lui seul a creer une consultation (et donc
+ * une ordonnance, toujours creee depuis une consultation dans ce depot),
+ * sans rendez-vous ni arrivee enregistree - voir enregistrerConsultationAction
+ * dans clinical/actions.ts, jamais verifie ici.
  */
 export async function declencherAccesUrgenceAction(
   prevState: UrgenceActionState,
@@ -235,8 +242,12 @@ export async function declencherAccesUrgenceAction(
 
   const heureExpiration = dateFin.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
 
+  // F-CLI-10 : le patient doit etre notifie de l'acces d'urgence a son
+  // dossier ; routee vers le tuteur si le patient est une personne a charge
+  // (sans_compte, jamais connectee), meme principe deja applique dans
+  // prescription/actions.ts, laboratoire/actions.ts et clinical/actions.ts.
   await creerNotification(
-    patient.userId,
+    await destinataireNotificationPatient(patient.id),
     "acces_urgence",
     `Votre dossier BHIP a ete consulte en urgence par ${professionnel.etablissement.nom} le ${maintenant.toLocaleDateString("fr-FR")}.`
   );

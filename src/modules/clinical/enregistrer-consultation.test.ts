@@ -152,11 +152,10 @@ describe("consentement du patient (RG-CLI-30)", () => {
     expect(prismaMock.consultation.create).not.toHaveBeenCalled();
   });
 
-  it("refuse un consentement retire, expire, ou d'un type qui ne permet pas d'ecrire (urgence, examens, prescriptions, documents)", async () => {
+  it("refuse un consentement retire, expire, ou d'un type qui ne permet pas d'ecrire (examens, prescriptions, documents)", async () => {
     const cas = [
       { statut: "retire", typeAcces: "dossier_complet", dateFin: new Date(MAINTENANT.getTime() + 3600_000) },
       { statut: "actif", typeAcces: "dossier_complet", dateFin: new Date(MAINTENANT.getTime() - 1000) },
-      { statut: "actif", typeAcces: "urgence", dateFin: new Date(MAINTENANT.getTime() + 3600_000) },
       { statut: "actif", typeAcces: "examens", dateFin: new Date(MAINTENANT.getTime() + 3600_000) },
       { statut: "actif", typeAcces: "prescriptions", dateFin: new Date(MAINTENANT.getTime() + 3600_000) },
       { statut: "actif", typeAcces: "documents", dateFin: new Date(MAINTENANT.getTime() + 3600_000) },
@@ -270,6 +269,33 @@ describe("base d'acces en ecriture a la CREATION d'une consultation (RG-ACC-15)"
     expect(resultat.success).toBe(false);
     expect(resultat.error).toContain("Un consentement seul ne permet pas de creer une consultation");
     expect(prismaMock.consultation.create).not.toHaveBeenCalled();
+  });
+
+  it("F-CLI-10 / base B5 : un acces d'urgence actif suffit seul, sans B3 ni B4, sans meme interroger rendezVous", async () => {
+    prismaMock.consentement.findUnique.mockResolvedValue({
+      statut: "actif",
+      typeAcces: "urgence",
+      dateFin: new Date(MAINTENANT.getTime() + 3600_000),
+    });
+    prismaMock.rendezVous.findFirst.mockResolvedValue(null);
+
+    const resultat = await enregistrerConsultationAction(ETAT, formulaire());
+
+    expect(resultat.success).toBe(true);
+    expect(prismaMock.rendezVous.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("un acces d'urgence EXPIRE ne donne ni le droit de lecture ni la base B5 d'ecriture", async () => {
+    prismaMock.consentement.findUnique.mockResolvedValue({
+      statut: "actif",
+      typeAcces: "urgence",
+      dateFin: new Date(MAINTENANT.getTime() - 1000),
+    });
+
+    const resultat = await enregistrerConsultationAction(ETAT, formulaire());
+
+    expect(resultat.success).toBe(false);
+    expect(resultat.error).toContain("Aucun consentement actif");
   });
 
   it("accepte via un contexte de soins B4 (patient arrive dans l'etablissement), meme sans rendez-vous avec ce professionnel precis", async () => {
