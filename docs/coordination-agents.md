@@ -4820,3 +4820,44 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   automatiquement qu'il faut chercher une base plus ancienne - ca peut aussi vouloir dire que la
   base choisie EST DEJA la pointe courante (rien a regrafter, la reference cherchee est en fait
   DEVANT, pas derriere).
+
+### Livraison projet-gouv-bd, F-AUTH-03 : envoi automatique du code, niveau de verification, 2026-09-28
+
+- Assignation partiellement perimee, verifiee avant de coder (transparence) : 4 des 6 points listes
+  par 89 etaient deja resolus ou deja assumes -> "les 5 essais ne comptent que si le code est bon" :
+  deja faux, `tentatives: increment` compte deja les echecs ; "un nouveau code n'annule pas les
+  precedents" : deja faux, `updateMany` invalide deja les codes actifs avant d'en creer un nouveau ;
+  "aucun test" : deja faux, `reclamation.test.ts` existait deja (12 cas) ; telephone non verifie par
+  OTP (RG-AUTH-21) : deja documente comme decision assumee en tete du fichier (pas d'infra OTP
+  generique dans ce depot).
+- **Livre** : SMS `N-CLAIM-CODE` envoye automatiquement a la creation d'un dossier "sans compte"
+  (`creerPatientParProfessionnelAction`, F-CLI-03), au lieu d'exiger un aller-retour manuel separe
+  (pack, section 07 "Comptes et acces", etape 4). Logique de generation partagee entre generation
+  manuelle et automatique (`src/modules/identity/reclamation-emission.ts`, nouveau module pur).
+  Niveau de verification d'identite ajoute (chapitre 5.6 du pack, `User.niveauVerification`, N0 par
+  defaut, migration `20260928020000_niveau_verification`) : passe a N1 lors d'une reclamation
+  reussie, sans jamais retrograder un niveau deja plus eleve (N2 conserve).
+- Limites assumees, non corrigees : N2/N3 jamais ecrits (aucune case "piece d'identite vue" dans
+  creerPatientParProfessionnelAction, hors de mon perimetre F-AUTH-03 ce soir) ; code SMS toujours
+  stocke en clair dans `EnvoiSms.texte` (pattern transverse deja partage par tous les codes envoyes
+  par SMS de ce depot - correction isolee inconsistante, chantier de durcissement transverse a part
+  entiere si souhaite).
+- Bug pre-existant trouve en verifiant en direct, signale a 89, PAS corrige (hors de mon perimetre,
+  fichier jamais touche) : `ModalNouveauPatient.tsx` (creation de patient, F-CLI-03) ne soumet
+  jamais son formulaire en conditions reelles (aucune requete reseau observee, meme famille de piege
+  que le contact d'urgence F-CIT-04 et le signe de danger F-COM-03 deja trouves ce soir : champ
+  controle + `<form action={...}>`). Contourne pour verifier ma propre fonctionnalite : tests
+  unitaires (creerCodeReclamation reellement execute, non mocke, seul le tx et bcrypt le sont) +
+  fixture DB manuelle pour tester la reclamation en direct (compte "TestFAUTH03Fixture" laisse en
+  base, statut actif N1, inoffensif : JournalAudit reference son userId, suppression impossible,
+  RG-ACC-60 append-only).
+- 8 tests supplementaires (`reclamation-emission.test.ts` nouveau, 2 ajouts dans
+  `creation-patient-doublon.test.ts`, 2 ajouts dans `reclamation.test.ts`), tsc 0, eslint 0, tirets
+  0, suite complete du depot verte. Verifie en direct : reclamation reussie via fixture, passage
+  effectif a N1 confirme en base par requete directe.
+- Fichiers du commit : `prisma/schema.prisma` (champ `User.niveauVerification` uniquement, isole du
+  reste du fichier partage), migration `20260928020000_niveau_verification/`,
+  `src/modules/identity/{reclamation.ts,reclamation-emission.ts,reclamation.test.ts,
+  reclamation-emission.test.ts,actions.ts,creation-patient-doublon.test.ts}` (actions.ts isole du
+  reste du fichier partage), `docs/reste-a-faire.md` (F-AUTH-03, isole du reste du fichier partage).
+- Je pars chercher la prochaine fiche P0/P1 non revendiquee, ou j'attends une assignation de 89.

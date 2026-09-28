@@ -41,6 +41,8 @@ import {
   verifierEtConsommerCodeVerificationEmail,
 } from "@/modules/identity/verification-email";
 import { genererIdentifiantSante } from "@/modules/identity/identifiant-sante";
+import { creerCodeReclamation, texteSmsCodeReclamation } from "@/modules/identity/reclamation-emission";
+import { envoyerSms } from "@/modules/notification/sms/envoyer";
 import { can } from "@/security/permissions";
 import { calculerDateFinConsentement } from "@/modules/patient/consentement-durees";
 import type { NomRole } from "@/types";
@@ -441,10 +443,28 @@ export async function creerPatientParProfessionnelAction(
         tx
       );
 
-      return { patientId: utilisateur.patient!.id, identifiantSante };
+      // F-CIT-03/F-AUTH-03 du pack (section 07 "Comptes et acces", etape 4) :
+      // envoi automatique du SMS N-CLAIM-CODE des la creation du dossier, si
+      // un telephone a ete saisi (jamais besoin d'un aller-retour manuel sur
+      // un ecran separe, voir src/modules/identity/reclamation.ts pour la
+      // generation manuelle qui reste possible ensuite si le premier SMS est
+      // perdu).
+      const codeReclamation = donnees.telephone
+        ? await creerCodeReclamation(tx, utilisateur.patient!.id)
+        : null;
+
+      return { patientId: utilisateur.patient!.id, identifiantSante, codeReclamation, telephone: donnees.telephone };
     });
 
     revalidatePath("/app/medecin/patients");
+
+    if (resultat.codeReclamation) {
+      await envoyerSms({
+        destinataire: resultat.telephone,
+        texte: texteSmsCodeReclamation(resultat.codeReclamation),
+        categorie: "codes",
+      });
+    }
 
     return {
       error: null,

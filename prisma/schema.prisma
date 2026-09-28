@@ -52,6 +52,18 @@ model User {
   // a l'inscription et date d'acceptation. Null pour un compte cree avant cette regle.
   conditionsVersion     String?
   conditionsAccepteesLe DateTime?
+  // Niveau de verification d'identite (chapitre 5.6 du pack) : N0 declaratif
+  // (rien de verifie), N1 telephone verifie, N2 verifie en etablissement
+  // (piece d'identite vue), N3 verifie ANIP (P2, hors perimetre de ce
+  // depot). Passe a N1 lors d'une reclamation de dossier reussie
+  // (src/modules/identity/reclamation.ts, F-AUTH-03), sans jamais
+  // retrograder un niveau deja plus eleve (N2 conserve si l'etablissement
+  // avait deja verifie une piece d'identite). Aucun ecran de ce depot
+  // n'ecrit encore N2 ni N3 (case "piece d'identite vue" absente de
+  // creerPatientParProfessionnelAction, ANIP hors MVP) : reste a N0 par
+  // defaut pour tout compte cree autrement, limite assumee documentee dans
+  // docs/reste-a-faire.md (F-AUTH-03).
+  niveauVerification String @default("N0")
 
   roles         UserRole[]
   patient       Patient?

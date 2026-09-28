@@ -60,7 +60,7 @@ function formulaire(surcharges: Record<string, string> = {}): FormData {
   return donnees;
 }
 
-const utilisateurSansCompte = { id: "user-pat", statut: "sans_compte", telephone: "+2290100000000" };
+const utilisateurSansCompte = { id: "user-pat", statut: "sans_compte", telephone: "+2290100000000", niveauVerification: "N0" };
 const patientVise = { id: "pat-1", userId: "user-pat", dateNaissance: new Date("1990-05-05T12:00:00Z"), user: utilisateurSansCompte };
 
 function codeActif(surcharges: Record<string, unknown> = {}) {
@@ -77,13 +77,30 @@ beforeEach(() => {
 });
 
 describe("reclamerDossierAction : code juste (F-AUTH-03)", () => {
-  it("active le compte, consomme le code et ouvre une session", async () => {
+  it("active le compte, consomme le code, passe au niveau de verification N1 et ouvre une session", async () => {
     const resultat = await reclamerDossierAction(etatInitial, formulaire());
 
     expect(resultat).toEqual({ error: null, success: true });
-    expect(p.user.update.mock.calls[0][0].data).toMatchObject({ email: "nouveau@exemple.bj", statut: "actif" });
+    expect(p.user.update.mock.calls[0][0].data).toMatchObject({
+      email: "nouveau@exemple.bj",
+      statut: "actif",
+      niveauVerification: "N1",
+    });
     expect(p.codeReclamationDossier.update.mock.calls[0][0].data.consommeLe).toBeInstanceOf(Date);
     expect(createSessionMock).toHaveBeenCalledWith({ userId: "user-pat", roles: ["patient"] });
+  });
+
+  it("ne retrograde jamais un niveau de verification deja plus eleve (N2 conserve)", async () => {
+    p.patient.findMany.mockResolvedValue([
+      { ...patientVise, user: { ...utilisateurSansCompte, niveauVerification: "N2" } },
+    ]);
+    p.codeReclamationDossier.findMany.mockResolvedValue([
+      codeActif({ patient: { ...patientVise, user: { ...utilisateurSansCompte, niveauVerification: "N2" } } }),
+    ]);
+
+    await reclamerDossierAction(etatInitial, formulaire());
+
+    expect(p.user.update.mock.calls[0][0].data.niveauVerification).toBe("N2");
   });
 
   it("ne compare que les codes du dossier identifie par le telephone et la date de naissance, jamais tous les codes", async () => {

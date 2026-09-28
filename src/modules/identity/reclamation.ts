@@ -21,7 +21,6 @@
  * /app/ministere/sms, jamais un vrai SMS.
  */
 
-import { randomInt } from "node:crypto";
 import { headers } from "next/headers";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
@@ -33,6 +32,7 @@ import { journaliser } from "@/modules/audit/journaliser";
 import { envoyerSms } from "@/modules/notification/sms/envoyer";
 import type { NomRole } from "@/types";
 import { LONGUEUR_MIN_CITOYEN, evaluerMotDePasse } from "./politique-mot-de-passe";
+import { creerCodeReclamation, texteSmsCodeReclamation } from "./reclamation-emission";
 
 const ROLES_VALIDES: readonly string[] = [
   "patient",
@@ -46,7 +46,6 @@ const ROLES_VALIDES: readonly string[] = [
 ];
 
 const ROUNDS_BCRYPT = 12;
-const JOURS_VALIDITE_CODE = 30;
 const TENTATIVES_MAX = 5;
 const LIMITE_ECHECS_PAR_ADRESSE = 10;
 const FENETRE_ECHECS_MS = 15 * 60 * 1000;
@@ -57,8 +56,6 @@ function hashFactice(): Promise<string> {
   hashFacticeMemorise ??= bcrypt.hash("code-factice-sans-valeur", ROUNDS_BCRYPT);
   return hashFacticeMemorise;
 }
-const ALPHABET_CODE = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
-const LONGUEUR_CODE = 8;
 const TYPES_ACCES_AUTORISES = ["dossier_complet", "consultations"] as const;
 
 async function adresseTechniqueCourante(): Promise<string> {
@@ -68,14 +65,6 @@ async function adresseTechniqueCourante(): Promise<string> {
   } catch {
     return "inconnue";
   }
-}
-
-function genererCode(): string {
-  let code = "";
-  for (let i = 0; i < LONGUEUR_CODE; i++) {
-    code += ALPHABET_CODE[randomInt(0, ALPHABET_CODE.length)];
-  }
-  return code;
 }
 
 export interface GenererCodeReclamationActionState {
@@ -190,24 +179,13 @@ export async function genererCodeReclamationAction(
       return { error: "Ce patient n'a pas de numéro de téléphone enregistré.", success: false };
     }
 
-    const code = genererCode();
-    const codeHash = await bcrypt.hash(code, ROUNDS_BCRYPT);
-    const expireLe = new Date();
-    expireLe.setDate(expireLe.getDate() + JOURS_VALIDITE_CODE);
-
     const adresseTechnique = await adresseTechniqueCourante();
 
-    await prisma.$transaction(async (tx) => {
-      // Un nouveau code annule les precedents encore valides (RG-AUTH-20) : un
-      // seul code utilisable a la fois par dossier.
-      await tx.codeReclamationDossier.updateMany({
-        where: { patientId: patient.id, consommeLe: null, expireLe: { gt: new Date() } },
-        data: { expireLe: new Date() },
-      });
-
-      await tx.codeReclamationDossier.create({
-        data: { patientId: patient.id, codeHash, expireLe },
-      });
+    // Generation (invalide les codes precedents, RG-AUTH-20) et envoi du
+    // SMS partages avec l'envoi automatique a la creation du dossier (voir
+    // creerPatientParProfessionnelAction, src/modules/identity/actions.ts).
+    const code = await prisma.$transaction(async (tx) => {
+      const codeGenere = await creerCodeReclamation(tx, patient.id);
 
       await journaliser(
         {
@@ -219,11 +197,13 @@ export async function genererCodeReclamationAction(
         },
         tx
       );
+
+      return codeGenere;
     });
 
     await envoyerSms({
       destinataire: patient.user.telephone,
-      texte: `Votre code pour activer votre compte BHIP : ${code}. Valable 30 jours.`,
+      texte: texteSmsCodeReclamation(code),
       categorie: "codes",
     });
 
@@ -387,7 +367,15 @@ export async function reclamerDossierAction(
     await prisma.$transaction(async (tx) => {
       await tx.user.update({
         where: { id: patient.userId },
-        data: { email: nouvelEmail, motDePasseHash, statut: "actif" },
+        data: {
+          email: nouvelEmail,
+          motDePasseHash,
+          statut: "actif",
+          // Chapitre 5.6 du pack : passe a N1 (telephone verifie), sans
+          // jamais retrograder un niveau deja plus eleve (N2 conserve si
+          // l'etablissement avait deja verifie une piece d'identite).
+          niveauVerification: patient.user.niveauVerification === "N0" ? "N1" : patient.user.niveauVerification,
+        },
       });
 
       await tx.codeReclamationDossier.update({

@@ -10,6 +10,7 @@ vi.mock("@/lib/prisma", () => {
     user: { create: vi.fn() },
     consentement: { create: vi.fn() },
     journalAudit: { create: vi.fn() },
+    codeReclamationDossier: { updateMany: vi.fn(), create: vi.fn() },
     $transaction: vi.fn(),
   };
   return { prisma };
@@ -18,10 +19,15 @@ vi.mock("@/lib/session", () => ({ getSession: vi.fn() }));
 vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers()) }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/modules/audit/journaliser", () => ({ journaliser: vi.fn() }));
-vi.mock("bcryptjs", () => ({ default: { hash: vi.fn(async () => "hash") }, hash: vi.fn(async () => "hash") }));
+vi.mock("@/modules/notification/sms/envoyer", () => ({ envoyerSms: vi.fn() }));
+vi.mock("bcryptjs", () => ({
+  default: { hash: vi.fn(async () => "hash"), compare: vi.fn() },
+  hash: vi.fn(async () => "hash"),
+}));
 
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
+import { envoyerSms } from "@/modules/notification/sms/envoyer";
 import { creerPatientParProfessionnelAction, type CreationPatientActionState } from "@/modules/identity/actions";
 
 const p = prisma as unknown as {
@@ -29,9 +35,11 @@ const p = prisma as unknown as {
   professionnelSante: { findUnique: Mock };
   user: { create: Mock };
   consentement: { create: Mock };
+  codeReclamationDossier: { updateMany: Mock; create: Mock };
   $transaction: Mock;
 };
 const getSessionMock = getSession as unknown as Mock;
+const envoyerSmsMock = envoyerSms as unknown as Mock;
 
 const ETAT: CreationPatientActionState = { error: null, success: false };
 
@@ -67,10 +75,37 @@ beforeEach(() => {
       user: { create: p.user.create },
       consentement: { create: p.consentement.create },
       journalAudit: { create: vi.fn() },
+      codeReclamationDossier: { updateMany: p.codeReclamationDossier.updateMany, create: p.codeReclamationDossier.create },
     };
     return fn(tx);
   });
   p.user.create.mockResolvedValue({ id: "user-neuf", patient: { id: "pat-neuf" } });
+});
+
+describe("creerPatientParProfessionnelAction : envoi automatique du SMS N-CLAIM-CODE (F-AUTH-03)", () => {
+  it("envoie automatiquement le code de reclamation si un telephone est saisi", async () => {
+    p.patient.findMany.mockResolvedValue([]);
+
+    const resultat = await creerPatientParProfessionnelAction(
+      ETAT,
+      formulaire({ ...champsValides, telephone: "+22997000000" })
+    );
+
+    expect(resultat.success).toBe(true);
+    expect(p.codeReclamationDossier.create).toHaveBeenCalledTimes(1);
+    expect(envoyerSmsMock).toHaveBeenCalledTimes(1);
+    expect(envoyerSmsMock.mock.calls[0][0]).toMatchObject({ destinataire: "+22997000000", categorie: "codes" });
+  });
+
+  it("n'envoie aucun SMS ni ne cree de code si aucun telephone n'est saisi", async () => {
+    p.patient.findMany.mockResolvedValue([]);
+
+    const resultat = await creerPatientParProfessionnelAction(ETAT, formulaire(champsValides));
+
+    expect(resultat.success).toBe(true);
+    expect(p.codeReclamationDossier.create).not.toHaveBeenCalled();
+    expect(envoyerSmsMock).not.toHaveBeenCalled();
+  });
 });
 
 describe("creerPatientParProfessionnelAction : detection de doublon (RG-CLI-20)", () => {
