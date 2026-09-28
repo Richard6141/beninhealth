@@ -4726,3 +4726,38 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   `src/app/app/medecin/rectifications/{page.tsx,FormulaireReponseRectification.tsx}`,
   `docs/reste-a-faire.md` (F-CIT-13, isole du reste du fichier partage).
 - Je pars chercher la prochaine fiche P0/P1 non revendiquee, ou j'attends une assignation de 89.
+
+### Point projet-gouv-46 (Claude), F-CLI-09 (historique complet), 2026-09-28
+
+- Fiche libre du tableau. Ligne reste-a-faire.md perimee : "vaccinations, documents... aucun
+  modele de donnees dans ce depot" (commentaire de tete de fonction, meme affirmation) n'etait
+  plus vraie depuis l'introduction des modeles Vaccination et DocumentMedical par d'autres lots
+  ce soir/hier. Seule la delivrance (modele Delivrance, deja plus ancien) n'avait jamais ete
+  branchee non plus. Les trois manquaient reellement de la fusion de getHistoriquePatient().
+- Ajoute les trois types a la chronologie fusionnee, meme patron que les 4 types existants
+  (requete Prisma, filtre RG-CLI-91 si pertinent, mapping EvenementHistorique) :
+  - Vaccination : patientId nullable (une PersonneCommunautaire peut aussi etre vaccinee), le
+    where l'exclut naturellement ici.
+  - DocumentMedical : aucune relation etablissement propre sur ce modele, resolu via
+    auteur -> professionnel -> etablissement (toujours un medecin aujourd'hui, seul role habilite
+    a create:document_medical). RG-CLI-91 etendue : un document "sensible" est exclu pour un
+    acces d'urgence ou par reference, meme principe que acces-documents.ts pour le telechargement.
+  - Delivrance : aucun patientId propre non plus, atteinte via sa Prescription.
+- UI mise a jour dans les 2 memes fichiers deja lies a cette fiche (ListeHistorique.tsx, icones et
+  libelles ; historique/page.tsx, options du filtre par type) : aucun nouveau fichier necessaire.
+- Restent reellement absents, verifies avant de conclure : filtrage en SQL plutot qu'en memoire
+  (RG-ACC-05, meme limite deja assumee ailleurs dans ce depot pour un historique) ; curseur ;
+  exclusion additionnelle pour le role infirmier (le 4e point de la ligne) - aucune regle
+  existante trouvee dans accesPatientAutorise ni ailleurs pour l'appuyer aujourd'hui (le filtre
+  RG-CLI-91 actuel depend du TYPE d'acces - urgence/reference - jamais du role du professionnel) :
+  laisse documente plutot qu'implemente a l'aveugle sans la RG precise qui le justifierait.
+- 10 tests ajoutes/adaptes : 3 nouveaux types merges et tries dans la chronologie, RG-CLI-91 sur
+  les documents (urgence vs dossier_complet), resolution de l'etablissement via l'auteur. Mock
+  prisma de acces-lecture.test.ts etendu aux 3 nouveaux modeles (vaccination, documentMedical,
+  delivrance) : seule cause des 12 echecs initiaux juste apres l'ajout des requetes, corrige avant
+  de committer.
+- Verifie : tsc 0, eslint 0 erreur, tirets 0. Suite complete du depot 2270/2270 (aucune
+  regression, verifie deux fois : une premiere fois apres le code, une seconde apres les tests).
+- Commits : `a8a99fa` (code), `2979436` (reste-a-faire.md).
+- Suite pour moi : je cherche la prochaine fiche P0/P1 non revendiquee, ou j'attends une
+  assignation de 89.
