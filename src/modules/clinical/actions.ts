@@ -794,7 +794,14 @@ export async function getResumePatient(patientId: string): Promise<ResumePatient
   };
 }
 
-export type TypeEvenementHistorique = "consultation" | "prescription" | "examen" | "suivi_communautaire";
+export type TypeEvenementHistorique =
+  | "consultation"
+  | "prescription"
+  | "examen"
+  | "suivi_communautaire"
+  | "vaccination"
+  | "document"
+  | "delivrance";
 
 /** Un element de la chronologie complete d'un patient (F-CLI-09 du pack). */
 export interface EvenementHistorique {
@@ -832,13 +839,22 @@ const TAILLE_PAGE_HISTORIQUE = 25;
 
 /**
  * Chronologie complete d'un patient (F-CLI-09 du pack) : consultations
- * validees, prescriptions, examens et visites de suivi communautaire,
- * fusionnes et tries du plus recent au plus ancien. Meme garde Zero Trust
- * que getResumePatient (Consentement actif requis, RG-CLI-30).
+ * validees, prescriptions, examens, visites de suivi communautaire,
+ * vaccinations, documents medicaux et delivrances de medicaments, fusionnes
+ * et tries du plus recent au plus ancien. Meme garde Zero Trust que
+ * getResumePatient (Consentement actif requis, RG-CLI-30).
  *
- * Limite assumee : n'inclut ni vaccinations ni documents medicaux, ces deux
- * types d'evenements n'ayant aucun modele de donnees dans ce depot (voir
- * docs/audit-cote-medecin.md, F-CLI-11 et F-CLI-13).
+ * Corrige le 2026-09-28 : l'affirmation "aucun modele de donnees dans ce
+ * depot" pour les vaccinations et les documents medicaux etait perimee
+ * (les deux existent, voir prisma/schema.prisma, Vaccination et
+ * DocumentMedical) ; les deux sont desormais inclus, ainsi que les
+ * delivrances de medicaments (Delivrance), absentes elles aussi jusqu'ici.
+ *
+ * Limite assumee, encore reelle : chaque type est charge en entier
+ * (findMany sans filtre de periode/etablissement cote SQL) puis fusionne,
+ * filtre et pagine en memoire (RG-ACC-05) ; pas de curseur. Voir aussi
+ * getMesAccesDossier/ListeAccesDossier.tsx (F-CIT-12) pour la meme
+ * simplification, deja acceptee dans ce depot pour un historique.
  *
  * RG-CLI-80 : l'affichage de la liste est journalise une fois par page
  * (ci-dessous) ; l'ouverture du detail d'un element est journalisee
@@ -867,7 +883,7 @@ export async function getHistoriquePatient(
     return null;
   }
 
-  const [consultations, prescriptions, examens, suivis] = await Promise.all([
+  const [consultations, prescriptions, examens, suivis, vaccinations, documents, delivrances] = await Promise.all([
     prisma.consultation.findMany({
       where: { patientId, statut: "terminee" },
       include: { professionnel: { include: { user: true } }, etablissement: true },
@@ -888,6 +904,28 @@ export async function getHistoriquePatient(
       where: { patientId },
       include: { agent: { include: { user: true } }, etablissement: true },
     }),
+    // patientId est nullable sur Vaccination (une PersonneCommunautaire peut
+    // aussi etre vaccinee) : le filtre where exclut naturellement ce cas ici.
+    prisma.vaccination.findMany({
+      where: { patientId },
+      include: { professionnel: { include: { user: true } }, etablissement: true },
+    }),
+    // DocumentMedical n'a pas d'etablissement propre : resolu via
+    // auteur -> professionnel -> etablissement (toujours un medecin
+    // aujourd'hui, voir create:document_medical dans permissions.ts).
+    prisma.documentMedical.findMany({
+      where: { patientId },
+      include: { auteur: { include: { professionnel: { include: { etablissement: true } } } } },
+    }),
+    // Delivrance n'a pas de patientId propre : atteinte via sa prescription.
+    prisma.delivrance.findMany({
+      where: { prescription: { patientId } },
+      include: {
+        pharmacien: { include: { user: true } },
+        etablissement: true,
+        lignes: { include: { lignePrescription: { include: { medicament: true } }, medicamentDelivre: true } },
+      },
+    }),
   ]);
 
   // RG-CLI-91 : un acces d'urgence "bris de glace" (F-CLI-10) ne donne jamais
@@ -899,6 +937,14 @@ export async function getHistoriquePatient(
   const accesRestreint = acces.source === "reference" || acces.typeAcces === "urgence";
   const examensAccessibles = accesRestreint ? examens.filter((e) => !e.sensible) : examens;
   const consultationsAccessibles = accesRestreint ? consultations.filter((c) => !c.sensible) : consultations;
+  // Meme principe RG-CLI-91 applique a DocumentMedical.niveauConfidentialite :
+  // un document "sensible" n'est jamais accessible via un acces d'urgence ou
+  // une reference, meme principe que acces-documents.ts pour le
+  // telechargement effectif (le detail depuis l'historique ne fait
+  // qu'exposer les memes metadonnees, jamais le fichier lui-meme).
+  const documentsAccessibles = accesRestreint
+    ? documents.filter((d) => d.niveauConfidentialite !== "sensible")
+    : documents;
 
   const tousLesEvenements: EvenementHistorique[] = [
     ...consultationsAccessibles.map((c): EvenementHistorique => ({
@@ -965,6 +1011,64 @@ export async function getHistoriquePatient(
       etablissementId: s.etablissementId,
       etablissementNom: s.etablissement.nom,
       detailLignes: [s.localisation ? `Lieu : ${s.localisation}` : "", s.notes].filter(Boolean),
+    })),
+    ...vaccinations.map((v): EvenementHistorique => ({
+      id: v.id,
+      type: "vaccination",
+      date: v.dateAdministration.toISOString(),
+      titre: `Vaccination : ${v.vaccin}`,
+      description: `Dose ${v.numeroDose}`,
+      statut: v.saisieParErreur ? "retiree" : "administree",
+      saisieParErreur: v.saisieParErreur,
+      professionnelNomComplet: nomCompletProfessionnel(v.professionnel.user),
+      etablissementId: v.etablissementId,
+      etablissementNom: v.etablissement.nom,
+      detailLignes: [
+        `Vaccin : ${v.vaccin} (dose ${v.numeroDose})`,
+        `Site d'injection : ${v.siteInjection}, voie : ${v.voie}`,
+        v.lieu === "campagne" && v.nomCampagne ? `Campagne : ${v.nomCampagne}` : `Lieu : ${v.lieu}`,
+        v.saisieParErreur && v.motifRetrait ? `Retiree (saisie par erreur) : ${v.motifRetrait}` : "",
+      ].filter(Boolean),
+    })),
+    ...documentsAccessibles.map((d): EvenementHistorique => ({
+      id: d.id,
+      type: "document",
+      date: d.dateDocument.toISOString(),
+      titre: d.titre,
+      description: d.nomFichierOriginal,
+      statut: d.retirePourErreur ? "retiree" : null,
+      saisieParErreur: d.retirePourErreur,
+      professionnelNomComplet: nomComplet(d.auteur),
+      etablissementId: d.auteur.professionnel?.etablissementId ?? "",
+      etablissementNom: d.auteur.professionnel?.etablissement.nom ?? "Non precise",
+      detailLignes: [
+        `Type : ${d.type}`,
+        `Fichier : ${d.nomFichierOriginal}`,
+        d.retirePourErreur && d.motifRetrait ? `Retire (ajoute par erreur) : ${d.motifRetrait}` : "",
+      ].filter(Boolean),
+    })),
+    ...delivrances.map((del): EvenementHistorique => ({
+      id: del.id,
+      type: "delivrance",
+      date: del.date.toISOString(),
+      titre: "Delivrance de medicaments",
+      description: del.lignes
+        .map((ligne) => ligne.medicamentDelivre?.nom ?? ligne.lignePrescription.medicament.nom)
+        .join(", "),
+      statut: del.annulee ? "annulee" : "delivree",
+      saisieParErreur: false,
+      professionnelNomComplet: nomCompletProfessionnel(del.pharmacien.user),
+      etablissementId: del.etablissementId,
+      etablissementNom: del.etablissement.nom,
+      detailLignes: [
+        ...del.lignes.map((ligne) => {
+          const nomMedicament = ligne.medicamentDelivre?.nom ?? ligne.lignePrescription.medicament.nom;
+          return ligne.quantiteDelivree > 0
+            ? `${nomMedicament} : ${ligne.quantiteDelivree} delivre(s)`
+            : `${nomMedicament} : non delivre${ligne.motifNonDelivrance ? ` (${ligne.motifNonDelivrance})` : ""}`;
+        }),
+        del.annulee && del.motifAnnulation ? `Delivrance annulee : ${del.motifAnnulation}` : "",
+      ].filter(Boolean),
     })),
   ];
 
@@ -1036,6 +1140,17 @@ async function patientIdDeLElementDHistorique(type: string, id: string): Promise
       return (await prisma.examenMedical.findUnique({ where: { id }, select: { patientId: true } }))?.patientId ?? null;
     case "suivi_communautaire":
       return (await prisma.suiviCommunautaire.findUnique({ where: { id }, select: { patientId: true } }))?.patientId ?? null;
+    case "vaccination":
+      return (await prisma.vaccination.findUnique({ where: { id }, select: { patientId: true } }))?.patientId ?? null;
+    case "document":
+      return (await prisma.documentMedical.findUnique({ where: { id }, select: { patientId: true } }))?.patientId ?? null;
+    case "delivrance": {
+      const delivrance = await prisma.delivrance.findUnique({
+        where: { id },
+        select: { prescription: { select: { patientId: true } } },
+      });
+      return delivrance?.prescription.patientId ?? null;
+    }
     default:
       return null;
   }
@@ -1069,7 +1184,7 @@ export async function journaliserOuvertureDetailHistoriqueAction(
     return;
   }
 
-  const cible = type === "examen" ? "examen_medical" : type;
+  const cible = type === "examen" ? "examen_medical" : type === "document" ? "document_medical" : type;
   const adresseTechnique = await adresseTechniqueCourante();
 
   await journaliser({

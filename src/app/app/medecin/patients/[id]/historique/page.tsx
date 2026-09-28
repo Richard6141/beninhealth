@@ -24,6 +24,9 @@ const TYPES_VALIDES: TypeEvenementHistorique[] = [
   "prescription",
   "examen",
   "suivi_communautaire",
+  "vaccination",
+  "document",
+  "delivrance",
 ];
 
 const LIBELLES_TYPE: Record<TypeEvenementHistorique, string> = {
@@ -31,6 +34,9 @@ const LIBELLES_TYPE: Record<TypeEvenementHistorique, string> = {
   prescription: "Prescription",
   examen: "Examen",
   suivi_communautaire: "Suivi communautaire",
+  vaccination: "Vaccination",
+  document: "Document",
+  delivrance: "Délivrance",
 };
 
 function premiereValeur(valeur: string | string[] | undefined): string {
@@ -55,12 +61,10 @@ function lienPage(filtres: FiltresHistorique, page: number): string {
 /**
  * Ecran "Consulter l'historique complet" (F-CLI-09 du pack, P0) : chronologie
  * de tous les evenements cliniques du patient (consultations, prescriptions,
- * examens, visites communautaires), filtrable par type/periode/etablissement,
- * paginee a 25 elements. Formulaire de filtre en GET (aucun JS necessaire,
- * la page se re-rend cote serveur avec les nouveaux searchParams).
- *
- * Limite assumee : n'inclut ni vaccination ni document medical (F-CLI-11 et
- * F-CLI-13, aucun modele de donnees pour ces deux types dans ce depot).
+ * examens, visites communautaires, vaccinations, documents medicaux,
+ * delivrances), filtrable par type/periode/etablissement, paginee a 25
+ * elements. Formulaire de filtre en GET (aucun JS necessaire, la page se
+ * re-rend cote serveur avec les nouveaux searchParams).
  */
 export default async function HistoriquePatientPage({ params, searchParams }: HistoriquePatientPageProps) {
   const { id } = await params;

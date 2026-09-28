@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { FileText, FlaskConical, Pill, Stethoscope, Users, type LucideIcon } from "lucide-react";
+import { FileText, FlaskConical, Package, Pill, Stethoscope, Syringe, Users, type LucideIcon } from "lucide-react";
 import {
   journaliserOuvertureDetailHistoriqueAction,
   type EvenementHistorique,
@@ -16,6 +16,9 @@ const ICONES: Record<TypeEvenementHistorique, LucideIcon> = {
   prescription: Pill,
   examen: FlaskConical,
   suivi_communautaire: Users,
+  vaccination: Syringe,
+  document: FileText,
+  delivrance: Package,
 };
 
 const LIBELLES_TYPE: Record<TypeEvenementHistorique, string> = {
@@ -23,6 +26,9 @@ const LIBELLES_TYPE: Record<TypeEvenementHistorique, string> = {
   prescription: "Prescription",
   examen: "Examen",
   suivi_communautaire: "Suivi communautaire",
+  vaccination: "Vaccination",
+  document: "Document",
+  delivrance: "Délivrance",
 };
 
 function formaterDateHeure(date: string): string {

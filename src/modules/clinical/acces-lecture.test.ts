@@ -22,6 +22,9 @@ vi.mock("@/lib/prisma", () => ({
     consultation: { findMany: vi.fn(), count: vi.fn() },
     examenMedical: { findMany: vi.fn() },
     suiviCommunautaire: { findMany: vi.fn() },
+    vaccination: { findMany: vi.fn() },
+    documentMedical: { findMany: vi.fn() },
+    delivrance: { findMany: vi.fn() },
   },
 }));
 
@@ -39,6 +42,9 @@ const prismaMock = prisma as unknown as {
   consultation: { findMany: Mock; count: Mock };
   examenMedical: { findMany: Mock };
   suiviCommunautaire: { findMany: Mock };
+  vaccination: { findMany: Mock };
+  documentMedical: { findMany: Mock };
+  delivrance: { findMany: Mock };
 };
 const getSessionMock = getSession as unknown as Mock;
 const journaliserMock = journaliser as unknown as Mock;
@@ -95,6 +101,9 @@ beforeEach(() => {
   prismaMock.consultation.count.mockResolvedValue(0);
   prismaMock.examenMedical.findMany.mockResolvedValue([]);
   prismaMock.suiviCommunautaire.findMany.mockResolvedValue([]);
+  prismaMock.vaccination.findMany.mockResolvedValue([]);
+  prismaMock.documentMedical.findMany.mockResolvedValue([]);
+  prismaMock.delivrance.findMany.mockResolvedValue([]);
 });
 
 describe("base d'acces : session, profil, consentement", () => {
@@ -342,6 +351,120 @@ describe("historique du patient", () => {
     const evenement = historique!.evenements[0];
     expect(evenement.description).toBe("");
     expect(evenement.detailLignes.join(" ")).not.toContain("RESULTAT NON VALIDE");
+  });
+
+  it("inclut une vaccination, un document et une delivrance (F-CLI-09 : trois types corriges le 2026-09-28)", async () => {
+    prismaMock.vaccination.findMany.mockResolvedValue([
+      {
+        id: "vac-1",
+        dateAdministration: dans(-HEURE),
+        vaccin: "BCG",
+        numeroDose: 1,
+        siteInjection: "Bras gauche",
+        voie: "intradermique",
+        lieu: "etablissement",
+        nomCampagne: null,
+        saisieParErreur: false,
+        motifRetrait: null,
+        etablissementId: "etab-1",
+        etablissement: { nom: "CS Akpakpa" },
+        professionnel: medecin,
+      },
+    ]);
+    prismaMock.documentMedical.findMany.mockResolvedValue([
+      {
+        id: "doc-1",
+        dateDocument: dans(-2 * HEURE),
+        titre: "Compte rendu radio",
+        nomFichierOriginal: "radio.pdf",
+        type: "imagerie",
+        niveauConfidentialite: "normal",
+        retirePourErreur: false,
+        motifRetrait: null,
+        auteur: { nom: "Ahouansou", prenom: "Koffi", professionnel: { etablissementId: "etab-1", etablissement: { nom: "CS Akpakpa" } } },
+      },
+    ]);
+    prismaMock.delivrance.findMany.mockResolvedValue([
+      {
+        id: "del-1",
+        date: dans(-3 * HEURE),
+        annulee: false,
+        motifAnnulation: null,
+        etablissementId: "etab-1",
+        etablissement: { nom: "CS Akpakpa" },
+        pharmacien: medecin,
+        lignes: [
+          { quantiteDelivree: 10, motifNonDelivrance: null, medicamentDelivre: null, lignePrescription: { medicament: { nom: "Paracetamol" } } },
+        ],
+      },
+    ]);
+
+    const historique = await getHistoriquePatient("pat-1");
+
+    expect(historique?.evenements.map((e) => ({ id: e.id, type: e.type }))).toEqual([
+      { id: "vac-1", type: "vaccination" },
+      { id: "doc-1", type: "document" },
+      { id: "del-1", type: "delivrance" },
+    ]);
+    expect(historique?.evenements[2].description).toBe("Paracetamol");
+    expect(historique?.evenements[2].detailLignes.join(" ")).toContain("10 delivre");
+  });
+
+  it("RG-CLI-91 : un acces d'urgence n'expose aucun document sensible, mais un consentement dossier_complet le voit", async () => {
+    const documents = [
+      {
+        id: "doc-normal",
+        dateDocument: dans(-HEURE),
+        titre: "Certificat",
+        nomFichierOriginal: "certificat.pdf",
+        type: "certificat",
+        niveauConfidentialite: "normal",
+        retirePourErreur: false,
+        motifRetrait: null,
+        auteur: { nom: "Ahouansou", prenom: "Koffi", professionnel: { etablissementId: "etab-1", etablissement: { nom: "CS Akpakpa" } } },
+      },
+      {
+        id: "doc-sensible",
+        dateDocument: dans(-2 * HEURE),
+        titre: "Resultat VIH",
+        nomFichierOriginal: "resultat.pdf",
+        type: "resultat",
+        niveauConfidentialite: "sensible",
+        retirePourErreur: false,
+        motifRetrait: null,
+        auteur: { nom: "Ahouansou", prenom: "Koffi", professionnel: { etablissementId: "etab-1", etablissement: { nom: "CS Akpakpa" } } },
+      },
+    ];
+    prismaMock.documentMedical.findMany.mockResolvedValue(documents);
+
+    prismaMock.consentement.findUnique.mockResolvedValue(consentement("urgence"));
+    const viaUrgence = await getHistoriquePatient("pat-1");
+    expect(viaUrgence?.evenements.map((e) => e.id)).toEqual(["doc-normal"]);
+
+    prismaMock.consentement.findUnique.mockResolvedValue(consentement("dossier_complet"));
+    const viaDossierComplet = await getHistoriquePatient("pat-1");
+    expect(viaDossierComplet?.evenements.map((e) => e.id).sort()).toEqual(["doc-normal", "doc-sensible"]);
+  });
+
+  it("resout l'etablissement d'un document via l'auteur (aucun etablissement propre sur DocumentMedical)", async () => {
+    prismaMock.documentMedical.findMany.mockResolvedValue([
+      {
+        id: "doc-1",
+        dateDocument: dans(-HEURE),
+        titre: "Compte rendu",
+        nomFichierOriginal: "cr.pdf",
+        type: "compte_rendu",
+        niveauConfidentialite: "normal",
+        retirePourErreur: false,
+        motifRetrait: null,
+        auteur: { nom: "Ahouansou", prenom: "Koffi", professionnel: { etablissementId: "etab-9", etablissement: { nom: "CHU Parakou" } } },
+      },
+    ]);
+
+    const historique = await getHistoriquePatient("pat-1");
+
+    expect(historique?.evenements[0].etablissementId).toBe("etab-9");
+    expect(historique?.evenements[0].etablissementNom).toBe("CHU Parakou");
   });
 
   it("journalise l'affichage de la liste une seule fois (RG-CLI-80), avec la page", async () => {
