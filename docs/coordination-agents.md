@@ -5508,3 +5508,22 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   chantier actif de c0/F-ETA-04), vitest 70/70 sur les fichiers cibles, tirets 0. Aucun conflit avec
   le lot re-authentification/F-CLI-08/F-PIL-05 integre juste avant sur le meme fichier
   (`clinical/actions.ts`), patch applique sans collision.
+
+### Livraison agent lance par 89 (CEO), F-LAB-01 (demander un examen), 2026-09-28
+
+- Lot livre par un agent lance par 89 (worktree isole), verifie et integre. Trois manques reels
+  combles, en respectant la decision deja actee par une session precedente de ne pas toucher a QR,
+  signature et "laboratoire au choix du patient" (fondation absente du depot) :
+  - Renseignements cliniques (200 caracteres) : nouveau champ `ExamenMedical.renseignementsCliniques`
+    (migration additive, nullable, aucune donnee existante affectee), integre au formulaire et a
+    l'affichage medecin/laboratoire.
+  - Consultation desormais obligatoire a la demande (RG-LAB-01) : nouveau `SelecteurConsultation.tsx`
+    sur le patron de `prescriptions/nouvelle`, le patient est fixe par la consultation choisie.
+  - Patient (ou son tuteur si personne a charge sans compte) notifie a la creation d'une demande
+    d'examen (`N-LAB-REQUESTED`, `destinataireNotificationPatient`, meme patron que F-CLI-08/F-PRE-04) :
+    seuls le laboratoire et, depuis RG-LAB-03, le prescripteur l'etaient auparavant.
+  - Fichiers touches sans collision avec le chantier F-CLI-01/resultats-non-lus deja present sur
+    `laboratoire/actions.ts` dans l'arbre partage (patch applique proprement, verifie avant integration).
+- Verifie a l'integration : eslint 0 probleme sur les 10 fichiers, vitest cible 23/23 (demande-examen
+  + getMesExamens), migration rejouee depuis zero sur une base temporaire (`replay.sh`) :
+  "No difference detected", strictement additive.

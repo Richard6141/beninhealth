@@ -26,6 +26,7 @@ const CATEGORIE_PAR_TYPE: Readonly<Record<string, CategorieNotification>> = {
   rendez_vous_expire: "rendez_vous",
   resultat_examen_disponible: "resultats_documents",
   examen_annule: "resultats_documents",
+  examen_demande: "resultats_documents",
   echantillon_rejete: "resultats_documents",
   consultation: "resultats_documents",
   prescription: "traitements",

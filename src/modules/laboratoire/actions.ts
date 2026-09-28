@@ -115,8 +115,14 @@ export interface ExamenResume {
   // l'introduction de cette colonne.
   numero: string | null;
   // F-CIT-03 : consultation d'origine, pour relier "analyses demandees" au
-  // detail de la consultation cote patient (null si demande hors consultation).
+  // detail de la consultation cote patient. RG-LAB-01 : obligatoire pour
+  // toute nouvelle demande (voir schemaDemandeExamen), null uniquement pour
+  // un examen cree avant l'introduction de cette regle.
   consultationId: string | null;
+  // F-LAB-01 : bref contexte clinique (200 caracteres) donne au laboratoire a
+  // la demande, null si non renseigne ou pour un examen cree avant
+  // l'introduction de ce champ.
+  renseignementsCliniques: string | null;
   typeExamen: string;
   date: string; // ISO
   statut: string;
@@ -214,9 +220,19 @@ const STATUTS_ANNULATION_AUTORISEE = ["demande", "en_cours"] as const;
 
 const NIVEAUX_URGENCE_EXAMEN = ["normal", "urgent"] as const;
 
+// Borne de RG-LAB-01 pour le champ "renseignements cliniques" (contexte bref
+// donne au laboratoire, jamais un champ de texte libre illimite).
+const LONGUEUR_MAX_RENSEIGNEMENTS_CLINIQUES = 200;
+
 const schemaDemandeExamen = z.object({
   patientId: z.string().trim().min(1, "Le patient est obligatoire."),
-  consultationId: z.string().trim().optional().default(""),
+  // RG-LAB-01 du pack : "Une demande DOIT etre liee a une consultation et a
+  // un medecin (comme les ordonnances)." Meme message que
+  // src/modules/prescription/actions.ts (schemaCreationPrescription). Validation
+  // applicative uniquement : la colonne ExamenMedical.consultationId reste
+  // nullable en base (des demandes existantes peuvent l'avoir null), jamais
+  // de contrainte NOT NULL ajoutee dessus.
+  consultationId: z.string().trim().min(1, "La consultation est obligatoire."),
   laboratoireId: z.string().trim().min(1, "Le laboratoire est obligatoire."),
   typeExamen: z.string().trim().min(1, "Le type d'examen est obligatoire."),
   // F-LAB-01 du pack. "normal" par defaut si le champ est absent (formulaire
@@ -226,6 +242,17 @@ const schemaDemandeExamen = z.object({
     .optional()
     .default("normal"),
   aJeunRequis: z.coerce.boolean().optional().default(false),
+  // F-LAB-01 du pack : contexte clinique bref, facultatif, transmis au
+  // laboratoire pour orienter l'examen.
+  renseignementsCliniques: z
+    .string()
+    .trim()
+    .max(
+      LONGUEUR_MAX_RENSEIGNEMENTS_CLINIQUES,
+      `Les renseignements cliniques ne peuvent pas depasser ${LONGUEUR_MAX_RENSEIGNEMENTS_CLINIQUES} caracteres.`
+    )
+    .optional()
+    .default(""),
 });
 
 const schemaSaisieResultat = z.object({
@@ -399,6 +426,7 @@ function versExamenResume(
     id: string;
     numero: string | null;
     consultationId: string | null;
+    renseignementsCliniques: string | null;
     typeExamen: string;
     date: Date;
     statut: string;
@@ -434,6 +462,7 @@ function versExamenResume(
     id: examen.id,
     numero: examen.numero,
     consultationId: examen.consultationId,
+    renseignementsCliniques: examen.renseignementsCliniques,
     typeExamen: examen.typeExamen,
     date: examen.date.toISOString(),
     statut: examen.statut,
@@ -521,10 +550,13 @@ export async function getConsultationPourExamen(
  * jamais suppose valide). Verification obligatoire avant toute ecriture : un
  * Consentement actif (dossier_complet ou examens) doit exister pour
  * (patientId, acteurAutoriseId = professionnel connecte). Verifie egalement
- * que le laboratoire cible existe et est bien de type "laboratoire". Si un
- * consultationId est fourni, verifie qu'il appartient bien a ce patient et a
- * ce professionnel. Cree l'ExamenMedical (statut "demande") et trace la
- * creation dans JournalAudit.
+ * que le laboratoire cible existe et est bien de type "laboratoire".
+ * RG-LAB-01 du pack : consultationId est obligatoire (comme pour une
+ * ordonnance, voir prescriptionAction dans src/modules/prescription/actions.ts)
+ * et verifie ici qu'il appartient bien a ce patient et a ce professionnel.
+ * Cree l'ExamenMedical (statut "demande") et trace la creation dans
+ * JournalAudit. Notifie a la fois le laboratoire destinataire et le patient
+ * (ou son tuteur, via destinataireNotificationPatient).
  */
 export async function demanderExamenAction(
   prevState: LaboratoireActionState,
@@ -555,6 +587,7 @@ export async function demanderExamenAction(
     // repli explicite plutot qu'un refus surprenant si le champ est absent.
     niveauUrgence: texte(formData, "niveauUrgence") || "normal",
     aJeunRequis: texte(formData, "aJeunRequis"),
+    renseignementsCliniques: texte(formData, "renseignementsCliniques"),
   });
 
   if (!validation.success) {
@@ -564,7 +597,15 @@ export async function demanderExamenAction(
     };
   }
 
-  const { patientId, consultationId, laboratoireId, typeExamen, niveauUrgence, aJeunRequis } = validation.data;
+  const {
+    patientId,
+    consultationId,
+    laboratoireId,
+    typeExamen,
+    niveauUrgence,
+    aJeunRequis,
+    renseignementsCliniques,
+  } = validation.data;
 
   try {
     const professionnel = await prisma.professionnelSante.findUnique({
@@ -602,23 +643,21 @@ export async function demanderExamenAction(
       return { error: "Ce laboratoire est introuvable.", success: false };
     }
 
-    const consultationIdNettoye = consultationId.trim();
-    let consultationIdValide: string | null = null;
+    // RG-LAB-01 du pack : une demande est toujours liee a une consultation
+    // (comme les ordonnances, voir getConsultationPourPrescription dans
+    // src/modules/prescription/actions.ts). consultationId est deja garanti
+    // non vide par schemaDemandeExamen ; verifie ici qu'elle appartient bien
+    // a ce patient et a ce professionnel (Zero Trust, jamais suppose valide).
+    const consultation = await prisma.consultation.findUnique({
+      where: { id: consultationId },
+    });
 
-    if (consultationIdNettoye.length > 0) {
-      const consultation = await prisma.consultation.findUnique({
-        where: { id: consultationIdNettoye },
-      });
-
-      if (
-        !consultation ||
-        consultation.patientId !== patientId ||
-        consultation.professionnelId !== professionnel.id
-      ) {
-        return { error: "Cette consultation est introuvable.", success: false };
-      }
-
-      consultationIdValide = consultation.id;
+    if (
+      !consultation ||
+      consultation.patientId !== patientId ||
+      consultation.professionnelId !== professionnel.id
+    ) {
+      return { error: "Cette consultation est introuvable.", success: false };
     }
 
     const adresseTechnique = await adresseTechniqueCourante();
@@ -636,13 +675,14 @@ export async function demanderExamenAction(
               patientId,
               demandeurId: professionnel.id,
               laboratoireId: laboratoire.id,
-              consultationId: consultationIdValide,
+              consultationId: consultation.id,
               typeExamen,
               numero: genererNumeroExamen(),
               statut: "demande",
               sensible: estExamenSensible(typeExamen),
               niveauUrgence,
               aJeunRequis,
+              renseignementsCliniques: renseignementsCliniques.length > 0 ? renseignementsCliniques : null,
             },
           });
 
@@ -664,16 +704,30 @@ export async function demanderExamenAction(
       }
     }
 
-    // F-LAB-01 : le laboratoire destinataire est prevenu de la nouvelle
-    // demande (message sans nom de patient ni d'examen : rien de sensible
-    // dans une notification). Hors transaction, une notification manquee ne
-    // doit pas defaire la demande.
-    await notifierPersonnelLaboratoire(
-      laboratoire.id,
-      "examen_demande",
-      "Une nouvelle demande d'examen est arrivee dans votre laboratoire.",
-      "/app/medecin/laboratoire"
-    );
+    // F-LAB-01 : le laboratoire destinataire et le patient sont tous deux
+    // prevenus de la nouvelle demande (message sans nom de patient ni
+    // d'examen cote laboratoire, sans type d'examen cote patient : rien de
+    // sensible dans une notification, un examen sensible ne doit rien
+    // reveler avant annonce, RG-LAB-41). Hors transaction (une notification
+    // manquee ne doit pas defaire la demande). destinataireNotificationPatient
+    // route vers le tuteur si le patient est une personne a charge sans
+    // compte (F-CIT-07/08), meme pattern que le reste de ce fichier.
+    const destinatairePatient = await destinataireNotificationPatient(patientId);
+    await Promise.all([
+      notifierPersonnelLaboratoire(
+        laboratoire.id,
+        "examen_demande",
+        "Une nouvelle demande d'examen est arrivee dans votre laboratoire.",
+        "/app/medecin/laboratoire"
+      ),
+      creerNotification(
+        destinatairePatient,
+        "examen_demande",
+        "Une demande d'examen a ete enregistree pour vous.",
+        "/app/patient/examens",
+        { codeCatalogue: "N-LAB-REQUESTED" }
+      ),
+    ]);
 
     return { error: null, success: true };
   } catch (erreur) {
@@ -960,6 +1014,61 @@ export async function getExamensDemandesParProfessionnel(): Promise<ExamenResume
 
     return resume;
   });
+}
+
+/**
+ * Types de notification interne signalant un evenement sur un resultat
+ * d'examen au medecin demandeur (voir les appels a creerNotification plus
+ * haut dans ce fichier : validation, correction, valeur critique). Liste
+ * fermee, tenue a jour manuellement ici faute d'un registre partage des
+ * types professionnels (categorieDuType, notification/types-notification.ts,
+ * ne couvre que les types patient a categorie de preferences modifiable).
+ */
+const TYPES_NOTIFICATION_RESULTAT_EXAMEN = [
+  "resultat_examen_disponible",
+  "resultat_examen_corrige",
+  "resultat_examen_critique",
+] as const;
+
+export interface ResultatExamenNonLu {
+  id: string;
+  message: string;
+  date: string; // ISO
+}
+
+/**
+ * F-CLI-01 du pack, "resultats non lus" : notifications non lues du medecin
+ * connecte concernant un resultat d'examen qu'il a demande (disponible,
+ * corrige, ou valeur critique), distinct de ListeResultatsAAnnoncer
+ * (DashboardMedecin.tsx) qui ne couvre que l'annonce au PATIENT d'un resultat
+ * SENSIBLE : celui-ci couvre tout resultat, sensible ou non, simplement pas
+ * encore consulte par le medecin qui l'a demande. Reutilise le centre de
+ * notifications existant (Notification.lu, module notification) plutot qu'un
+ * nouveau champ sur ExamenMedical : aucune migration, "Marquer comme lue"
+ * reutilise directement marquerNotificationLueAction (deja existant, deja
+ * teste, Zero Trust : verifie deja la propriete du destinataire).
+ */
+export async function getResultatsExamensNonLus(): Promise<ResultatExamenNonLu[]> {
+  const session = await getSession();
+
+  if (!session || !session.roles.some((role) => can(role, "create", "examen_medical"))) {
+    return [];
+  }
+
+  const notifications = await prisma.notification.findMany({
+    where: {
+      utilisateurId: session.userId,
+      type: { in: [...TYPES_NOTIFICATION_RESULTAT_EXAMEN] },
+      lu: false,
+    },
+    orderBy: { date: "desc" },
+  });
+
+  return notifications.map((notification) => ({
+    id: notification.id,
+    message: notification.message,
+    date: notification.date.toISOString(),
+  }));
 }
 
 /**

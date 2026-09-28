@@ -665,6 +665,12 @@ model ExamenMedical {
   niveauUrgence   String  @default("normal")
   aJeunRequis     Boolean @default(false)
 
+  // F-LAB-01 du pack : bref contexte clinique donne au laboratoire (200
+  // caracteres maximum, valide cote application dans demanderExamenAction),
+  // colonne additive et nullable : absente pour tout examen cree avant son
+  // introduction, jamais obligatoire.
+  renseignementsCliniques String?
+
   // F-LAB-04 / RG-ROL-31 du pack : numero de la version courante du resultat
   // (1 a la premiere validation). Une correction d'un resultat deja valide
   // archive l'ancienne version dans VersionResultatExamen puis incremente ce

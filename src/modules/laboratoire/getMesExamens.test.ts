@@ -24,6 +24,7 @@ function examen(surcharges: Record<string, unknown> = {}) {
     id: "ex-1",
     numero: "LB-2026-0001",
     consultationId: null,
+    renseignementsCliniques: null,
     typeExamen: "Glycémie à jeun",
     date: new Date("2026-09-20T08:00:00Z"),
     statut: "termine",

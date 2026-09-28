@@ -5,9 +5,9 @@ professionnel de santé à la saisie du résultat par le laboratoire assigné
 (Laboratory Service).
 
 Périmètre : ExamenMedical (type d'examen, statut du cycle de vie, résultat,
-rattachement optionnel à une consultation d'origine) entre un patient, un
-professionnel demandeur (typiquement un médecin) et un établissement
-sanitaire de type "laboratoire".
+rattachement obligatoire à une consultation d'origine, RG-LAB-01) entre un
+patient, un professionnel demandeur (typiquement un médecin) et un
+établissement sanitaire de type "laboratoire".
 
 Hors périmètre : contenu clinique de la consultation d'origine (module
 clinical), facturation ou tarification des examens, catalogue structuré de
@@ -29,8 +29,11 @@ supposée : une demande d'examen n'est possible que si le patient concerné a
 accordé un `Consentement` actif ("dossier_complet" ou "examens") au
 professionnel connecté. `demanderExamenAction` refuse d'écrire quoi que ce
 soit si ce n'est pas le cas (message "Aucun consentement actif pour ce
-patient."). Si un `consultationId` est fourni, il doit appartenir à la fois
-au patient et au professionnel connecté, sinon la demande est refusée.
+patient."). RG-LAB-01 du pack : `consultationId` est obligatoire (validation
+applicative dans `schemaDemandeExamen`, pas de contrainte NOT NULL en base
+pour ne pas casser les demandes existantes sans consultation) et doit
+appartenir à la fois au patient et au professionnel connecté, sinon la
+demande est refusée.
 
 Seconde régle Zero Trust, symétrique côté laboratoire : un professionnel ne
 peut saisir le résultat d'un examen que si cet examen est assigné à
@@ -44,9 +47,10 @@ Fonctions exposées (voir `actions.ts` pour la signature complète) :
 - `listLaboratoires` : tous les établissements sanitaires de type
   "laboratoire", triés par nom.
 - `demanderExamenAction` : crée l'`ExamenMedical` (statut initial "demande")
-  après vérification du consentement, de l'existence du laboratoire cible et,
-  le cas échéant, du rattachement de la consultation au couple
-  (patient, professionnel).
+  après vérification du consentement, de l'existence du laboratoire cible et
+  du rattachement de la consultation (obligatoire, RG-LAB-01) au couple
+  (patient, professionnel). Notifie le laboratoire destinataire et le
+  patient (ou son tuteur, via `destinataireNotificationPatient`).
 - `getExamensDemandesParProfessionnel` : examens demandés par le
   professionnel connecté, du plus récent au plus ancien, avec le nom et
   l'identifiant santé du patient.

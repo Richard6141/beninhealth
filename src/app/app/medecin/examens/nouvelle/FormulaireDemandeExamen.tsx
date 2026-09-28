@@ -8,7 +8,6 @@ import {
   type LaboratoireOption,
 } from "@/modules/laboratoire/actions";
 import type { GroupeExamensActifs } from "@/modules/administration/referentiel-examens";
-import { ModalNouveauPatient, type PatientCree } from "@/app/app/medecin/patients/ModalNouveauPatient";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -19,25 +18,21 @@ const etatInitial: LaboratoireActionState = { error: null, success: false };
 
 const CODE_AUTRE_EXAMEN = "AUTRE";
 
+/** F-LAB-01 du pack : longueur maximale des renseignements cliniques (voir schemaDemandeExamen). */
+const LONGUEUR_MAX_RENSEIGNEMENTS_CLINIQUES = 200;
+
 /** F-LAB-01 du pack : niveau d'urgence de la demande. */
 const OPTIONS_NIVEAU_URGENCE = [
   { value: "normal", label: "Normal" },
   { value: "urgent", label: "Urgent" },
 ];
 
-export interface PatientPourSelection {
-  patientId: string;
-  nomComplet: string;
-  identifiantSante: string;
-}
-
 export interface FormulaireDemandeExamenProps {
   laboratoires: LaboratoireOption[];
-  patients: PatientPourSelection[];
-  /** Chaine vide si aucune consultation n'est a l'origine de la demande. */
+  /** RG-LAB-01 du pack : toujours renseigne, une demande est toujours liee a une consultation. */
   consultationId: string;
-  /** PatientId a pre-selectionner quand la demande part d'une consultation precise. */
-  patientIdPreselectionne: string;
+  patientId: string;
+  patientNomComplet: string | null;
   /**
    * Referentiel des examens (F-ADM-04), recupere cote serveur (page.tsx) :
    * ne peut plus etre importe directement en module pur cote client depuis
@@ -47,26 +42,23 @@ export interface FormulaireDemandeExamenProps {
 }
 
 /**
- * Formulaire de demande d'examen (Phase 8) : patient choisi dans un
- * selecteur (meme source que /app/medecin/consultations/nouvelle -
- * getPatientsAvecConsentement), pre-rempli automatiquement quand on arrive
- * depuis le lien "Demander un examen" d'une consultation. Le bouton
- * "Ajouter un patient" ouvre ModalNouveauPatient (F-CLI-03 du pack) pour un
- * patient qui n'a pas encore de dossier, et le selectionne immediatement une
- * fois cree.
+ * Formulaire de demande d'examen (Phase 8). RG-LAB-01 du pack : une demande
+ * est toujours liee a une consultation (comme une ordonnance), le patient
+ * n'est donc plus choisi ici mais fixe par la consultation selectionnee sur
+ * l'ecran precedent (page.tsx / SelecteurConsultation), affiche en lecture
+ * seule.
  */
 export function FormulaireDemandeExamen({
   laboratoires,
-  patients: patientsInitiaux,
   consultationId,
-  patientIdPreselectionne,
+  patientId,
+  patientNomComplet,
   optionsExamensReferentiel,
 }: FormulaireDemandeExamenProps) {
   const [state, formAction, pending] = useActionState(demanderExamenAction, etatInitial);
-  const [patients, setPatients] = useState(patientsInitiaux);
-  const [patientId, setPatientId] = useState(patientIdPreselectionne);
   const [codeTypeExamen, setCodeTypeExamen] = useState("");
   const [precisionAutreExamen, setPrecisionAutreExamen] = useState("");
+  const [renseignementsCliniques, setRenseignementsCliniques] = useState("");
 
   const OPTIONS_TYPE_EXAMEN = [
     ...optionsExamensReferentiel.flatMap(({ famille, examens }) =>
@@ -92,19 +84,6 @@ export function FormulaireDemandeExamen({
     value: laboratoire.id,
     label: `${laboratoire.nom} (${laboratoire.localisation})`,
   }));
-
-  const optionsPatients = patients.map((patient) => ({
-    value: patient.patientId,
-    label: `${patient.nomComplet} (${patient.identifiantSante})`,
-  }));
-
-  function handlePatientCree(patient: PatientCree) {
-    setPatients((actuels) => [
-      { patientId: patient.patientId, nomComplet: patient.nomComplet, identifiantSante: patient.identifiantSante },
-      ...actuels,
-    ]);
-    setPatientId(patient.patientId);
-  }
 
   const erreurConsentement =
     state.error !== null && state.error.toLowerCase().includes("consentement");
@@ -138,7 +117,7 @@ export function FormulaireDemandeExamen({
   return (
     <Card
       title="Demande d'examen"
-      description="Renseignez le patient, le laboratoire et le type d'examen souhaite."
+      description="Renseignez le laboratoire et le type d'examen souhaite."
     >
       <form action={formAction} aria-busy={pending} className="flex flex-col gap-6">
         <input type="hidden" name="consultationId" value={consultationId} />
@@ -156,27 +135,13 @@ export function FormulaireDemandeExamen({
           )
         ) : null}
 
-        <div className="flex flex-col gap-2">
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="min-w-[240px] flex-1">
-              <SelectField
-                label="Patient"
-                required
-                options={optionsPatients}
-                placeholder="Choisir un patient"
-                value={patientId}
-                onChange={(event) => setPatientId(event.target.value)}
-              />
-            </div>
-            <ModalNouveauPatient onPatientCree={handlePatientCree} libelleBouton="Ajouter un patient" />
-          </div>
-          {patients.length === 0 ? (
-            <p className="text-[13px] text-encre-attenuee">
-              Aucun patient ne vous a encore accorde d&apos;acces a son
-              dossier. Utilisez « Ajouter un patient » pour un patient qui se
-              presente sans compte.
-            </p>
-          ) : null}
+        <div className="flex flex-col gap-1 rounded-champ border border-bordure bg-plan px-4 py-3">
+          <span className="text-[12px] font-semibold uppercase tracking-[0.06em] text-encre-attenuee">
+            Patient
+          </span>
+          <span className="text-[15px] font-semibold text-encre">
+            {patientNomComplet ?? "Patient non precise"}
+          </span>
         </div>
 
         <SelectField
@@ -206,6 +171,25 @@ export function FormulaireDemandeExamen({
           />
         ) : null}
 
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="renseignementsCliniques" className="text-[15px] font-semibold text-encre">
+            Renseignements cliniques
+          </label>
+          <textarea
+            id="renseignementsCliniques"
+            name="renseignementsCliniques"
+            rows={3}
+            maxLength={LONGUEUR_MAX_RENSEIGNEMENTS_CLINIQUES}
+            placeholder="Bref contexte clinique utile au laboratoire (facultatif)"
+            value={renseignementsCliniques}
+            onChange={(event) => setRenseignementsCliniques(event.target.value)}
+            className="w-full rounded-champ border border-bordure-forte bg-surface px-3 py-2 text-[14px] text-encre placeholder:text-encre-attenuee transition-colors motion-reduce:transition-none focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+          />
+          <span className="self-end text-[12px] text-encre-attenuee">
+            {renseignementsCliniques.length}/{LONGUEUR_MAX_RENSEIGNEMENTS_CLINIQUES}
+          </span>
+        </div>
+
         <SelectField
           label="Niveau d'urgence"
           name="niveauUrgence"
@@ -223,7 +207,7 @@ export function FormulaireDemandeExamen({
           type="submit"
           variant="primary"
           className="w-fit"
-          disabled={pending || !patientId || !typeExamenFinal}
+          disabled={pending || !typeExamenFinal}
         >
           {pending ? "Envoi en cours..." : "Envoyer la demande"}
         </Button>

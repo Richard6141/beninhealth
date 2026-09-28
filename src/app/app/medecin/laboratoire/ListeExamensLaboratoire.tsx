@@ -341,6 +341,14 @@ function LigneExamen({
               <span className="text-[14px] text-encre">{examen.demandeurNomComplet ?? "Non précisé"}</span>
             </TuileDetail>
 
+            {examen.renseignementsCliniques ? (
+              <TuileDetail label="Renseignements cliniques">
+                <span className="whitespace-pre-wrap text-[14px] text-encre">
+                  {examen.renseignementsCliniques}
+                </span>
+              </TuileDetail>
+            ) : null}
+
             {examen.motifRejetEchantillon ? (
               <Alert level="warning" title="Précédent échantillon rejeté">
                 {LIBELLES_MOTIF_REJET[examen.motifRejetEchantillon] ?? examen.motifRejetEchantillon}, nouveau

@@ -88,6 +88,13 @@ function CarteExamen({ examen }: { examen: ExamenResume }) {
           {examen.laboratoireNom}
         </p>
 
+        {examen.renseignementsCliniques ? (
+          <p className="text-[13px] text-encre-secondaire">
+            <span className="font-semibold text-encre">Renseignements cliniques : </span>
+            {examen.renseignementsCliniques}
+          </p>
+        ) : null}
+
         {estTermine ? (
           <div className="rounded-champ border border-bordure bg-plan px-3 py-2">
             <p className="text-[13px] font-semibold text-encre-secondaire">
