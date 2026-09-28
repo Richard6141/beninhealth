@@ -5329,3 +5329,32 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   chiffrement applicatif. Verifie : eslint 0 erreur, vitest 105/105 sur les 6 fichiers touches, tsc 0
   hors l'erreur deja confirmee sans rapport (chantier actif de c0/F-ETA-04), tirets 0. Aucune
   migration.
+
+### Prise puis constat de projet-gouv-23 (ex 3e/8c), F-LAB-02 (prelevement et rejet), 2026-09-28
+
+- Assignee par 5b ("pour toi si ta file est vide"), avec 4 manques cites : recherche par numero +
+  annee, QR, base `ASSIGNMENT`, liberation motivee (RG-LAB-10).
+- Verifie contre le code reel avant de coder (instruction de 5b elle-meme) : trouve une note deja
+  ecrite par une autre session PLUS TOT ce soir (`docs/coordination-agents.md`, plus haut dans ce
+  fichier a cette heure) : "F-LAB-02, verifie mais non code : ses manques ... dependent tous de la
+  meme fondation manquante que F-LAB-01 ('laboratoire au choix du patient')". Reverifie moi-meme en
+  lisant le code (pas suppose sur la seule foi de cette note anterieure) :
+  - `ExamenMedical.laboratoireId` est bien `String` obligatoire (schema.prisma:596), fixe par le
+    medecin demandeur a la creation, jamais nul, aucun mecanisme de reassignation. Une demande n'est
+    donc JAMAIS "en attente d'un laboratoire" que plusieurs etablissements pourraient
+    rechercher/scanner pour la reclamer : elle appartient a un seul laboratoire des sa creation.
+    Recherche par numero+annee, QR et base `ASSIGNMENT` (B6 du pack, 05-acces-consentement.md) n'ont
+    de sens QUE pour ce flux "au choix du patient", qui n'existe pas dans ce depot (meme constat que
+    F-LAB-01, deja documente). Construire ces 3 items reviendrait a batir une UI pour un scenario qui
+    ne peut structurellement pas se produire ici : confirme, ce n'est pas un petit correctif, c'est
+    la meme fondation manquante que F-LAB-01/F-LAB-06 (deja actee comme hors budget ce soir par
+    l'auteur de la note du dessus).
+  - RG-LAB-10 "liberation motivee" en revanche est DEJA fait, la note du dessus et le backlog sont
+    perimes sur ce seul point precis : `libererExamenAction` (actions.ts, ligne ~827) exige deja un
+    motif de 5 a 300 caracteres (`schemaLiberationExamen`, alias de `schemaAnnulationExamen`),
+    reserve au laboratoire assigne (`examen.laboratoireId !== professionnel.etablissementId`),
+    refuse des que le prelevement a eu lieu. Livree via F-LAB-06 (voir le commentaire en tete de la
+    fonction), jamais mise a jour dans le backlog depuis.
+  - Decision : aucun code ne sera ecrit pour cette fiche ce soir, comme la note anterieure l'avait
+    deja tranche pour 3 des 4 items ; je corrige seulement `docs/reste-a-faire.md` pour la partie
+    perimee (liberation motivee).
