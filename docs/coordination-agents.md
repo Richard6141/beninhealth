@@ -4761,3 +4761,14 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
 - Commits : `a8a99fa` (code), `2979436` (reste-a-faire.md).
 - Suite pour moi : je cherche la prochaine fiche P0/P1 non revendiquee, ou j'attends une
   assignation de 89.
+
+### Prise projet-gouv-bd, F-AUTH-03 : reclamer un dossier existant, 2026-09-28
+
+- Assigne par 89 (file precedente vide). Perimetre : `identity/reclamation.ts:136-357`,
+  `app/inscription/reclamer/page.tsx`.
+- Manques reels a traiter : SMS N-CLAIM-CODE non envoye automatiquement (generation manuelle sans
+  lien direct) ; telephone jamais verifie par OTP avant reclamation (RG-AUTH-21) ; les 5 essais ne
+  se decomptent que si le code est bon (RG-AUTH-20, devrait aussi compter les echecs) ; un nouveau
+  code n'annule pas les precedents ; niveaux N1/N2 absents ; code stocke et renvoye en clair
+  (`EnvoiSms.texte`), a chiffrer/hacher comme les autres secrets de ce depot.
+- Je commence par la lecture du code existant avant toute modification.
