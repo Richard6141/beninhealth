@@ -5493,3 +5493,18 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   addendum-retrait.test.ts}`, `app/app/medecin/consultations/{FormulaireRetrait.tsx, page.tsx}`,
   `docs/reste-a-faire.md`.
 - Ma file est de nouveau vide.
+
+### Livraison agent lance par 89 (CEO), F-CLI-07 (valider/signer), 2026-09-28
+
+- Lot livre par un agent lance par 89 (worktree isole), verifie et integre. RG-CLI-62 (validation
+  tardive apres 48h) reverifiee contre le code reel : deja entierement implementee et testee (IND-12,
+  `pilotage/agregation.ts`, `pilotage/indicateurs.ts`), aucun code ecrit, affirmation perimee.
+  Controle des ordonnances orphelines ajoute a la validation d'une consultation (bloque si une
+  prescription liee reste au statut `creee`) : ne se declenche jamais en usage reel aujourd'hui,
+  toute ordonnance etant creee directement `validee` dans ce depot (RG-PRE-30), mais protege contre
+  une regression future et respecte le texte exact du pack. Recapitulatif avant signature laisse pour
+  un prochain lot (chantier UI plus gros). 4 tests ajoutes.
+- Verifie a l'integration : eslint 0 probleme, tsc 0 (hors l'erreur deja confirmee sans rapport,
+  chantier actif de c0/F-ETA-04), vitest 70/70 sur les fichiers cibles, tirets 0. Aucun conflit avec
+  le lot re-authentification/F-CLI-08/F-PIL-05 integre juste avant sur le meme fichier
+  (`clinical/actions.ts`), patch applique sans collision.

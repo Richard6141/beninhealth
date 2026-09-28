@@ -1806,6 +1806,28 @@ export async function enregistrerConsultationAction(
         return cible.id;
       }
 
+      // F-CLI-07, etape 3 (docs/pack claude/specs/10-fiches-clinique.md) :
+      // aucune ordonnance liee ne doit rester un "brouillon d'ordonnance
+      // orphelin" au moment de la validation, seulement signee (validee,
+      // delivree partiellement ou totalement) ou abandonnee (annulee,
+      // arretee). Dans ce depot, prescription/actions.ts cree toujours une
+      // Prescription directement au statut "validee" (Phase 5, voir
+      // prescription/actions.ts) : le statut "creee" (brouillon) n'est
+      // atteint par aucune voie d'ecriture actuelle, donc cette verification
+      // ne trouve normalement jamais rien. Elle reste une garde defensive
+      // fidele au pack, utile si une future evolution introduit un vrai
+      // brouillon d'ordonnance : mieux vaut bloquer la signature de la
+      // consultation que de la laisser verrouillee derriere une ordonnance
+      // incomplete.
+      const ordonnanceOrpheline = await tx.prescription.findFirst({
+        where: { consultationId: cible.id, statut: "creee" },
+        select: { id: true },
+      });
+
+      if (ordonnanceOrpheline) {
+        throw new Error("ORDONNANCE_ORPHELINE");
+      }
+
       // F-CLI-07 / RG-CLI-61 : verrouille definitivement le contenu.
       const empreinteContenu = calculerEmpreinteConsultation(donneesConsultation);
       const dateValidation = new Date();
@@ -1866,6 +1888,13 @@ export async function enregistrerConsultationAction(
     }
     if (erreur instanceof Error && erreur.message === "CONSULTATION_DEJA_VALIDEE") {
       return { error: "Cette consultation est deja validee et ne peut plus etre modifiee.", success: false };
+    }
+    if (erreur instanceof Error && erreur.message === "ORDONNANCE_ORPHELINE") {
+      return {
+        error:
+          "Impossible de valider : une ordonnance liee a cette consultation est encore un brouillon non finalise. Signez-la ou abandonnez-la avant de valider.",
+        success: false,
+      };
     }
     if (erreur instanceof Error && erreur.message === "BASE_ACCES_ECRITURE_ABSENTE") {
       return {

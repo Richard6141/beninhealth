@@ -32,6 +32,7 @@ vi.mock("@/lib/prisma", () => {
     consultation: { findUnique: vi.fn(), findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
     priseEnChargeInfirmiere: { updateMany: vi.fn() },
     diagnosticCim10: { findUnique: vi.fn() },
+    prescription: { findFirst: vi.fn() },
     $transaction: vi.fn(),
   };
   prisma.$transaction.mockImplementation(async (rappel: (tx: unknown) => unknown) => rappel(prisma));
@@ -54,6 +55,7 @@ const prismaMock = prisma as unknown as {
   consultation: { findUnique: Mock; findFirst: Mock; create: Mock; update: Mock };
   priseEnChargeInfirmiere: { updateMany: Mock };
   diagnosticCim10: { findUnique: Mock };
+  prescription: { findFirst: Mock };
 };
 const getSessionMock = getSession as unknown as Mock;
 const journaliserMock = journaliser as unknown as Mock;
@@ -114,6 +116,7 @@ beforeEach(() => {
   prismaMock.diagnosticCim10.findUnique.mockImplementation(async ({ where }: { where: { code: string } }) =>
     where.code === "B54" ? { code: "B54", libelle: "Paludisme, sans precision", sensible: false, actif: true } : null
   );
+  prismaMock.prescription.findFirst.mockResolvedValue(null);
 });
 
 describe("qui peut enregistrer une consultation", () => {
@@ -551,6 +554,42 @@ describe("validation (CA-1, RG-CLI-61)", () => {
   it("un brouillon sans rendez-vous ne touche a aucun rendez-vous", async () => {
     await enregistrerConsultationAction(ETAT, formulaire());
     expect(prismaMock.rendezVous.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("ordonnances orphelines a la validation (F-CLI-07 etape 3 du pack)", () => {
+  it("refuse de valider si une ordonnance liee est encore un brouillon (statut 'creee')", async () => {
+    prismaMock.prescription.findFirst.mockResolvedValue({ id: "presc-1" });
+
+    const resultat = await enregistrerConsultationAction(ETAT, formulaire(valider));
+
+    expect(resultat.success).toBe(false);
+    expect(resultat.error).toContain("brouillon non finalise");
+    expect(prismaMock.consultation.update).not.toHaveBeenCalled();
+    expect(evenementPilotageMock).not.toHaveBeenCalled();
+  });
+
+  it("interroge bien les ordonnances de CETTE consultation, au statut 'creee' seulement", async () => {
+    await enregistrerConsultationAction(ETAT, formulaire(valider));
+
+    expect(prismaMock.prescription.findFirst).toHaveBeenCalledWith({
+      where: { consultationId: "c-new", statut: "creee" },
+      select: { id: true },
+    });
+  });
+
+  it("ne verifie jamais les ordonnances pour un simple enregistrement de brouillon", async () => {
+    await enregistrerConsultationAction(ETAT, formulaire());
+
+    expect(prismaMock.prescription.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("valide normalement quand les ordonnances liees sont signees ou abandonnees", async () => {
+    prismaMock.prescription.findFirst.mockResolvedValue(null);
+
+    const resultat = await enregistrerConsultationAction(ETAT, formulaire(valider));
+
+    expect(resultat).toMatchObject({ success: true, valide: true });
   });
 });
 
