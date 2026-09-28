@@ -1568,11 +1568,21 @@ export async function enregistrerConsultationAction(
       },
     });
 
+    // F-CLI-10 / base B5 (RG-ACC-15) : un acces d'urgence "bris de glace" en
+    // cours (Consentement.typeAcces = "urgence", src/modules/urgence/actions.ts)
+    // donne lui seul le droit d'ecrire une consultation, sans consentement
+    // ordinaire ni rendez-vous/arrivee (B3/B4 ci-dessous) : c'est precisement
+    // le cas d'usage de l'acces d'urgence, un patient hors d'etat de
+    // consentir. Deja limite dans le temps (4 h), quotidiennement plafonne et
+    // integralement journalise par le module urgence : aucune verification
+    // supplementaire necessaire ici.
+    const accesUrgence = consentement?.typeAcces === "urgence";
+
     const consentementValide =
       consentement !== null &&
       consentement.statut === "actif" &&
       (consentement.dateFin === null || consentement.dateFin > new Date()) &&
-      (TYPES_ACCES_CONSULTATION as readonly string[]).includes(consentement.typeAcces);
+      ((TYPES_ACCES_CONSULTATION as readonly string[]).includes(consentement.typeAcces) || accesUrgence);
 
     if (!consentementValide) {
       return {
@@ -1665,36 +1675,40 @@ export async function enregistrerConsultationAction(
           cible = brouillonExistant;
         } else {
           // RG-ACC-15 (docs/pack claude/specs/05-acces-consentement.md) : un
-          // consentement (verifie plus haut) ne donne jamais lui seul le droit
-          // d'ECRIRE une consultation. Il faut en plus, au moment de la
-          // CREATION seulement (un brouillon deja ouvert reste modifiable
-          // ensuite, base B7 "auteur") : soit un contexte de soins B4 (le
-          // patient est arrive dans cet etablissement, heureArrivee posee,
-          // fenetre de 72 h, n'importe quel clinicien de l'etablissement),
-          // soit un rendez-vous confirme du jour avec CE professionnel precis.
-          // Verification de presence par QR/SMS/piece (RG-ACC-20) non
-          // modelisee dans ce depot : meme simplification assumee que F-RDV-04
-          // (heureArrivee seul fait foi).
+          // consentement ORDINAIRE (verifie plus haut) ne donne jamais lui
+          // seul le droit d'ECRIRE une consultation. Il faut en plus, au
+          // moment de la CREATION seulement (un brouillon deja ouvert reste
+          // modifiable ensuite, base B7 "auteur") : soit un contexte de soins
+          // B4 (le patient est arrive dans cet etablissement, heureArrivee
+          // posee, fenetre de 72 h, n'importe quel clinicien de
+          // l'etablissement), soit un rendez-vous confirme du jour avec CE
+          // professionnel precis, SOIT un acces d'urgence actif (base B5,
+          // F-CLI-10) qui suffit seul, sans aucune des deux verifications
+          // suivantes. Verification de presence par QR/SMS/piece (RG-ACC-20)
+          // non modelisee dans ce depot : meme simplification assumee que
+          // F-RDV-04 (heureArrivee seul fait foi).
           const seuilContexteSoins = new Date(dateReference.getTime() - DUREE_CONTEXTE_SOINS_HEURES * 60 * 60 * 1000);
           const { debut: debutJour, fin: finJour } = bornesJourneeBenin(dateReference);
 
-          const baseEcritureValide = await tx.rendezVous.findFirst({
-            where: {
-              patientId,
-              OR: [
-                {
-                  etablissementId: professionnel.etablissementId,
-                  statut: { in: [...STATUTS_ACTIFS] },
-                  heureArrivee: { gte: seuilContexteSoins },
-                },
-                {
-                  professionnelId: professionnel.id,
-                  statut: "confirme",
-                  date: { gte: debutJour, lt: finJour },
-                },
-              ],
-            },
-          });
+          const baseEcritureValide =
+            accesUrgence ||
+            (await tx.rendezVous.findFirst({
+              where: {
+                patientId,
+                OR: [
+                  {
+                    etablissementId: professionnel.etablissementId,
+                    statut: { in: [...STATUTS_ACTIFS] },
+                    heureArrivee: { gte: seuilContexteSoins },
+                  },
+                  {
+                    professionnelId: professionnel.id,
+                    statut: "confirme",
+                    date: { gte: debutJour, lt: finJour },
+                  },
+                ],
+              },
+            }));
 
           if (!baseEcritureValide) {
             throw new Error("BASE_ACCES_ECRITURE_ABSENTE");
