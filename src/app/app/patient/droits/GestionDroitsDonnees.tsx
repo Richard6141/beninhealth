@@ -24,8 +24,20 @@ const styleLienTelechargement =
  * verification du mot de passe (verifierMotDePasseExportAction) delivre un
  * jeton signe de 5 minutes, joint aux deux liens de telechargement : les
  * routes /api/patient/export/* le exigent en plus de la session.
+ *
+ * RG-AUTH-53 : si une re-authentification recente existe deja (moins de 5
+ * minutes, pour n'importe quel acte sensible, ex. une signature
+ * d'ordonnance), le formulaire est remplace par un simple bouton (aucun
+ * champ a soumettre). Sinon, mot de passe obligatoire et code MFA en plus si
+ * actif sur ce compte.
  */
-function SectionExportDonnees() {
+function SectionExportDonnees({
+  reauthentificationRecente,
+  mfaActif,
+}: {
+  reauthentificationRecente: boolean;
+  mfaActif: boolean;
+}) {
   const [state, formAction, pending] = useActionState<ExportDonneesActionState, FormData>(
     verifierMotDePasseExportAction,
     etatInitial
@@ -64,13 +76,33 @@ function SectionExportDonnees() {
               {state.error}
             </Alert>
           ) : null}
-          <TextField
-            label="Mot de passe actuel"
-            name="motDePasse"
-            type="password"
-            autoComplete="current-password"
-            required
-          />
+          {reauthentificationRecente ? (
+            <p className="text-[13px] text-encre-attenuee">
+              Ré-authentification déjà effectuée il y a moins de 5 minutes (RG-AUTH-53), mot de passe
+              non redemandé.
+            </p>
+          ) : (
+            <>
+              <TextField
+                label="Mot de passe actuel"
+                name="motDePasse"
+                type="password"
+                autoComplete="current-password"
+                required
+              />
+              {mfaActif ? (
+                <TextField
+                  label="Code de double authentification"
+                  name="codeMfa"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  required
+                  hint="Code de votre application d'authentification, ou un code de secours."
+                />
+              ) : null}
+            </>
+          )}
           <Button type="submit" variant="primary" className="w-fit" disabled={pending}>
             {pending ? "Vérification..." : "Confirmer et préparer ma copie"}
           </Button>
@@ -189,10 +221,18 @@ function SectionFermetureCompte() {
   );
 }
 
-export function GestionDroitsDonnees() {
+export interface GestionDroitsDonneesProps {
+  /** RG-AUTH-53 : statut de re-authentification pour SectionExportDonnees (null si indisponible, traite comme "tout redemander"). */
+  statutReauthentificationExport: { reauthentificationRecente: boolean; mfaActif: boolean } | null;
+}
+
+export function GestionDroitsDonnees({ statutReauthentificationExport }: GestionDroitsDonneesProps) {
   return (
     <div className="flex flex-col gap-6">
-      <SectionExportDonnees />
+      <SectionExportDonnees
+        reauthentificationRecente={statutReauthentificationExport?.reauthentificationRecente ?? false}
+        mfaActif={statutReauthentificationExport?.mfaActif ?? false}
+      />
       <SectionRectification />
       <SectionFermetureCompte />
     </div>

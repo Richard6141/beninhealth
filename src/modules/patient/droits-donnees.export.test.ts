@@ -16,12 +16,16 @@ vi.mock("@/modules/laboratoire/actions", () => ({ getMesExamens: vi.fn() }));
 vi.mock("@/modules/vaccination/actions", () => ({ getMesVaccinations: vi.fn() }));
 vi.mock("./actions", () => ({ getMesConsentements: vi.fn(), getMonDossierPatient: vi.fn() }));
 vi.mock("bcryptjs", () => ({ default: { compare: vi.fn() } }));
+// RG-AUTH-53 : verifierSecondFacteur (code TOTP/secours) mockee, la logique
+// TOTP elle-meme est deja testee dans mfa-totp.test.ts, pas ici.
+vi.mock("@/modules/identity/mfa-totp", () => ({ verifierSecondFacteur: vi.fn() }));
 
 import bcrypt from "bcryptjs";
 import { viderCompteursDebit } from "@/lib/limite-debit";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { journaliser } from "@/modules/audit/journaliser";
+import { viderReauthentifications } from "@/modules/identity/reauthentification";
 import { verifierMotDePasseExportAction } from "./droits-donnees";
 import { jetonExportDonneesValide } from "./jeton-export-donnees";
 
@@ -33,19 +37,25 @@ const compareMock = bcrypt.compare as unknown as Mock;
 const MAINTENANT = new Date("2026-09-27T12:00:00.000Z");
 const ETAT_INITIAL = { error: null, success: false };
 
-function formulaire(motDePasse: string): FormData {
+function formulaire(motDePasse: string, codeMfa = ""): FormData {
   const donnees = new FormData();
   donnees.set("motDePasse", motDePasse);
+  donnees.set("codeMfa", codeMfa);
   return donnees;
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
   viderCompteursDebit();
+  // RG-AUTH-53 : la fenetre de grace est desormais partagee (module
+  // identity/reauthentification.ts, singleton du processus) : un succes
+  // enregistre dans un test precedent doit etre efface avant chacun de
+  // ceux-ci, sinon il fuiterait et dispenserait a tort du mot de passe.
+  viderReauthentifications();
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(MAINTENANT);
   getSessionMock.mockResolvedValue({ userId: "user-1", roles: ["patient"] });
-  p.user.findUnique.mockResolvedValue({ id: "user-1", motDePasseHash: "hash" });
+  p.user.findUnique.mockResolvedValue({ id: "user-1", motDePasseHash: "hash", mfaActif: false });
   compareMock.mockResolvedValue(true);
 });
 
@@ -126,12 +136,57 @@ describe("verifierMotDePasseExportAction (F-CIT-13, re-authentification)", () =>
     }
 
     getSessionMock.mockResolvedValue({ userId: "user-3", roles: ["patient"] });
-    p.user.findUnique.mockResolvedValue({ id: "user-3", motDePasseHash: "hash" });
+    p.user.findUnique.mockResolvedValue({ id: "user-3", motDePasseHash: "hash", mfaActif: false });
     compareMock.mockResolvedValue(true);
 
     const resultat = await verifierMotDePasseExportAction(ETAT_INITIAL, formulaire("Demo1234!"));
 
     expect(resultat.success).toBe(true);
     expect(jetonExportDonneesValide(resultat.jeton, "user-3", MAINTENANT)).toBe(true);
+  });
+});
+
+describe("verifierMotDePasseExportAction (RG-AUTH-53, fenetre de grace partagee et MFA si active)", () => {
+  it("delivre un jeton sans redemander de mot de passe si une re-authentification recente existe deja (ex. signature d'une ordonnance)", async () => {
+    const { enregistrerReauthentificationReussie } = await import("@/modules/identity/reauthentification");
+    enregistrerReauthentificationReussie("user-1");
+
+    const resultat = await verifierMotDePasseExportAction(ETAT_INITIAL, formulaire(""));
+
+    expect(resultat.success).toBe(true);
+    expect(jetonExportDonneesValide(resultat.jeton, "user-1", MAINTENANT)).toBe(true);
+    expect(compareMock).not.toHaveBeenCalled();
+  });
+
+  it("MFA active : exige un code en plus du mot de passe", async () => {
+    p.user.findUnique.mockResolvedValue({ id: "user-1", motDePasseHash: "hash", mfaActif: true });
+
+    const resultat = await verifierMotDePasseExportAction(ETAT_INITIAL, formulaire("Demo1234!", ""));
+
+    expect(resultat.success).toBe(false);
+    expect(resultat.error).toMatch(/code/i);
+    expect(resultat.jeton).toBeUndefined();
+  });
+
+  it("MFA active, code incorrect : refuse et journalise aucune demande", async () => {
+    const { verifierSecondFacteur } = await import("@/modules/identity/mfa-totp");
+    vi.mocked(verifierSecondFacteur).mockResolvedValue(null);
+    p.user.findUnique.mockResolvedValue({ id: "user-1", motDePasseHash: "hash", mfaActif: true });
+
+    const resultat = await verifierMotDePasseExportAction(ETAT_INITIAL, formulaire("Demo1234!", "000000"));
+
+    expect(resultat.success).toBe(false);
+    expect(journaliserMock).not.toHaveBeenCalled();
+  });
+
+  it("MFA active, code correct : delivre le jeton et ouvre la fenetre de grace partagee", async () => {
+    const { verifierSecondFacteur } = await import("@/modules/identity/mfa-totp");
+    vi.mocked(verifierSecondFacteur).mockResolvedValue("totp");
+    p.user.findUnique.mockResolvedValue({ id: "user-1", motDePasseHash: "hash", mfaActif: true });
+
+    const resultat = await verifierMotDePasseExportAction(ETAT_INITIAL, formulaire("Demo1234!", "123456"));
+
+    expect(resultat.success).toBe(true);
+    expect(jetonExportDonneesValide(resultat.jeton, "user-1", MAINTENANT)).toBe(true);
   });
 });

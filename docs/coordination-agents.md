@@ -5379,3 +5379,117 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   soir). Nieme occurrence de la meme classe d'incident deja documentee plusieurs fois ce soir. Ignore
   entierement leur diff de doc, reappliquee moi-meme depuis HEAD avec le contenu correct des deux
   lignes.
+
+### Prise puis livraison de projet-gouv-18 (ex 23/3e/8c), F-PIL-05 : plafond d'echecs sur la re-authentification des exports de pilotage, 2026-09-28
+
+- Note reprise apres incident : ma premiere version de cette note (ecrite avant l'integration
+  ci-dessus) a ete perdue par le meme mecanisme que celui decrit juste au-dessus (ma copie locale
+  etait perimee au moment de l'edition, la reconciliation faite par 89/3e a reecrit le fichier depuis
+  HEAD sans elle). `git status` verifie clean sur ce fichier avant de reecrire cette fois.
+- Trouve en corrigeant `docs/reste-a-faire.md` (F-PIL-05) : sa propre phrase restait vraie et non
+  revendiquee, meme apres l'integration de F-PIL-04 par 89 : "ni journal de la demande ni plafond
+  d'echecs de mot de passe a la re-authentification (meme limite que F-AUD-01)".
+- Verifie contre le code reel avant de coder : `verifierExportPilotageAction` (`pilotage/exports.ts`)
+  compare bien le mot de passe via bcrypt mais n'avait AUCUN compteur d'echecs, contrairement a TOUS
+  les autres flux de re-authentification de ce depot construits ou corriges ce soir (F-CIT-13, F-AUD-01,
+  F-PRE-04/identity/reauthentification.ts). Un attaquant avec une session active (deja authentifie,
+  mais sans le mot de passe) pouvait tenter un nombre illimite de mots de passe sur cette etape.
+- Livre : reprend le patron deja utilise 3 fois ce soir dans des fichiers proches
+  (`droits-donnees.ts` F-CIT-13 : `limiteAtteinte`/`enregistrerEvenement` de `@/lib/limite-debit`,
+  compteur local par utilisateur, 5 echecs / 1 heure, PAS de deconnexion) plutot que le patron
+  different d'`identity/reauthentification.ts` (3 echecs + deconnexion, concu specifiquement pour
+  RG-PRE-30, sans regle equivalente ici). "Journal de la demande" (l'autre item cite par la meme
+  phrase) laisse explicitement de cote : aucune autre etape de re-authentification de ce depot ne
+  journalise sa propre DEMANDE (seulement le succes final de l'export), pas une omission propre a
+  cette fiche.
+- Fichiers touches : `pilotage/exports.ts` (le compteur, meme cle namespace `pilotage-export:echecs:`),
+  `pilotage/exports.test.ts` (fichier deja existant, complete : `viderCompteursDebit()` ajoute au
+  `beforeEach` par prudence, un test declenchant deja un mot de passe incorrect aurait pu fuiter entre
+  tests sinon, meme incident que celui trouve plus tot ce soir sur `droits-donnees.export.test.ts` ;
+  3 nouveaux tests dedies au plafond : bloque au 5e echec, pas encore bloque au 4e, blocage propre au
+  compte).
+- Verifie : `tsc --noEmit` 0 erreur sur mes 2 fichiers (seule erreur restante dans le depot,
+  `app/etablissement/page.tsx`, confirmee non liee, chantier actif de c0/F-ETA-04) ; `eslint` 0
+  probleme ; `vitest exports.test.ts` 54/54 (fichier existant + mes ajouts) ; elargi a tout
+  `pilotage` + tirets + service-guard : 180/180. Smoke en direct : `/app/ministere` et `/app/pilotage`
+  repondent 307 (redirection connexion, pas de 500) ; serveur de dev local relance sur demande de
+  l'utilisateur reel plus tot dans cette session (port 3000, deja partage).
+- `docs/reste-a-faire.md` (F-PIL-05) mis a jour, verifie isole (`git diff --stat HEAD`, 1 ligne
+  changee) avant cette note, pour eviter de reproduire l'incident du dessus.
+- Je ne committe rien moi-meme. Fichiers prets pour revue/commit : `pilotage/{exports.ts,
+  exports.test.ts}`, `docs/reste-a-faire.md`.
+- Ma file est de nouveau vide.
+
+### Prise de projet-gouv-18 (ex 23/3e/8c), F-CLI-08 : addendum au-dela de 12 mois pour l'auteur, MFA a la re-authentification du retrait, 2026-09-28
+
+- Suggere par 3e (parmi 3 options), choisi car dans mon perimetre habituel (F-CLI). Verifie contre le
+  code reel ET le texte exact du pack (`docs/pack claude/specs/10-fiches-clinique.md:221`) avant de
+  coder, comme demande.
+- RG-CLI-70 du pack, mot pour mot : "Addendum et retrait sont possibles pendant 12 mois apres la
+  validation ; ensuite, seul un addendum de l'auteur ou du responsable medical designe est possible."
+  Code actuel (`clinical/actions.ts`, `ajouterAddendumConsultationAction`) : bloque l'addendum pour
+  TOUT LE MONDE au-dela de 12 mois, y compris l'auteur lui-meme - alors que le pack dit explicitement
+  que l'auteur PEUT continuer a en ajouter sans limite de temps, seul le retrait s'arrete a 12 mois
+  pour de bon. Vrai bug, pas une affirmation perimee du backlog.
+- "responsable medical designe" : aucun role ni concept de ce type nulle part dans ce depot (grep
+  confirme, zero resultat). Pas construit ce soir : inventer un role/une designation par
+  etablissement serait un chantier d'architecture a part (nouveau champ, nouvelle permission, UI
+  d'assignation), pas un correctif mineur. Documente comme limite assumee, comme les autres
+  simplifications du soir.
+- Second point cite par 5b/3e, verifie aussi vrai : `retirerConsultationAction` ne verifie que le mot
+  de passe (bcrypt direct, aucun import du module partage), jamais de code MFA meme actif sur le
+  compte, alors que RG-AUTH-53 (deja construit ce soir, `identity/reauthentification.ts`) l'exige
+  partout ailleurs desormais. Aucun plafond d'echecs non plus (meme categorie de trou que celui trouve
+  et corrige sur F-PIL-05 tout a l'heure), non cite explicitement par le backlog mais trouve en lisant
+  le code.
+- Decision : migre `retirerConsultationAction` vers `identity/reauthentification.ts` (meme module que
+  F-PRE-04/F-CIT-13 ce soir) : mot de passe + code MFA si actif, fenetre de grace de 5 minutes
+  partagee avec les autres actes sensibles, 3 echecs + deconnexion (meme regle que F-PRE-04, pas celle
+  plus douce de F-PIL-05/F-CIT-13 : cette action-ci EST explicitement citee RG-AUTH-53 dans le
+  commentaire deja present dans le code, contrairement a l'export pilotage).
+- Fichiers cibles : `clinical/actions.ts` et son fichier de test principal (a identifier), plus
+  l'ecran `FormulaireRetrait.tsx` (champ code MFA conditionnel, meme patron que les ecrans deja
+  corriges ce soir pour F-AUTH-06).
+
+### Livraison projet-gouv-18 (ex 23/3e/8c), F-CLI-08 : addendum au-dela de 12 mois pour l'auteur, MFA a la re-authentification du retrait, 2026-09-28
+
+- Livre exactement le perimetre annonce dans ma note de prise, confirme contre le texte exact du pack
+  (RG-CLI-70) avant de coder.
+- `ajouterAddendumConsultationAction` : supprime la verification de fenetre de 12 mois pour
+  l'addendum (elle ne s'applique qu'au retrait). Garde une verification defensive
+  `!consultation.dateValidation` (etat incoherent jamais suppose), sans jamais bloquer sur la date
+  elle-meme desormais.
+- `retirerConsultationAction` migre vers `identity/reauthentification.ts` : `bcrypt`/`prisma.user.findUnique`
+  directs remplaces par `motDePasseEtCodeMfaValides` (mot de passe + code MFA si actif),
+  `reauthentificationBloquee`/`enregistrerEchecReauthentification` (3 echecs + `destroySession`, meme
+  regle que F-PRE-04, choisie car RG-AUTH-53 etait deja explicitement nommee dans le code AVANT ce
+  correctif) et `reauthentificationRecente`/`enregistrerReauthentificationReussie` (fenetre de grace
+  de 5 minutes desormais partagee avec les autres actes sensibles de ce soir). `bcrypt` retire des
+  imports du fichier (plus aucun usage restant).
+- Ecrans mis a jour pour porter la fenetre de grace/MFA jusqu'ici : `app/app/medecin/consultations/page.tsx`
+  lit desormais `mfaActif` et `reauthentificationRecente` UNE SEULE FOIS pour toute la page (pas par
+  carte de consultation), les transmet a `FormulaireRetrait.tsx` (nouveau champ code MFA conditionnel,
+  meme patron que les ecrans deja corriges ce soir pour F-AUTH-06 ; formulaire masque entierement s'il
+  n'y a rien a redemander).
+- Non code, documente comme limite assumee : "responsable medical designe" (l'autre beneficiaire cite
+  par RG-CLI-70 pour l'addendum tardif) n'existe comme role nulle part dans ce depot (grep confirme,
+  zero resultat) ; inventer ce concept serait un chantier d'architecture a part (nouveau champ,
+  permission, ecran d'assignation par etablissement), pas un correctif mineur.
+- Tests : fichier existant `clinical/addendum-retrait.test.ts` mis a jour (test RG-CLI-70 de
+  l'addendum reecrit pour la nouvelle regle correcte ; `viderCompteursDebit()`/`viderReauthentifications()`
+  ajoutes au `beforeEach`, meme incident de fuite d'etat entre tests deja trouve et corrige 2 fois plus
+  tot ce soir sur des fichiers similaires ; assertion de `verifie le mot de passe...` mise a jour pour
+  le nouvel appel `prisma.user.findUnique` avec `select`) ; 5 nouveaux tests dedies (MFA obligatoire/
+  incorrecte/correcte, fenetre de grace partagee, blocage + deconnexion au 3e echec). 161/161 des le
+  premier lancement, aucune correction necessaire apres coup.
+- Verifie : `tsc --noEmit` 0 erreur sur mes 4 fichiers (seule erreur restante dans le depot,
+  `app/etablissement/page.tsx`, confirmee non liee, chantier actif de c0/F-ETA-04) ; `eslint` 0
+  probleme ; `vitest` cible (fichier modifie + tirets + service-guard) 161/161 pour le fichier lui-meme,
+  elargi a tout `clinical` + securite : 152/152. Smoke en direct : `/app/medecin/consultations` repond
+  307 (redirection connexion, pas de 500).
+- `docs/reste-a-faire.md` (F-CLI-08) mis a jour, isolation verifiee (`git diff --stat HEAD`, 2 lignes
+  changees pour F-PIL-05 + F-CLI-08) avant cette note.
+- Je ne committe rien moi-meme. Fichiers prets pour revue/commit : `clinical/{actions.ts,
+  addendum-retrait.test.ts}`, `app/app/medecin/consultations/{FormulaireRetrait.tsx, page.tsx}`,
+  `docs/reste-a-faire.md`.
+- Ma file est de nouveau vide.

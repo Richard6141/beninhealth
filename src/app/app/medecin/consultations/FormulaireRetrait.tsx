@@ -15,10 +15,21 @@ const etatInitial: ClinicalActionState = { error: null, success: false };
  * Retrait d'une consultation saisie par erreur (F-CLI-08 du pack) : reserve
  * au cas d'une consultation enregistree sur le mauvais patient. Jamais une
  * suppression : la consultation reste visible, barree a l'ecran. Exige le
- * mot de passe du compte (RG-AUTH-53, re-authentification), jamais
- * pre-rempli ni mémorisé.
+ * mot de passe du compte, et un code MFA en plus si actif (RG-AUTH-53,
+ * re-authentification), sauf fenetre de grace de 5 minutes deja ouverte pour
+ * un autre acte sensible (identity/reauthentification.ts, corrige le
+ * 2026-09-28 : cette etape n'avait jusque-la ni la fenetre partagee ni la
+ * verification MFA, mot de passe seul toujours redemande).
  */
-export function FormulaireRetrait({ consultationId }: { consultationId: string }) {
+export function FormulaireRetrait({
+  consultationId,
+  mfaActif,
+  reauthentificationRecente,
+}: {
+  consultationId: string;
+  mfaActif: boolean;
+  reauthentificationRecente: boolean;
+}) {
   const [ouvert, setOuvert] = useState(false);
   const [state, formAction, pending] = useActionState(retirerConsultationAction, etatInitial);
 
@@ -55,7 +66,28 @@ export function FormulaireRetrait({ consultationId }: { consultationId: string }
       ) : null}
 
       <TextField label="Motif du retrait" name="motif" required />
-      <TextField label="Votre mot de passe" name="motDePasse" type="password" required />
+
+      {!reauthentificationRecente ? (
+        <>
+          <TextField label="Votre mot de passe" name="motDePasse" type="password" autoComplete="current-password" required />
+          {mfaActif ? (
+            <TextField
+              label="Code de double authentification"
+              name="codeMfa"
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              required
+              hint="Code de votre application d'authentification, ou un code de secours."
+            />
+          ) : null}
+        </>
+      ) : (
+        <p className="text-[12px] text-encre-attenuee">
+          Ré-authentification déjà effectuée il y a moins de 5 minutes (RG-AUTH-53), mot de passe
+          non redemandé.
+        </p>
+      )}
 
       <div className="flex flex-wrap gap-2">
         <Button type="submit" variant="primary" disabled={pending}>

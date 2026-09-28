@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
+import { getStatutReauthentificationExport } from "@/modules/patient/droits-donnees";
 import { GestionDroitsDonnees } from "./GestionDroitsDonnees";
 
 /**
@@ -15,6 +16,8 @@ export default async function DroitsDonneesPage() {
     redirect("/connexion");
   }
 
+  const statutReauthentificationExport = await getStatutReauthentificationExport();
+
   return (
     <div className="conteneur-page mx-auto flex flex-col gap-8 px-4 py-8 sm:px-6">
       <header className="flex flex-col gap-2">
@@ -28,7 +31,7 @@ export default async function DroitsDonneesPage() {
         </p>
       </header>
 
-      <GestionDroitsDonnees />
+      <GestionDroitsDonnees statutReauthentificationExport={statutReauthentificationExport} />
     </div>
   );
 }

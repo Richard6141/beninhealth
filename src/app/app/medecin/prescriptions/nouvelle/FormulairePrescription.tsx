@@ -214,8 +214,10 @@ export interface FormulairePrescriptionProps {
   patientPoidsRequis: boolean;
   patientPoidsRecentKg: number | null;
   patientTraitementsActifs: LigneComparable[];
-  /** RG-PRE-30 : re-authentification deja effectuee il y a moins de 5 minutes, mot de passe non redemande. */
+  /** RG-PRE-30 / RG-AUTH-53 : re-authentification deja effectuee il y a moins de 5 minutes (tout acte sensible confondu), mot de passe non redemande. */
   reauthentificationRecente: boolean;
+  /** RG-AUTH-53 : vrai si la MFA est active sur ce compte, pour proposer aussi un champ code quand la fenetre de grace est fermee. */
+  mfaActif: boolean;
 }
 
 /**
@@ -236,6 +238,7 @@ export function FormulairePrescription({
   patientPoidsRecentKg,
   patientTraitementsActifs,
   reauthentificationRecente,
+  mfaActif,
 }: FormulairePrescriptionProps) {
   const [state, formAction, pending] = useActionState(
     creerPrescriptionAction,
@@ -244,6 +247,7 @@ export function FormulairePrescription({
   const [lignes, setLignes] = useState<LigneFormulaire[]>([ligneVide(0)]);
   const [instructions, setInstructions] = useState("");
   const [motDePasseSignature, setMotDePasseSignature] = useState("");
+  const [codeMfaSignature, setCodeMfaSignature] = useState("");
   const prochaineCleRef = useRef(1);
   const patientDateNaissance = new Date(patientDateNaissanceISO);
 
@@ -985,24 +989,40 @@ export function FormulairePrescription({
         </div>
 
         {/*
-          RG-PRE-30 du pack : la signature exige une re-authentification,
-          sauf si elle a eu lieu depuis moins de 5 minutes
-          (reauthentificationRecente, prescription/reauthentification.ts).
+          RG-PRE-30 / RG-AUTH-53 du pack : la signature exige une
+          re-authentification (mot de passe, et code MFA en plus si actif),
+          sauf si elle a eu lieu depuis moins de 5 minutes, tout acte
+          sensible confondu (reauthentificationRecente, identity/reauthentification.ts).
         */}
         {!reauthentificationRecente ? (
-          <TextField
-            label="Mot de passe (signature de l'ordonnance)"
-            name="motDePasseSignature"
-            type="password"
-            required
-            autoComplete="current-password"
-            hint="Confirmez votre identite pour signer cette prescription."
-            value={motDePasseSignature}
-            onChange={(event: ChangeEvent<HTMLInputElement>) => setMotDePasseSignature(event.target.value)}
-          />
+          <div className="flex flex-col gap-4">
+            <TextField
+              label="Mot de passe (signature de l'ordonnance)"
+              name="motDePasseSignature"
+              type="password"
+              required
+              autoComplete="current-password"
+              hint="Confirmez votre identite pour signer cette prescription."
+              value={motDePasseSignature}
+              onChange={(event: ChangeEvent<HTMLInputElement>) => setMotDePasseSignature(event.target.value)}
+            />
+            {mfaActif ? (
+              <TextField
+                label="Code de double authentification"
+                name="codeMfaSignature"
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                required
+                hint="Code de votre application d'authentification, ou un code de secours."
+                value={codeMfaSignature}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => setCodeMfaSignature(event.target.value)}
+              />
+            ) : null}
+          </div>
         ) : (
           <p className="text-[13px] text-encre-attenuee">
-            Ré-authentification déjà effectuée il y a moins de 5 minutes (RG-PRE-30), mot de passe
+            Ré-authentification déjà effectuée il y a moins de 5 minutes (RG-AUTH-53), mot de passe
             non redemandé.
           </p>
         )}
@@ -1023,7 +1043,8 @@ export function FormulairePrescription({
             blocageDureeNonResolu ||
             blocagePoidsManquant ||
             blocageDureeAuDessusDuMaximum ||
-            (!reauthentificationRecente && motDePasseSignature.length === 0)
+            (!reauthentificationRecente &&
+              (motDePasseSignature.length === 0 || (mfaActif && codeMfaSignature.length === 0)))
           }
         >
           {pending ? "Signature en cours..." : "Signer la prescription"}

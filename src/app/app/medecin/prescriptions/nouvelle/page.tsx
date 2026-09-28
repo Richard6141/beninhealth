@@ -110,6 +110,7 @@ export default async function NouvellePrescriptionPage({
         consultationId={consultation.id}
         anciennesPrescriptions={consultation.anciennesPrescriptions}
         reauthentificationRecente={consultation.reauthentificationRecente}
+        mfaActif={consultation.mfaActif}
       />
 
       <FormulairePrescription
@@ -122,6 +123,7 @@ export default async function NouvellePrescriptionPage({
         patientPoidsRecentKg={consultation.patientPoidsRecentKg}
         patientTraitementsActifs={consultation.patientTraitementsActifs}
         reauthentificationRecente={consultation.reauthentificationRecente}
+        mfaActif={consultation.mfaActif}
       />
     </div>
   );

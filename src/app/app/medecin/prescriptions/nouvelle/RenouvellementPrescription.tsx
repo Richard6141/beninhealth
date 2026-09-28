@@ -38,13 +38,16 @@ function BoutonRenouveler({
   prescriptionId,
   consultationId,
   reauthentificationRecente,
+  mfaActif,
 }: {
   prescriptionId: string;
   consultationId: string;
   reauthentificationRecente: boolean;
+  mfaActif: boolean;
 }) {
   const [state, formAction, pending] = useActionState(renouvelerPrescriptionAction, etatInitial);
   const [motDePasseSignature, setMotDePasseSignature] = useState("");
+  const [codeMfaSignature, setCodeMfaSignature] = useState("");
   const router = useRouter();
 
   useEffect(() => {
@@ -67,7 +70,7 @@ function BoutonRenouveler({
         </Alert>
       ) : null}
       {!reauthentificationRecente ? (
-        <div className="max-w-xs">
+        <div className="flex max-w-xs flex-col gap-2">
           <TextField
             label="Mot de passe (signature)"
             name="motDePasseSignature"
@@ -77,17 +80,33 @@ function BoutonRenouveler({
             value={motDePasseSignature}
             onChange={(event) => setMotDePasseSignature(event.target.value)}
           />
+          {mfaActif ? (
+            <TextField
+              label="Code de double authentification"
+              name="codeMfaSignature"
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              required
+              value={codeMfaSignature}
+              onChange={(event) => setCodeMfaSignature(event.target.value)}
+            />
+          ) : null}
         </div>
       ) : (
         <p className="text-[12px] text-encre-attenuee">
-          Ré-authentification déjà effectuée il y a moins de 5 minutes (RG-PRE-30).
+          Ré-authentification déjà effectuée il y a moins de 5 minutes (RG-AUTH-53).
         </p>
       )}
       <Button
         type="submit"
         variant="secondary"
         size="sm"
-        disabled={pending || (!reauthentificationRecente && motDePasseSignature.length === 0)}
+        disabled={
+          pending ||
+          (!reauthentificationRecente &&
+            (motDePasseSignature.length === 0 || (mfaActif && codeMfaSignature.length === 0)))
+        }
         className="w-fit"
       >
         {pending ? "Signature en cours..." : "Renouveler et signer"}
@@ -100,6 +119,7 @@ export interface RenouvellementPrescriptionProps {
   consultationId: string;
   anciennesPrescriptions: PrescriptionAncienneResume[];
   reauthentificationRecente: boolean;
+  mfaActif: boolean;
 }
 
 /**
@@ -117,6 +137,7 @@ export function RenouvellementPrescription({
   consultationId,
   anciennesPrescriptions,
   reauthentificationRecente,
+  mfaActif,
 }: RenouvellementPrescriptionProps) {
   const [ouvert, setOuvert] = useState(false);
 
@@ -158,6 +179,7 @@ export function RenouvellementPrescription({
                   prescriptionId={prescription.id}
                   consultationId={consultationId}
                   reauthentificationRecente={reauthentificationRecente}
+                  mfaActif={mfaActif}
                 />
               </li>
             );

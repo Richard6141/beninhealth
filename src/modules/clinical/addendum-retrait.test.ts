@@ -8,12 +8,17 @@ import type { Mock } from "vitest";
  * dans les 12 mois.
  */
 
+process.env.NEXTAUTH_SECRET = "secret-de-test-32-caracteres-minimum-xxxx";
+
 vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers()) }));
-vi.mock("@/lib/session", () => ({ getSession: vi.fn() }));
+vi.mock("@/lib/session", () => ({ getSession: vi.fn(), destroySession: vi.fn() }));
 vi.mock("@/modules/audit/journaliser", () => ({ journaliser: vi.fn() }));
 vi.mock("@/modules/notification/creer", () => ({ creerNotification: vi.fn(async () => undefined) }));
 vi.mock("@/modules/pilotage/file-taches", () => ({ publierEvenementPilotage: vi.fn(async () => undefined) }));
 vi.mock("bcryptjs", () => ({ default: { compare: vi.fn() } }));
+// verifierSecondFacteur (code TOTP/secours) mockee, la logique TOTP
+// elle-meme est deja testee dans mfa-totp.test.ts, pas ici.
+vi.mock("@/modules/identity/mfa-totp", () => ({ verifierSecondFacteur: vi.fn() }));
 
 vi.mock("@/lib/prisma", () => {
   const prisma = {
@@ -29,10 +34,13 @@ vi.mock("@/lib/prisma", () => {
 
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
-import { getSession } from "@/lib/session";
+import { getSession, destroySession } from "@/lib/session";
 import { journaliser } from "@/modules/audit/journaliser";
 import { creerNotification } from "@/modules/notification/creer";
 import { publierEvenementPilotage } from "@/modules/pilotage/file-taches";
+import { verifierSecondFacteur } from "@/modules/identity/mfa-totp";
+import { viderCompteursDebit } from "@/lib/limite-debit";
+import { viderReauthentifications } from "@/modules/identity/reauthentification";
 import { ajouterAddendumConsultationAction, retirerConsultationAction } from "./actions";
 
 const prismaMock = prisma as unknown as {
@@ -42,10 +50,12 @@ const prismaMock = prisma as unknown as {
   addendumConsultation: { create: Mock };
 };
 const getSessionMock = getSession as unknown as Mock;
+const destroySessionMock = destroySession as unknown as Mock;
 const journaliserMock = journaliser as unknown as Mock;
 const notificationMock = creerNotification as unknown as Mock;
 const evenementPilotageMock = publierEvenementPilotage as unknown as Mock;
 const compareMock = bcrypt.compare as unknown as Mock;
+const verifierSecondFacteurMock = verifierSecondFacteur as unknown as Mock;
 
 const ETAT = { error: null, success: false };
 const MAINTENANT = new Date("2026-09-26T10:00:00.000Z");
@@ -69,13 +79,19 @@ const CONSULTATION = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  viderCompteursDebit();
+  // RG-AUTH-53 : la fenetre de grace est un singleton du module, partage par
+  // tous les appelants du meme processus (voir droits-donnees.export.test.ts,
+  // meme incident deja rencontre ce soir) : videe avant chaque test pour
+  // qu'un succes enregistre par un test ne fuite pas vers le suivant.
+  viderReauthentifications();
   vi.useFakeTimers();
   vi.setSystemTime(MAINTENANT);
   getSessionMock.mockResolvedValue({ userId: "user-med", roles: ["medecin"] });
   prismaMock.professionnelSante.findUnique.mockResolvedValue({ id: "pro-1", userId: "user-med", etablissementId: "etab-1" });
   prismaMock.consultation.findUnique.mockResolvedValue(CONSULTATION);
   prismaMock.addendumConsultation.create.mockResolvedValue({ id: "add-1" });
-  prismaMock.user.findUnique.mockResolvedValue({ id: "user-med", motDePasseHash: "hash" });
+  prismaMock.user.findUnique.mockResolvedValue({ id: "user-med", motDePasseHash: "hash", mfaActif: false });
   prismaMock.professionnelSante.findFirst.mockResolvedValue({ userId: "admin-etab" });
   compareMock.mockResolvedValue(true);
 });
@@ -127,15 +143,16 @@ describe("ajouterAddendumConsultationAction", () => {
     expect(prismaMock.addendumConsultation.create).not.toHaveBeenCalled();
   });
 
-  it("RG-CLI-70 : refuse au-dela de 12 mois apres la validation, accepte juste avant", async () => {
-    prismaMock.consultation.findUnique.mockResolvedValue({ ...CONSULTATION, dateValidation: new Date("2025-09-26T09:59:00Z") });
-    expect((await addendum()).error).toContain("12 mois");
-
-    prismaMock.consultation.findUnique.mockResolvedValue({ ...CONSULTATION, dateValidation: new Date("2025-09-26T10:01:00Z") });
+  it("RG-CLI-70 : l'auteur peut ajouter un addendum sans limite de temps (texte exact du pack), contrairement au retrait", async () => {
+    // Bien au-dela de 12 mois : toujours accepte pour l'auteur (seul le
+    // retrait s'arrete a 12 mois, voir retirerConsultationAction).
+    prismaMock.consultation.findUnique.mockResolvedValue({ ...CONSULTATION, dateValidation: new Date("2020-01-01T00:00:00Z") });
     expect((await addendum()).success).toBe(true);
 
+    // Etat incoherent (jamais suppose) : une consultation "terminee" sans
+    // date de validation est refusee, pas une histoire de fenetre de temps.
     prismaMock.consultation.findUnique.mockResolvedValue({ ...CONSULTATION, dateValidation: null });
-    expect((await addendum()).error).toContain("12 mois");
+    expect((await addendum()).error).toContain("introuvable");
   });
 
   it("ajoute l'addendum signe par le medecin de la session, le journalise, et ne modifie jamais la consultation (RG-CLI-00)", async () => {
@@ -179,8 +196,63 @@ describe("retirerConsultationAction", () => {
 
   it("verifie le mot de passe du compte de la session", async () => {
     await retrait();
-    expect(prismaMock.user.findUnique).toHaveBeenCalledWith({ where: { id: "user-med" } });
+    expect(prismaMock.user.findUnique).toHaveBeenCalledWith({
+      where: { id: "user-med" },
+      select: { motDePasseHash: true, mfaActif: true },
+    });
     expect(compareMock).toHaveBeenCalledWith("MotDePasse1!", "hash");
+  });
+
+  describe("RG-AUTH-53 : code MFA si actif, fenetre de grace partagee, plafond d'echecs (corrige le 2026-09-28)", () => {
+    it("MFA active : exige un code en plus du mot de passe", async () => {
+      prismaMock.user.findUnique.mockResolvedValue({ id: "user-med", motDePasseHash: "hash", mfaActif: true });
+
+      const resultat = await retrait({ codeMfa: "" });
+
+      expect(resultat.success).toBe(false);
+      expect(resultat.error).toMatch(/code/i);
+      expect(prismaMock.consultation.update).not.toHaveBeenCalled();
+    });
+
+    it("MFA active, code incorrect : refuse", async () => {
+      prismaMock.user.findUnique.mockResolvedValue({ id: "user-med", motDePasseHash: "hash", mfaActif: true });
+      verifierSecondFacteurMock.mockResolvedValue(null);
+
+      const resultat = await retrait({ codeMfa: "000000" });
+
+      expect(resultat.success).toBe(false);
+      expect(prismaMock.consultation.update).not.toHaveBeenCalled();
+    });
+
+    it("MFA active, code correct : le retrait aboutit", async () => {
+      prismaMock.user.findUnique.mockResolvedValue({ id: "user-med", motDePasseHash: "hash", mfaActif: true });
+      verifierSecondFacteurMock.mockResolvedValue("totp");
+
+      const resultat = await retrait({ codeMfa: "123456" });
+
+      expect(resultat.success).toBe(true);
+    });
+
+    it("aucun mot de passe redemande si une re-authentification recente existe deja (ex. signature d'une ordonnance)", async () => {
+      const { enregistrerReauthentificationReussie } = await import("@/modules/identity/reauthentification");
+      enregistrerReauthentificationReussie("user-med");
+
+      const resultat = await retrait({ motDePasse: "" });
+
+      expect(resultat.success).toBe(true);
+      expect(compareMock).not.toHaveBeenCalled();
+    });
+
+    it("bloque et deconnecte au 3e mot de passe incorrect", async () => {
+      compareMock.mockResolvedValue(false);
+
+      await retrait();
+      await retrait();
+      const troisieme = await retrait();
+
+      expect(troisieme.error).toMatch(/Trop d'echecs/);
+      expect(destroySessionMock).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("n'accepte que l'auteur, une consultation validee, non deja retiree, dans les 12 mois", async () => {

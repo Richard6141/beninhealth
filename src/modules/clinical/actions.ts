@@ -17,7 +17,6 @@
 
 import { headers } from "next/headers";
 import { createHash } from "node:crypto";
-import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/modules/audit/journaliser";
@@ -28,8 +27,19 @@ import { STATUTS_ACTIFS, transitionnerRendezVous } from "@/modules/facility/rend
 import { bornesJourneeBenin } from "@/modules/transfert/code-acces";
 import { MESSAGE_ORDRE_NON_VERIFIE, professionnelValide } from "@/modules/administration/validation-professionnels-controle";
 import { FORMAT_CODE_CIM10, estChapitreSymptome, normaliserCodeCim10 } from "@/modules/administration/cim10-groupes";
-import { getSession } from "@/lib/session";
+import { getSession, destroySession } from "@/lib/session";
 import { can } from "@/security/permissions";
+// RG-AUTH-53 : module partage (corrige le 2026-09-28, voir
+// docs/coordination-agents.md, prise F-CLI-08). retirerConsultationAction
+// n'avait jusque-la ni la fenetre de grace partagee ni la verification MFA.
+import {
+  reauthentificationBloquee,
+  reauthentificationRecente,
+  enregistrerReauthentificationReussie,
+  enregistrerEchecReauthentification,
+  motDePasseEtCodeMfaValides,
+  type MotifEchecReauthentification,
+} from "@/modules/identity/reauthentification";
 import {
   ageAnnees,
   calculerIMC,
@@ -136,7 +146,11 @@ const schemaAjoutAddendum = z.object({
 const schemaRetraitConsultation = z.object({
   consultationId: z.string().trim().min(1, "La consultation est obligatoire."),
   motif: z.string().trim().min(1, "Le motif du retrait est obligatoire."),
-  motDePasse: z.string().min(1, "Votre mot de passe est obligatoire pour confirmer."),
+  // RG-AUTH-53 : vide et accepte si la fenetre de grace est deja ouverte
+  // (identity/reauthentification.ts), sinon obligatoire, revalide dans
+  // l'action elle-meme (Zero Trust).
+  motDePasse: z.string().optional().default(""),
+  codeMfa: z.string().optional().default(""),
 });
 
 /** Duree pendant laquelle addendum et retrait restent possibles apres la date de la consultation (RG-CLI-70). */
@@ -1872,8 +1886,17 @@ export async function enregistrerConsultationAction(
  * Ajoute un addendum a une consultation (F-CLI-08 du pack) : jamais une
  * modification du contenu original (RG-CLI-00, immuabilite), toujours un
  * ajout date et signe. Reserve a l'auteur de la consultation (Zero Trust :
- * verifie en base, jamais suppose depuis le role seul), dans la fenetre de
- * 12 mois suivant la consultation (RG-CLI-70).
+ * verifie en base, jamais suppose depuis le role seul).
+ *
+ * RG-CLI-70 du pack, texte exact : "Addendum et retrait sont possibles
+ * pendant 12 mois apres la validation ; ensuite, seul un addendum de
+ * l'auteur ou du responsable medical designe est possible." Corrige le
+ * 2026-09-28 : cette fonction bloquait a tort l'addendum de l'AUTEUR
+ * au-dela de 12 mois (seul le retrait doit s'arreter pour de bon a cette
+ * echeance, voir retirerConsultationAction plus bas). "Responsable medical
+ * designe" : aucun role ni designation de ce type n'existe dans ce depot
+ * (limite assumee, chantier d'architecture a part) ; seul le cas de
+ * l'auteur, couvert par ce correctif, est implemente.
  */
 export async function ajouterAddendumConsultationAction(
   prevState: ClinicalActionState,
@@ -1938,12 +1961,17 @@ export async function ajouterAddendumConsultationAction(
       };
     }
 
-    if (!consultation.dateValidation || fenetreAddendumRetraitDepassee(consultation.dateValidation)) {
-      return {
-        error: `La fenetre de ${MOIS_FENETRE_ADDENDUM_RETRAIT} mois pour ajouter un addendum a cette consultation est depassee.`,
-        success: false,
-      };
+    if (!consultation.dateValidation) {
+      // Etat incoherent (une consultation "terminee" a toujours une date de
+      // validation) : jamais suppose, refuse plutot que d'ecrire un addendum
+      // sur une consultation dont la validation n'est pas confirmee en base.
+      return { error: "Cette consultation est introuvable.", success: false };
     }
+
+    // RG-CLI-70 : plus de fenetre de 12 mois ici, seulement pour le retrait
+    // (voir retirerConsultationAction) - l'auteur peut ajouter un addendum
+    // sans limite de temps, texte exact du pack (voir le commentaire en tete
+    // de cette fonction).
 
     const adresseTechnique = await adresseTechniqueCourante();
 
@@ -1979,16 +2007,34 @@ export async function ajouterAddendumConsultationAction(
   }
 }
 
+/** Libelle utilisateur d'un motif d'echec de re-authentification (RG-AUTH-53), pour le retrait de consultation. */
+function messageEchecReauthentificationRetrait(motif: MotifEchecReauthentification): string {
+  switch (motif) {
+    case "compte_introuvable":
+    case "mot_de_passe_incorrect":
+      return "Mot de passe incorrect.";
+    case "code_mfa_requis":
+      return "Le code de votre application d'authentification (ou un code de secours) est obligatoire.";
+    case "code_mfa_incorrect":
+      return "Code de double authentification incorrect.";
+  }
+}
+
 /**
  * Retire une consultation saisie par erreur (F-CLI-08 du pack, "entered in
  * error") : reserve au cas d'une consultation enregistree sur le mauvais
  * patient. La consultation n'est jamais supprimee, seulement marquee comme
  * retiree (elle reste visible, barree a l'ecran, et exclue des
- * statistiques). Exige une re-authentification par mot de passe (RG-AUTH-53
- * du pack) : ce depot n'a pas de flux de re-authentification de session
- * dedie, la verification du mot de passe actuel en tient lieu, au meme
- * niveau que changerMotDePasseAction. Reserve a l'auteur de la consultation,
- * dans la fenetre de 12 mois suivant la consultation (RG-CLI-70).
+ * statistiques). Exige une re-authentification (mot de passe, et code MFA en
+ * plus si actif sur ce compte, RG-AUTH-53), sauf fenetre de grace de 5
+ * minutes deja ouverte pour un autre acte sensible (identity/reauthentification.ts,
+ * corrige le 2026-09-28 : mot de passe seul et toujours redemande
+ * auparavant) ; 3 echecs deconnectent la session, meme regle que la
+ * signature d'ordonnance (F-PRE-04), RG-AUTH-53 etant deja explicitement
+ * nommee ici avant ce correctif. Reserve a l'auteur de la consultation, dans
+ * la fenetre de 12 mois suivant la consultation (RG-CLI-70) : a la
+ * difference de l'addendum (voir ajouterAddendumConsultationAction),
+ * strictement 12 mois pour tous, aucune exception, texte exact du pack.
  */
 export async function retirerConsultationAction(
   prevState: ClinicalActionState,
@@ -2010,6 +2056,7 @@ export async function retirerConsultationAction(
     consultationId: texte(formData, "consultationId"),
     motif: texte(formData, "motif"),
     motDePasse: texte(formData, "motDePasse"),
+    codeMfa: texte(formData, "codeMfa"),
   });
 
   if (!validation.success) {
@@ -2019,19 +2066,39 @@ export async function retirerConsultationAction(
     };
   }
 
-  const { consultationId, motif, motDePasse } = validation.data;
+  const { consultationId, motif, motDePasse, codeMfa } = validation.data;
 
   try {
-    const utilisateur = await prisma.user.findUnique({ where: { id: session.userId } });
-
-    if (!utilisateur) {
-      return { error: "Compte introuvable.", success: false };
+    if (reauthentificationBloquee(session.userId)) {
+      await destroySession();
+      return {
+        error: "Trop d'echecs de re-authentification. Vous avez ete deconnecte, veuillez vous reconnecter.",
+        success: false,
+      };
     }
 
-    const motDePasseValide = await bcrypt.compare(motDePasse, utilisateur.motDePasseHash);
+    if (!reauthentificationRecente(session.userId)) {
+      if (motDePasse.length === 0) {
+        return { error: "Votre mot de passe est obligatoire pour confirmer.", success: false };
+      }
 
-    if (!motDePasseValide) {
-      return { error: "Mot de passe incorrect.", success: false };
+      const resultatReauth = await motDePasseEtCodeMfaValides(session.userId, motDePasse, codeMfa);
+
+      if (!resultatReauth.valide) {
+        const troisiemeEchec = enregistrerEchecReauthentification(session.userId);
+
+        if (troisiemeEchec) {
+          await destroySession();
+          return {
+            error: "Trop d'echecs de re-authentification. Vous avez ete deconnecte, veuillez vous reconnecter.",
+            success: false,
+          };
+        }
+
+        return { error: messageEchecReauthentificationRetrait(resultatReauth.motif), success: false };
+      }
+
+      enregistrerReauthentificationReussie(session.userId);
     }
 
     const professionnel = await prisma.professionnelSante.findUnique({

@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { ArrowLeft, FlaskConical, Pill, Stethoscope } from "lucide-react";
 import { getSession } from "@/lib/session";
+import { prisma } from "@/lib/prisma";
 import {
   getConsultationsDeLEtablissement,
   getConsultationsDuProfessionnel,
   type ConsultationResume,
 } from "@/modules/clinical/actions";
+import { reauthentificationRecente } from "@/modules/identity/reauthentification";
 import { Alert } from "@/components/ui/Alert";
 import { Badge } from "@/components/ui/Badge";
 import type { BadgeTone } from "@/components/ui/Badge";
@@ -128,9 +130,13 @@ function LienDemanderExamen({ consultationId }: { consultationId: string }) {
 function CarteConsultation({
   consultation,
   peutAgir,
+  mfaActif,
+  reauthentificationRecente,
 }: {
   consultation: ConsultationResume;
   peutAgir: boolean;
+  mfaActif: boolean;
+  reauthentificationRecente: boolean;
 }) {
   const statut = libelleStatut(consultation.statut);
 
@@ -253,7 +259,11 @@ function CarteConsultation({
         {peutAgir && consultation.statut === "terminee" && !consultation.saisieParErreur ? (
           <div className="flex flex-col gap-2 border-t border-bordure pt-3">
             <FormulaireAddendum consultationId={consultation.id} />
-            <FormulaireRetrait consultationId={consultation.id} />
+            <FormulaireRetrait
+              consultationId={consultation.id}
+              mfaActif={mfaActif}
+              reauthentificationRecente={reauthentificationRecente}
+            />
           </div>
         ) : null}
       </div>
@@ -282,6 +292,15 @@ export default async function ConsultationsProfessionnelPage() {
   const consultations = estInfirmier
     ? await getConsultationsDeLEtablissement()
     : await getConsultationsDuProfessionnel();
+
+  // RG-AUTH-53 : etat de re-authentification pour FormulaireRetrait
+  // (identity/reauthentification.ts), lu une seule fois pour toute la page
+  // plutot qu'a chaque carte de consultation.
+  const utilisateurConnecte = session
+    ? await prisma.user.findUnique({ where: { id: session.userId }, select: { mfaActif: true } })
+    : null;
+  const mfaActif = utilisateurConnecte?.mfaActif ?? false;
+  const reauthentificationEstRecente = session ? reauthentificationRecente(session.userId) : false;
 
   return (
     <div className="conteneur-page mx-auto flex flex-col gap-8 px-4 py-8 sm:px-6">
@@ -334,6 +353,8 @@ export default async function ConsultationsProfessionnelPage() {
               key={consultation.id}
               consultation={consultation}
               peutAgir={peutAgir}
+              mfaActif={mfaActif}
+              reauthentificationRecente={reauthentificationEstRecente}
             />
           ))}
         </div>

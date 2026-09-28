@@ -21,12 +21,21 @@
  * structurellement : les routes de telechargement ne lisent jamais
  * AgregatQuotidien directement, elles reutilisent exclusivement
  * getVueNationalePilotage / getTableauBordEtablissement (deja masquees).
+ *
+ * Corrige le 2026-09-28 : 5 mots de passe incorrects par heure et par compte
+ * bloquent l'etape (meme patron que patient/droits-donnees.ts, F-CIT-13,
+ * `@/lib/limite-debit`) ; avant ce correctif, un attaquant deja authentifie
+ * (session active) mais sans le mot de passe pouvait tenter un nombre
+ * illimite de mots de passe sur cette seule etape. Pas de deconnexion au
+ * plafond (a la difference d'identity/reauthentification.ts, F-PRE-04) :
+ * aucune regle equivalente a RG-PRE-30 ne s'applique a cette etape.
  */
 
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
+import { enregistrerEvenement, limiteAtteinte } from "@/lib/limite-debit";
 import {
   LONGUEUR_MIN_MOTIF_TEXTE_EXPORT as LONGUEUR_MIN_MOTIF_TEXTE,
   type ExportPilotageActionState,
@@ -34,6 +43,13 @@ import {
   type PorteeExportPilotage,
 } from "./exports-constantes";
 import { creerJetonExport } from "./jeton-export";
+
+const FENETRE_ECHECS_EXPORT_MS = 60 * 60 * 1000;
+const ECHECS_MAX_EXPORT_PAR_COMPTE = 5;
+
+function cleEchecsExportPilotage(userId: string): string {
+  return `pilotage-export:echecs:${userId}`;
+}
 
 const schemaConfirmation = z
   .object({
@@ -84,6 +100,10 @@ export async function verifierExportPilotageAction(
     return { error: "Votre compte ne dispose pas des droits nécessaires pour cet export.", success: false };
   }
 
+  if (limiteAtteinte(cleEchecsExportPilotage(session.userId), ECHECS_MAX_EXPORT_PAR_COMPTE, FENETRE_ECHECS_EXPORT_MS)) {
+    return { error: "Trop de tentatives. Réessayez dans une heure.", success: false };
+  }
+
   const validation = schemaConfirmation.safeParse({
     motDePasse: texte(formData, "motDePasse"),
     motif: texte(formData, "motif"),
@@ -101,6 +121,7 @@ export async function verifierExportPilotageAction(
 
   const motDePasseValide = await bcrypt.compare(validation.data.motDePasse, utilisateur.motDePasseHash);
   if (!motDePasseValide) {
+    enregistrerEvenement(cleEchecsExportPilotage(session.userId), FENETRE_ECHECS_EXPORT_MS);
     return { error: "Mot de passe incorrect.", success: false };
   }
 

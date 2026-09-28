@@ -31,16 +31,25 @@ vi.mock("@/modules/notification/creer", () => ({ creerNotification: vi.fn() }));
 // F-PIL-07 : IND-08 (ordonnances), hors du perimetre de ce fichier.
 vi.mock("@/modules/pilotage/file-taches", () => ({ publierEvenementPilotage: vi.fn(async () => undefined) }));
 // Frontiere du module : la fenetre de grace de 5 minutes et le compteur
-// d'echecs (RG-PRE-30) sont testes dans leur propre fichier
-// (reauthentification.test.ts), pas ici. Toujours "non recente, jamais
-// bloquee" : ces tests continuent d'exiger et de valider le mot de passe,
-// comme avant ce correctif.
-vi.mock("@/modules/prescription/reauthentification", () => ({
-  reauthentificationRecente: vi.fn(() => false),
-  reauthentificationBloquee: vi.fn(() => false),
-  enregistrerReauthentificationReussie: vi.fn(),
-  enregistrerEchecReauthentification: vi.fn(() => false),
-}));
+// d'echecs (RG-PRE-30 / RG-AUTH-53) sont testes dans leur propre fichier
+// (identity/reauthentification.test.ts), pas ici. Toujours "non recente,
+// jamais bloquee" : ces tests continuent d'exiger et de valider le mot de
+// passe, comme avant ce correctif. motDePasseEtCodeMfaValides n'est PAS
+// mockee : elle appelle bcrypt.compare et prisma.user.findUnique, deja
+// mockes ci-dessus, exactement comme le faisait actions.ts avant que cette
+// verification soit deplacee dans le module partage.
+vi.mock("@/modules/identity/reauthentification", async () => {
+  const reel = await vi.importActual<typeof import("@/modules/identity/reauthentification")>(
+    "@/modules/identity/reauthentification"
+  );
+  return {
+    ...reel,
+    reauthentificationRecente: vi.fn(() => false),
+    reauthentificationBloquee: vi.fn(() => false),
+    enregistrerReauthentificationReussie: vi.fn(),
+    enregistrerEchecReauthentification: vi.fn(() => false),
+  };
+});
 // Frontiere du module : la logique interne (routage vers le tuteur d'une
 // personne a charge) est testee dans son propre fichier
 // (facility/destinataire-notification-patient.test.ts), pas ici.

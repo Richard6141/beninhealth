@@ -52,6 +52,19 @@ import { getMesVaccinations } from "@/modules/vaccination/actions";
 import type { PatientActionState } from "./actions";
 import { getMesConsentements, getMonDossierPatient } from "./actions";
 import { creerJetonExportDonnees } from "./jeton-export-donnees";
+// RG-AUTH-53 : fenetre de grace de 5 minutes partagee avec les autres actes
+// sensibles (ex. signature d'une ordonnance, F-PRE-04), et code MFA exige en
+// plus du mot de passe si actif sur ce compte (voir docs/coordination-agents.md,
+// prise F-AUTH-06). Le compteur d'echecs local de cette action (5 par heure,
+// juste en dessous) reste distinct de celui de la prescription : c'est une
+// regle propre a F-CIT-13, jamais partagee avant ce soir, pas de raison de la
+// durcir en la faisant passer a 3 echecs + deconnexion de session.
+import {
+  motDePasseEtCodeMfaValides,
+  reauthentificationRecente,
+  enregistrerReauthentificationReussie,
+  type MotifEchecReauthentification,
+} from "@/modules/identity/reauthentification";
 
 const FENETRE_ECHECS_EXPORT_MS = 60 * 60 * 1000;
 const ECHECS_MAX_EXPORT_PAR_COMPTE = 5;
@@ -98,6 +111,15 @@ export interface DemandeRectificationResume {
 
 const schemaMotDePasse = z.object({
   motDePasse: z.string().min(1, "Votre mot de passe est obligatoire pour confirmer."),
+});
+
+// RG-AUTH-53 : contrairement a schemaMotDePasse, le mot de passe n'est pas
+// "min(1)" ici : il peut etre absent quand la fenetre de grace de 5 minutes
+// est deja ouverte (verifierMotDePasseExportAction le revalide lui-meme,
+// Zero Trust, avant de l'exiger reellement).
+const schemaMotDePasseEtCodeMfaExport = z.object({
+  motDePasse: z.string().optional().default(""),
+  codeMfa: z.string().optional().default(""),
 });
 
 /** Adresse technique d'origine de la requete courante, pour le JournalAudit. */
@@ -332,14 +354,60 @@ export async function repondreRectificationAction(
   }
 }
 
+/** Libelle utilisateur d'un motif d'echec de re-authentification (RG-AUTH-53), pour l'export de donnees. */
+function messageEchecReauthentificationExport(motif: MotifEchecReauthentification): string {
+  switch (motif) {
+    case "compte_introuvable":
+    case "mot_de_passe_incorrect":
+      return "Mot de passe incorrect.";
+    case "code_mfa_requis":
+      return "Le code de votre application d'authentification (ou un code de secours) est obligatoire.";
+    case "code_mfa_incorrect":
+      return "Code de double authentification incorrect.";
+  }
+}
+
+/**
+ * Etat de re-authentification du compte connecte (RG-AUTH-53), a lire depuis
+ * la page serveur avant d'afficher SectionExportDonnees : si une
+ * re-authentification recente existe deja (moins de 5 minutes, pour
+ * N'IMPORTE quel acte sensible, ex. la signature d'une ordonnance), l'ecran
+ * ne redemande rien. mfaActif indique si un champ code doit aussi etre
+ * propose en plus du mot de passe quand la fenetre est fermee.
+ */
+export async function getStatutReauthentificationExport(): Promise<{
+  reauthentificationRecente: boolean;
+  mfaActif: boolean;
+} | null> {
+  const session = await getSession();
+
+  if (!session || !session.roles.includes("patient")) {
+    return null;
+  }
+
+  const utilisateur = await prisma.user.findUnique({
+    where: { id: session.userId },
+    select: { mfaActif: true },
+  });
+
+  return {
+    reauthentificationRecente: reauthentificationRecente(session.userId),
+    mfaActif: utilisateur?.mfaActif ?? false,
+  };
+}
+
 /**
  * Type "copie de mes donnees" de F-CIT-13, etape de re-authentification :
- * verifie le mot de passe du compte connecte et delivre un jeton signe de 5
- * minutes, lie a ce compte, que les liens de telechargement
- * (/api/patient/export/json, /api/patient/export/pdf) joignent a leur adresse
- * et que les deux routes exigent. Reservee au role patient (les routes le
- * sont) ; 5 mots de passe incorrects par heure et par compte bloquent l'etape
- * (compteur en memoire du processus, voir src/lib/limite-debit.ts).
+ * verifie le mot de passe du compte connecte (et un code MFA en plus si actif,
+ * RG-AUTH-53), sauf fenetre de grace de 5 minutes deja ouverte (partagee avec
+ * les autres actes sensibles, identity/reauthentification.ts), puis delivre
+ * un jeton signe de 5 minutes, lie a ce compte, que les liens de
+ * telechargement (/api/patient/export/json, /api/patient/export/pdf)
+ * joignent a leur adresse et que les deux routes exigent. Reservee au role
+ * patient (les routes le sont) ; 5 mots de passe incorrects par heure et par
+ * compte bloquent l'etape (compteur en memoire du processus, voir
+ * src/lib/limite-debit.ts) : regle propre a cette fiche, distincte du
+ * compteur de la prescription (3 echecs + deconnexion), jamais partagee.
  */
 export async function verifierMotDePasseExportAction(
   prevState: ExportDonneesActionState,
@@ -355,12 +423,17 @@ export async function verifierMotDePasseExportAction(
     return { error: "Cette action est reservee aux patients.", success: false };
   }
 
+  if (reauthentificationRecente(session.userId)) {
+    return { error: null, success: true, jeton: creerJetonExportDonnees(session.userId) };
+  }
+
   if (limiteAtteinte(cleEchecsExport(session.userId), ECHECS_MAX_EXPORT_PAR_COMPTE, FENETRE_ECHECS_EXPORT_MS)) {
     return { error: "Trop de tentatives. Reessayez dans une heure.", success: false };
   }
 
-  const validation = schemaMotDePasse.safeParse({
+  const validation = schemaMotDePasseEtCodeMfaExport.safeParse({
     motDePasse: texte(formData, "motDePasse"),
+    codeMfa: texte(formData, "codeMfa"),
   });
 
   if (!validation.success) {
@@ -370,18 +443,22 @@ export async function verifierMotDePasseExportAction(
     };
   }
 
-  const utilisateur = await prisma.user.findUnique({ where: { id: session.userId } });
-
-  if (!utilisateur) {
-    return { error: "Compte introuvable.", success: false };
+  if (validation.data.motDePasse.length === 0) {
+    return { error: "Votre mot de passe est obligatoire pour confirmer.", success: false };
   }
 
-  const motDePasseValide = await bcrypt.compare(validation.data.motDePasse, utilisateur.motDePasseHash);
+  const resultat = await motDePasseEtCodeMfaValides(
+    session.userId,
+    validation.data.motDePasse,
+    validation.data.codeMfa
+  );
 
-  if (!motDePasseValide) {
+  if (!resultat.valide) {
     enregistrerEvenement(cleEchecsExport(session.userId), FENETRE_ECHECS_EXPORT_MS);
-    return { error: "Mot de passe incorrect.", success: false };
+    return { error: messageEchecReauthentificationExport(resultat.motif), success: false };
   }
+
+  enregistrerReauthentificationReussie(session.userId);
 
   const adresseTechnique = await adresseTechniqueCourante();
 

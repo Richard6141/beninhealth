@@ -19,6 +19,7 @@ vi.mock("@/lib/prisma", () => ({
 
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
+import { viderCompteursDebit } from "@/lib/limite-debit";
 import { verifierExportPilotageEtablissementAction, verifierExportPilotageNationalAction } from "./exports";
 import { verifierJetonExport } from "./jeton-export";
 
@@ -44,6 +45,7 @@ function formulaire(champs: Record<string, string>): FormData {
 describe("verifierExportPilotageNationalAction", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    viderCompteursDebit();
     getSessionMock.mockResolvedValue({ userId: "admin-1", roles: ["admin_national"], sessionId: "s-1" });
     prismaMock.user.findUnique.mockResolvedValue({ id: "admin-1", motDePasseHash: hashMotDePasse });
   });
@@ -128,6 +130,53 @@ describe("verifierExportPilotageNationalAction", () => {
     );
     expect(etat.success).toBe(false);
     expect(etat.jeton).toBeUndefined();
+  });
+
+  describe("plafond d'échecs (corrigé le 2026-09-28)", () => {
+    it("bloque après 5 mots de passe incorrects, même avec le bon mot de passe ensuite", async () => {
+      for (let essai = 0; essai < 5; essai += 1) {
+        const echec = await verifierExportPilotageNationalAction(
+          ETAT_INITIAL,
+          formulaire({ motDePasse: "MauvaisMotDePasse", motif: "reunion" })
+        );
+        expect(echec.error).toBe("Mot de passe incorrect.");
+      }
+
+      const bloque = await verifierExportPilotageNationalAction(
+        ETAT_INITIAL,
+        formulaire({ motDePasse: "MotDePasseCorrect1", motif: "reunion" })
+      );
+      expect(bloque.success).toBe(false);
+      expect(bloque.error).toMatch(/Trop de tentatives/);
+      expect(bloque.jeton).toBeUndefined();
+    });
+
+    it("le blocage est propre au compte : un autre administrateur national n'est pas touché", async () => {
+      for (let essai = 0; essai < 5; essai += 1) {
+        await verifierExportPilotageNationalAction(ETAT_INITIAL, formulaire({ motDePasse: "MauvaisMotDePasse", motif: "reunion" }));
+      }
+
+      getSessionMock.mockResolvedValue({ userId: "admin-2", roles: ["admin_national"], sessionId: "s-2" });
+      prismaMock.user.findUnique.mockResolvedValue({ id: "admin-2", motDePasseHash: hashMotDePasse });
+
+      const etat = await verifierExportPilotageNationalAction(
+        ETAT_INITIAL,
+        formulaire({ motDePasse: "MotDePasseCorrect1", motif: "reunion" })
+      );
+      expect(etat.success).toBe(true);
+    });
+
+    it("pas encore bloqué avant le 5e échec", async () => {
+      for (let essai = 0; essai < 4; essai += 1) {
+        await verifierExportPilotageNationalAction(ETAT_INITIAL, formulaire({ motDePasse: "MauvaisMotDePasse", motif: "reunion" }));
+      }
+
+      const etat = await verifierExportPilotageNationalAction(
+        ETAT_INITIAL,
+        formulaire({ motDePasse: "MotDePasseCorrect1", motif: "reunion" })
+      );
+      expect(etat.success).toBe(true);
+    });
   });
 });
 
