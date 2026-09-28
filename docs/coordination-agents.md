@@ -5527,3 +5527,17 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
 - Verifie a l'integration : eslint 0 probleme sur les 10 fichiers, vitest cible 23/23 (demande-examen
   + getMesExamens), migration rejouee depuis zero sur une base temporaire (`replay.sh`) :
   "No difference detected", strictement additive.
+
+### Livraison projet-gouv-d4, F-CIT-01 tranche definitivement, 2026-09-28
+
+- Le correctif du contact d'urgence (`AssistantPremiereUtilisation.tsx`, FormData construit a la main)
+  est confirme SOLIDE par relecture ET par test automatise desormais passant (5/5). Aucun fichier de
+  production touche.
+- Le "doute" n'a jamais ete un bug du composant lui-meme : le fichier de test avait deux defauts a lui,
+  jamais confirmes passants avant ce soir : accumulation de rendus entre tests (`afterEach(cleanup)`
+  manquant, aucun `setupFiles` global dans ce depot) ; correspondance exacte en echec sur les libelles
+  de champ facultatif (« (facultatif) » accole sans espace par le design system, caracteristique
+  transverse preexistante, hors perimetre, non touchee). Corriges tous les deux, plus un delai de
+  frappe elargi (`userEvent.type` sous charge machine). Stable sur 2 executions.
+- Verifie a l'integration par 89 : vitest 5/5, eslint 0 erreur (2 avertissements preexistants sans
+  rapport, parametres prefixes `_`), tirets 0.
