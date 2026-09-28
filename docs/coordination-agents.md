@@ -5358,3 +5358,24 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   - Decision : aucun code ne sera ecrit pour cette fiche ce soir, comme la note anterieure l'avait
     deja tranche pour 3 des 4 items ; je corrige seulement `docs/reste-a-faire.md` pour la partie
     perimee (liberation motivee).
+
+### Integration F-PIL-04 (tendances et comparaisons), 2026-09-28
+
+- Lot livre par la session projet-gouv-18 (ex 23), verifie et integre par 89. Manque reel confirme :
+  `exporterComparaisonCSV` n'exigeait ni motif, ni re-authentification, ni journal EXPORT.
+- Exige desormais le meme jeton que `exporterRepartitionCSV` (portee nationale, `jeton-export.ts`,
+  reutilise tel quel), revalide le role admin_national, journalise sous une nouvelle action dediee
+  `export_pilotage_tendances_csv` avec le motif en clair. Bouton reecrit sur le patron exact de
+  `BoutonExportCSV.tsx`. Decision assumee et documentee : un jeton emis pour n'importe quel export de
+  pilotage national (repartition ou tendances) est valide pour les deux, la portee seule etant
+  distinguee dans `jeton-export.ts` (comportement documente depuis F-PIL-05, pas une faille). 9 tests
+  ajoutes.
+- Verifie a l'integration : eslint 0 probleme sur les 4 fichiers, tsc 0 (hors l'erreur deja confirmee
+  sans rapport, chantier actif de c0/F-ETA-04), vitest cible vert (tendances + alertes + tirets), tirets
+  0.
+- Incident constate et corrige a l'integration : la copie locale de `docs/reste-a-faire.md` livree par
+  la session (comme `docs/coordination-agents.md`) supprimait purement et simplement les lignes F-PIL-04
+  ET F-PIL-05 du tableau (copie perimee, anterieure a mes propres corrections de F-PIL-05 poussees ce
+  soir). Nieme occurrence de la meme classe d'incident deja documentee plusieurs fois ce soir. Ignore
+  entierement leur diff de doc, reappliquee moi-meme depuis HEAD avec le contenu correct des deux
+  lignes.

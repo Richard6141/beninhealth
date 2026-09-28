@@ -36,6 +36,9 @@ import { getSession } from "@/lib/session";
 import { journaliser } from "@/modules/audit/journaliser";
 import { masquerLigneAvecTotal } from "./masquage";
 import { trouverDefinitionIndicateur } from "./indicateurs";
+import { ACTIONS_AUDIT_EXPORT_PILOTAGE } from "./exports-constantes";
+import { libelleMotif } from "./exports-rendu";
+import { verifierJetonExport } from "./jeton-export";
 import {
   DIMENSION_PAR_INDICATEUR_COMPARABLE,
   NOMBRE_TERRITOIRES_MAXIMUM,
@@ -48,6 +51,16 @@ import {
   type ResultatTendances,
   type TerritoireOption,
 } from "./tendances-constantes";
+
+/** Adresse technique de la requete courante, ou "inconnue" hors contexte HTTP (ex. tache planifiee). */
+async function adresseTechniqueCourante(): Promise<string> {
+  try {
+    const listeEntetes = await headers();
+    return listeEntetes.get("x-forwarded-for") ?? listeEntetes.get("x-real-ip") ?? "inconnue";
+  } catch {
+    return "inconnue";
+  }
+}
 
 async function estAdminNationalDeLaSessionCourante(): Promise<boolean> {
   const session = await getSession();
@@ -120,13 +133,7 @@ async function journaliserOuvertureTendances(
   const session = await getSession();
   if (!session) return;
 
-  let adresseTechnique = "inconnue";
-  try {
-    const listeEntetes = await headers();
-    adresseTechnique = listeEntetes.get("x-forwarded-for") ?? listeEntetes.get("x-real-ip") ?? "inconnue";
-  } catch {
-    // Contexte hors requete HTTP (ex. tache planifiee) : adresse technique non disponible.
-  }
+  const adresseTechnique = await adresseTechniqueCourante();
 
   await journaliser({
     utilisateurId: session.userId,
@@ -247,16 +254,52 @@ export async function getComparaisonTerritoires(filtres: FiltresTendances): Prom
   };
 }
 
+export type ResultatExportComparaisonCSV = { contenu: string } | { error: string };
+
 /**
  * Meme donnees que getComparaisonTerritoires, serialisees en CSV pour le
  * bouton "Telecharger les donnees" de l'ecran. Les valeurs sont deja
  * masquees (RG-PIL-02) au moment ou elles quittent getComparaisonTerritoires :
  * cette fonction ne relit jamais de valeur brute, elle formate seulement ce
  * qui est deja destine a l'affichage.
+ *
+ * RG-PIL-40/RG-AUTH-53 (corrige le 2026-09-28, meme manque que F-PIL-05 avant
+ * son propre correctif) : exige desormais le jeton de re-authentification des
+ * exports de pilotage (jeton-export.ts, portee "national" - cet ecran est
+ * deja reserve a admin_national par page.tsx, jamais une autre portee ici) et
+ * journalise l'export sous une action dediee avec le motif en clair, meme
+ * patron exact que exporterRepartitionCSV (analytics/actions.ts, F-PIL-05).
+ * Un jeton emis pour n'importe quel export de pilotage national (dont
+ * "Exporter en CSV" de /app/ministere) est volontairement reutilisable ici
+ * dans les 5 minutes : une seule confirmation de mot de passe couvre tous les
+ * exports de pilotage de cette portee (voir la docstring de jeton-export.ts).
  */
-export async function exporterComparaisonCSV(filtres: FiltresTendances): Promise<string | null> {
+export async function exporterComparaisonCSV(
+  filtres: FiltresTendances,
+  jeton: string | null
+): Promise<ResultatExportComparaisonCSV> {
+  const session = await getSession();
+  if (!session) {
+    return { error: "Session expirée. Veuillez vous reconnecter." };
+  }
+
+  if (!session.roles.includes("admin_national")) {
+    return { error: "Droits insuffisants." };
+  }
+
+  const contenuJeton = verifierJetonExport(jeton, {
+    utilisateurId: session.userId,
+    sessionId: session.sessionId,
+    portee: "national",
+  });
+  if (!contenuJeton) {
+    return { error: "Ré-authentification requise ou expirée. Confirmez votre mot de passe pour exporter." };
+  }
+
   const resultat = await getComparaisonTerritoires(filtres);
-  if (!resultat) return null;
+  if (!resultat) {
+    return { error: "Aucune donnée à exporter pour cette sélection." };
+  }
 
   const entete = ["Periode", ...resultat.territoires.map((territoire) => territoire.nom)];
   const lignes = resultat.points.map((point) => [
@@ -264,5 +307,13 @@ export async function exporterComparaisonCSV(filtres: FiltresTendances): Promise
     ...resultat.territoires.map((territoire) => String(point.valeurs[territoire.id] ?? "")),
   ]);
 
-  return [entete, ...lignes].map((ligne) => ligne.join(";")).join("\n");
+  await journaliser({
+    utilisateurId: session.userId,
+    action: ACTIONS_AUDIT_EXPORT_PILOTAGE.tendancesCsv,
+    donneeConcernee: `pilotage_national:tendances;indicateur=${filtres.indicateurCode};territoires=${resultat.territoires.map((territoire) => territoire.code).join(",")}`,
+    adresseTechnique: await adresseTechniqueCourante(),
+    justification: `Export CSV des tendances et comparaisons territoriales (F-PIL-04), ${resultat.indicateur.libelle}, ${lignes.length} ligne(s). Motif : ${libelleMotif(contenuJeton.motif, contenuJeton.motifTexte)}.`,
+  });
+
+  return { contenu: [entete, ...lignes].map((ligne) => ligne.join(";")).join("\n") };
 }

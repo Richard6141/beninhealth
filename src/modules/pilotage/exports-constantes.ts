@@ -40,6 +40,7 @@ export const ACTIONS_AUDIT_EXPORT_PILOTAGE = {
   csv: "export_pilotage_csv",
   pdf: "export_pilotage_pdf",
   repartitionCsv: "export_pilotage_repartition_csv",
+  tendancesCsv: "export_pilotage_tendances_csv",
 } as const;
 
 export interface ExportPilotageActionState {
