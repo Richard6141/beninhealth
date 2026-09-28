@@ -21,6 +21,27 @@ export const MOTIFS_EXPORT: OptionMotifExport[] = [
   { value: "autre", label: "Autre" },
 ];
 
+/**
+ * Longueur minimale du texte libre du motif "autre" : meme seuil de 10
+ * caracteres que le motif de l'export du journal d'audit (F-AUD-01,
+ * audit/actions.ts) et du retrait de vaccination, pour qu'un motif trace
+ * dans le journal soit reellement explicatif (5 auparavant).
+ */
+export const LONGUEUR_MIN_MOTIF_TEXTE_EXPORT = 10;
+
+/**
+ * Actions de JournalAudit propres aux exports de pilotage (F-PIL-05,
+ * RG-PIL-40). Distinctes par format plutot que l'ancien "EXPORT" generique,
+ * pour qu'un auditeur filtre directement les exports pilotage dans le
+ * journal (meme convention snake_case que export_journal_audit_telecharge ou
+ * export_donnees_telecharge). Le motif reste en clair dans la justification.
+ */
+export const ACTIONS_AUDIT_EXPORT_PILOTAGE = {
+  csv: "export_pilotage_csv",
+  pdf: "export_pilotage_pdf",
+  repartitionCsv: "export_pilotage_repartition_csv",
+} as const;
+
 export interface ExportPilotageActionState {
   error: string | null;
   success: boolean;

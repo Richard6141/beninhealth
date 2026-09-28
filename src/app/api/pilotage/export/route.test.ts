@@ -99,7 +99,7 @@ describe("GET /api/pilotage/export/csv", () => {
     expect(vueNationaleMock).toHaveBeenCalledWith("30j");
     expect(journaliserMock).toHaveBeenCalledTimes(1);
     const justification = journaliserMock.mock.calls[0][0].justification as string;
-    expect(journaliserMock.mock.calls[0][0].action).toBe("EXPORT");
+    expect(journaliserMock.mock.calls[0][0].action).toBe("export_pilotage_csv");
     expect(justification).toContain("Rapport mensuel");
     expect(justification).not.toContain("Planification");
     expect(justification).not.toContain("falsifie");
@@ -141,6 +141,16 @@ describe("GET /api/pilotage/export/pdf", () => {
     expect(reponse.status).toBe(200);
     expect(reponse.headers.get("content-type")).toBe("application/pdf");
     expect(journaliserMock).toHaveBeenCalledTimes(1);
+    expect(journaliserMock.mock.calls[0][0].action).toBe("export_pilotage_pdf");
     expect(journaliserMock.mock.calls[0][0].justification).toContain("Réunion ministérielle");
+  });
+
+  it("refuse un jeton expiré ou émis pour une autre session", async () => {
+    const expire = await getPdf(requete({ portee: "national", jeton: jetonValide({}, Date.now() - 10 * 60 * 1000) }));
+    const autreSession = await getPdf(requete({ portee: "national", jeton: jetonValide({ sessionId: "s-ancienne" }) }));
+    expect(expire.status).toBe(403);
+    expect(autreSession.status).toBe(403);
+    expect(vueNationaleMock).not.toHaveBeenCalled();
+    expect(journaliserMock).not.toHaveBeenCalled();
   });
 });

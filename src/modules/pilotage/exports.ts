@@ -2,22 +2,21 @@
 
 /**
  * Exports et rapports de pilotage (F-PIL-05, chapitre 14 du pack). Meme
- * principe de re-authentification que src/modules/patient/droits-donnees.ts
- * (F-CIT-13) : cette action ne verifie que le mot de passe et le motif, puis
- * renvoie un etat de succes que l'interface utilise pour reveler des liens
- * de telechargement (/api/pilotage/export/pdf|csv) qui regenerent le contenu
- * a la demande a partir de la session courante. Meme limite assumee que
- * F-CIT-13, deja acceptee dans ce depot : la re-authentification n'emet pas
- * de jeton signe verifie par la route de telechargement, elle controle
- * seulement l'affichage des liens dans cette page. La route re-verifie
- * toujours independamment la session et le role (Zero Trust), donc aucune
- * donnee n'est exposee a un compte non autorise ; ce qui n'est pas
- * re-verifie est seulement le mot de passe lui-meme au moment du clic.
+ * patron de re-authentification que F-CIT-13 (patient/jeton-export-donnees.ts)
+ * et F-AUD-01 (audit/jeton-export-audit.ts) : cette action verifie le droit
+ * d'exporter pour la portee, le motif et le mot de passe reconfirme, puis
+ * emet un jeton signe de 5 minutes (jeton-export.ts, contexte HMAC propre
+ * aux exports de pilotage, jamais interchangeable avec les deux autres).
+ * Les points de telechargement (/api/pilotage/export/pdf|csv et
+ * exporterRepartitionCSV d'analytics/actions.ts) exigent ce jeton cote
+ * serveur et lisent le motif dans le jeton verifie, jamais dans l'URL : un
+ * GET direct avec le seul cookie de session est refuse (403).
  *
- * RG-PIL-40 : motif obligatoire (liste fermee + "autre" avec texte),
- * re-authentification, journalisation "EXPORT" avec les filtres (faite dans
- * les routes de telechargement, au moment ou le fichier est reellement
- * genere, pas ici).
+ * RG-PIL-40 : motif obligatoire (liste fermee + "autre" avec un texte d'au
+ * moins LONGUEUR_MIN_MOTIF_TEXTE_EXPORT caracteres), re-authentification,
+ * journalisation (ACTIONS_AUDIT_EXPORT_PILOTAGE, motif en clair dans la
+ * justification) faite par les points de telechargement, au moment ou le
+ * fichier est reellement genere, pas ici.
  * RG-PIL-41 : les regles de masquage s'appliquent avant l'export. Assure
  * structurellement : les routes de telechargement ne lisent jamais
  * AgregatQuotidien directement, elles reutilisent exclusivement
@@ -28,10 +27,13 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
-import type { ExportPilotageActionState, MotifExport, PorteeExportPilotage } from "./exports-constantes";
+import {
+  LONGUEUR_MIN_MOTIF_TEXTE_EXPORT as LONGUEUR_MIN_MOTIF_TEXTE,
+  type ExportPilotageActionState,
+  type MotifExport,
+  type PorteeExportPilotage,
+} from "./exports-constantes";
 import { creerJetonExport } from "./jeton-export";
-
-const LONGUEUR_MIN_MOTIF_TEXTE = 5;
 
 const schemaConfirmation = z
   .object({

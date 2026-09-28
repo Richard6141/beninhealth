@@ -84,7 +84,6 @@ export function IndicateursNationaux({ statistiques }: IndicateursNationauxProps
       <Card
         title="Repartition par etablissement"
         description="Activite agregee de chaque etablissement sanitaire du reseau."
-        actions={<BoutonExportCSV />}
       >
         {statistiques.repartitionParEtablissement.length === 0 ? (
           <p className="text-[13px] text-encre-attenuee">Aucun etablissement enregistre.</p>
@@ -136,6 +135,10 @@ export function IndicateursNationaux({ statistiques }: IndicateursNationauxProps
             </table>
           </div>
         )}
+        {/* F-PIL-05 : export soumis au motif et a la re-authentification, comme les exports de /app/pilotage. */}
+        <div className="mt-4 border-t border-bordure pt-4">
+          <BoutonExportCSV />
+        </div>
       </Card>
     </div>
   );

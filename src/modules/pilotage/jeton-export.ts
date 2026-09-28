@@ -16,6 +16,13 @@
  * établissement). Valable 5 minutes, réutilisable dans ce délai (PDF puis
  * CSV avec une seule confirmation).
  *
+ * Contexte HMAC propre ("jeton-export-pilotage"), distinct de ceux de
+ * l'export patient (F-CIT-13), de l'export du journal d'audit (F-AUD-01) et
+ * de la re-authentification de signature d'ordonnance (F-PRE-04) : un jeton
+ * de l'un ne vaut jamais pour un autre (voir jeton-export.test.ts). Il est
+ * exige par les routes /api/pilotage/export/{csv,pdf} et par
+ * exporterRepartitionCSV (analytics/actions.ts, portee "national").
+ *
  * Module sans "use server" : ses fonctions sont synchrones et ne doivent pas
  * être des points d'entrée.
  */

@@ -40,10 +40,15 @@ Fonctions exposées :
   l'appelant n'a pas ce rôle, renvoie une structure à zéro (totaux à 0,
   tableaux vides) plutôt que de lever une exception : Zero Trust, jamais de
   donnée si le rôle ne correspond pas.
-- `exporterRepartitionCSV()` : export CSV de la répartition par établissement
-  (Etablissement, Localisation, Type, Consultations, RendezVous,
-  Professionnels). Réservé au rôle admin_national, renvoie une chaîne vide
-  sinon.
+- `exporterRepartitionCSV(jeton)` : export CSV de la répartition par
+  établissement (Etablissement, Localisation, Type, Consultations,
+  RendezVous, Professionnels). Soumis au même contrôle que les exports de
+  pilotage (F-PIL-05, RG-PIL-40) : jeton signé de ré-authentification exigé
+  (`pilotage/jeton-export.ts`, portée nationale, émis après motif et mot de
+  passe par `verifierExportPilotageNationalAction`), rôle admin_national,
+  petits effectifs masqués « < 5 » (RG-PIL-02), journalisation
+  `export_pilotage_repartition_csv` avec le motif. Renvoie `{ contenu }` ou
+  `{ error }`, jamais d'exception.
 
 Les séries mensuelles (`consultationsParMois`) couvrent toujours les 6
 derniers mois glissants, mois courant inclus, y compris les mois sans aucune

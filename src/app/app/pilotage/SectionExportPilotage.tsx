@@ -7,7 +7,13 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { SelectField } from "@/components/ui/SelectField";
 import { TextField } from "@/components/ui/TextField";
-import { MOTIFS_EXPORT, type ExportPilotageActionState, type MotifExport, type PorteeExportPilotage } from "@/modules/pilotage/exports-constantes";
+import {
+  LONGUEUR_MIN_MOTIF_TEXTE_EXPORT,
+  MOTIFS_EXPORT,
+  type ExportPilotageActionState,
+  type MotifExport,
+  type PorteeExportPilotage,
+} from "@/modules/pilotage/exports-constantes";
 
 const etatInitial: ExportPilotageActionState = { error: null, success: false };
 
@@ -75,7 +81,7 @@ export function SectionExportPilotage({ portee, periode, action }: SectionExport
             options={MOTIFS_EXPORT.map((option) => ({ value: option.value, label: option.label }))}
           />
           {motif === "autre" ? (
-            <TextField label="Précisez le motif" name="motifTexte" required minLength={5} />
+            <TextField label="Précisez le motif" name="motifTexte" required minLength={LONGUEUR_MIN_MOTIF_TEXTE_EXPORT} />
           ) : null}
           <TextField label="Mot de passe actuel" name="motDePasse" type="password" autoComplete="current-password" required />
           <Button type="submit" variant="primary" className="w-fit" disabled={pending}>

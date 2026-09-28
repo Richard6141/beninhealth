@@ -85,6 +85,20 @@ describe("verifierExportPilotageNationalAction", () => {
     expect(autreSansTexte.jeton).toBeUndefined();
   });
 
+  it("exige au moins 10 caractères pour le texte libre du motif « autre »", async () => {
+    const neufCaracteres = await verifierExportPilotageNationalAction(
+      ETAT_INITIAL,
+      formulaire({ motDePasse: "MotDePasseCorrect1", motif: "autre", motifTexte: "123456789" })
+    );
+    const dixCaracteres = await verifierExportPilotageNationalAction(
+      ETAT_INITIAL,
+      formulaire({ motDePasse: "MotDePasseCorrect1", motif: "autre", motifTexte: "1234567890" })
+    );
+    expect(neufCaracteres.success).toBe(false);
+    expect(neufCaracteres.jeton).toBeUndefined();
+    expect(dixCaracteres.success).toBe(true);
+  });
+
   it("garde le texte libre du motif « autre » dans le jeton", async () => {
     const etat = await verifierExportPilotageNationalAction(
       ETAT_INITIAL,

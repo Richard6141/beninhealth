@@ -13,6 +13,9 @@ import {
   verifierJetonExport,
   type ContenuJetonExport,
 } from "./jeton-export";
+import { createHmac } from "node:crypto";
+import { creerJetonExportAudit, jetonExportAuditValide } from "@/modules/audit/jeton-export-audit";
+import { creerJetonExportDonnees, jetonExportDonneesValide } from "@/modules/patient/jeton-export-donnees";
 
 const CONTENU: ContenuJetonExport = {
   utilisateurId: "user-1",
@@ -54,6 +57,26 @@ describe("jeton d'export de pilotage", () => {
     contenuFalsifie.m = "planification";
     const donneeFalsifiee = Buffer.from(JSON.stringify(contenuFalsifie), "utf8").toString("base64url");
     expect(verifierJetonExport(`${donneeFalsifiee}.${signature}`, ATTENDU, T0)).toBeNull();
+  });
+
+  it("n'est jamais interchangeable avec les jetons des autres usages (contexte HMAC distinct)", () => {
+    const jetonPilotage = creerJetonExport(CONTENU, T0);
+    const maintenant = new Date(T0);
+
+    // Un jeton pilotage ne vaut ni pour l'export du journal d'audit, ni pour l'export patient.
+    expect(jetonExportAuditValide(jetonPilotage, "user-1", maintenant)).toBe(false);
+    expect(jetonExportDonneesValide(jetonPilotage, "user-1", maintenant)).toBe(false);
+
+    // Et réciproquement.
+    expect(verifierJetonExport(creerJetonExportAudit("user-1", maintenant), ATTENDU, T0)).toBeNull();
+    expect(verifierJetonExport(creerJetonExportDonnees("user-1", maintenant), ATTENDU, T0)).toBeNull();
+
+    // Même charge utile au format pilotage, mais signée avec la clé d'un autre contexte : refusée.
+    const [donnee] = jetonPilotage.split(".");
+    const signatureAutreContexte = createHmac("sha256", "secret-de-test-jeton-export:export-journal-audit")
+      .update(donnee)
+      .digest("base64url");
+    expect(verifierJetonExport(`${donnee}.${signatureAutreContexte}`, ATTENDU, T0)).toBeNull();
   });
 
   it("refuse une signature altérée, un jeton mal formé ou absent", () => {

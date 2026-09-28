@@ -23,8 +23,14 @@
  */
 
 import { Prisma } from "@prisma/client";
+import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
+import { journaliser } from "@/modules/audit/journaliser";
+import { ACTIONS_AUDIT_EXPORT_PILOTAGE } from "@/modules/pilotage/exports-constantes";
+import { libelleMotif } from "@/modules/pilotage/exports-rendu";
+import { verifierJetonExport } from "@/modules/pilotage/jeton-export";
+import { masquerPetitEffectif } from "@/modules/pilotage/masquage";
 
 /** Un point d'une serie mensuelle agregee. mois au format "AAAA-MM". */
 export interface PointMensuel {
@@ -336,26 +342,65 @@ export async function getStatistiquesNationales(): Promise<StatistiquesNationale
   };
 }
 
-/** Echappe une valeur textuelle pour un champ CSV (guillemets si elle contient une virgule). */
+/** Echappe une valeur textuelle pour un champ CSV (guillemets si elle contient une virgule, un guillemet ou un saut de ligne). */
 function echapperValeurCSV(valeur: string): string {
-  if (valeur.includes(",")) {
+  if (/[",\r\n]/.test(valeur)) {
     return `"${valeur.replace(/"/g, '""')}"`;
   }
   return valeur;
 }
 
+async function adresseTechniqueCourante(): Promise<string> {
+  try {
+    const listeEntetes = await headers();
+    return listeEntetes.get("x-forwarded-for") ?? listeEntetes.get("x-real-ip") ?? "inconnue";
+  } catch {
+    return "inconnue";
+  }
+}
+
+export type ResultatExportRepartitionCSV = { contenu: string } | { error: string };
+
 /**
  * Genere un export CSV de la repartition par etablissement (colonnes :
  * Etablissement, Localisation, Type, Consultations, RendezVous,
- * Professionnels). Reserve au role admin_national : renvoie une chaine
- * vide si l'appelant n'a pas ce role, sans lever d'exception.
+ * Professionnels), bouton "Exporter en CSV" de l'onglet Indicateurs
+ * nationaux de /app/ministere.
+ *
+ * F-PIL-05 : cet export Phase 6 contournait tout le dispositif des exports
+ * de pilotage (aucun motif, aucune re-authentification, aucune trace dans
+ * JournalAudit, petits effectifs non masques). Il est maintenant soumis au
+ * meme controle que /api/pilotage/export/{csv,pdf} :
+ * - jeton signe de re-authentification exige (pilotage/jeton-export.ts,
+ *   portee "national"), emis par verifierExportPilotageNationalAction apres
+ *   motif et mot de passe reconfirme ; sans jeton valide, aucun calcul ;
+ * - role admin_national re-verifie a partir de la session (Zero Trust) ;
+ * - RG-PIL-41 / RG-PIL-02 : consultations et rendez-vous de 1 a 4 exportes
+ *   "< 5" (le nombre de professionnels, donnee d'effectif et non d'activite
+ *   de soins, reste exact comme sur la fiche publique de l'etablissement) ;
+ * - journalisation "export_pilotage_repartition_csv", motif du jeton en
+ *   clair dans la justification.
  *
  * Le CSV ne contient que des noms d'etablissements et des totaux agreges,
  * jamais de nom de patient ni de professionnel individuel.
  */
-export async function exporterRepartitionCSV(): Promise<string> {
-  if (!(await estAdminNationalConnecte())) {
-    return "";
+export async function exporterRepartitionCSV(jeton: string | null): Promise<ResultatExportRepartitionCSV> {
+  const session = await getSession();
+  if (!session) {
+    return { error: "Session expirée. Veuillez vous reconnecter." };
+  }
+
+  const contenuJeton = verifierJetonExport(jeton, {
+    utilisateurId: session.userId,
+    sessionId: session.sessionId,
+    portee: "national",
+  });
+  if (!contenuJeton) {
+    return { error: "Ré-authentification requise ou expirée. Confirmez votre mot de passe pour exporter." };
+  }
+
+  if (!session.roles.includes("admin_national")) {
+    return { error: "Droits insuffisants." };
   }
 
   const repartition = await calculerRepartitionParEtablissement();
@@ -367,11 +412,19 @@ export async function exporterRepartitionCSV(): Promise<string> {
       echapperValeurCSV(ligne.etablissementNom),
       echapperValeurCSV(ligne.localisation),
       echapperValeurCSV(ligne.type),
-      String(ligne.totalConsultations),
-      String(ligne.totalRendezVous),
+      String(masquerPetitEffectif(ligne.totalConsultations)),
+      String(masquerPetitEffectif(ligne.totalRendezVous)),
       String(ligne.nombreProfessionnels),
     ].join(",")
   );
 
-  return [enTetes.join(","), ...lignes].join("\n");
+  await journaliser({
+    utilisateurId: session.userId,
+    action: ACTIONS_AUDIT_EXPORT_PILOTAGE.repartitionCsv,
+    donneeConcernee: "pilotage_national:repartition_etablissements;format=csv",
+    adresseTechnique: await adresseTechniqueCourante(),
+    justification: `Export de pilotage (F-PIL-05), répartition par établissement (${repartition.length} ligne(s)). Motif : ${libelleMotif(contenuJeton.motif, contenuJeton.motifTexte)}.`,
+  });
+
+  return { contenu: [enTetes.join(","), ...lignes].join("\n") };
 }

@@ -1,10 +1,11 @@
 /**
  * Telechargement CSV des donnees de pilotage (F-PIL-05 du pack). Meme garde
- * d'acces que les routes soeurs /api/patient/export/* : la re-
- * authentification est deja faite cote ecran (verifierExportPilotageAction),
- * cette route re-verifie independamment la session et le role (Zero Trust),
- * puis journalise l'export reellement effectue (RG-PIL-40 : action "EXPORT"
- * avec les filtres).
+ * d'acces que les routes soeurs /api/patient/export/* : exige le jeton signe
+ * emis par verifierExportPilotageAction apres re-authentification par mot de
+ * passe (403 sans jeton valide, lie a l'utilisateur, a la session et a la
+ * portee), re-verifie independamment la session et le role (Zero Trust),
+ * puis journalise l'export reellement effectue (RG-PIL-40 : action
+ * "export_pilotage_csv" avec les filtres et le motif lu dans le jeton).
  */
 
 import { NextResponse } from "next/server";
@@ -13,6 +14,7 @@ import { journaliser } from "@/modules/audit/journaliser";
 import { getVueNationalePilotage, getTableauBordEtablissement, type PeriodeTableauBord } from "@/modules/pilotage/lecture";
 import { construireCSVEtablissement, construireCSVNational, libelleMotif, libellePeriode } from "@/modules/pilotage/exports-rendu";
 import { verifierJetonExport } from "@/modules/pilotage/jeton-export";
+import { ACTIONS_AUDIT_EXPORT_PILOTAGE } from "@/modules/pilotage/exports-constantes";
 
 const PERIODES_VALIDES: PeriodeTableauBord[] = ["aujourdhui", "7j", "30j", "mois"];
 
@@ -80,7 +82,7 @@ export async function GET(request: Request) {
 
   await journaliser({
     utilisateurId: session.userId,
-    action: "EXPORT",
+    action: ACTIONS_AUDIT_EXPORT_PILOTAGE.csv,
     donneeConcernee: `pilotage_${portee}:periode=${periode};format=csv`,
     adresseTechnique: adresseTechniqueDepuisRequete(request),
     justification: `Export de pilotage (F-PIL-05). Motif : ${libelleMotif(motif, motifTexte)}. Période : ${libellePeriode(periode)}.`,

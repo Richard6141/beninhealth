@@ -1,17 +1,34 @@
 "use client";
 
-import { useState } from "react";
+import { useActionState, useState } from "react";
 import { Download } from "lucide-react";
 import { exporterRepartitionCSV } from "@/modules/analytics/actions";
+import { verifierExportPilotageNationalAction } from "@/modules/pilotage/exports";
+import {
+  LONGUEUR_MIN_MOTIF_TEXTE_EXPORT,
+  MOTIFS_EXPORT,
+  type ExportPilotageActionState,
+  type MotifExport,
+} from "@/modules/pilotage/exports-constantes";
+import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
+import { SelectField } from "@/components/ui/SelectField";
+import { TextField } from "@/components/ui/TextField";
+
+const etatInitial: ExportPilotageActionState = { error: null, success: false };
 
 /**
- * Declenche exporterRepartitionCSV() (Server Action) puis provoque le
- * telechargement du resultat cote client via un Blob et un lien temporaire,
- * sans route API dediee : le contenu ne quitte jamais le navigateur de
- * l'utilisateur autrement que par ce telechargement local.
+ * Export CSV de la repartition par etablissement (F-PIL-05, RG-PIL-40).
+ * Meme parcours que SectionExportPilotage (/app/pilotage) : motif obligatoire
+ * et mot de passe reconfirme via verifierExportPilotageNationalAction, qui
+ * emet un jeton signe de 5 minutes. exporterRepartitionCSV (Server Action)
+ * exige ce jeton cote serveur, masque les petits effectifs et journalise
+ * l'export ; le resultat est ensuite telecharge cote client via un Blob.
  */
 export function BoutonExportCSV() {
+  const [ouvert, setOuvert] = useState(false);
+  const [state, formAction, pending] = useActionState(verifierExportPilotageNationalAction, etatInitial);
+  const [motif, setMotif] = useState<MotifExport | "">("");
   const [enCours, setEnCours] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
 
@@ -19,13 +36,13 @@ export function BoutonExportCSV() {
     setEnCours(true);
     setErreur(null);
     try {
-      const csv = await exporterRepartitionCSV();
-      if (!csv) {
-        setErreur("Aucune donnee a exporter.");
+      const resultat = await exporterRepartitionCSV(state.jeton ?? null);
+      if ("error" in resultat) {
+        setErreur(resultat.error);
         return;
       }
       // Prefixe BOM UTF-8 pour un affichage correct des accents dans Excel.
-      const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+      const blob = new Blob(["﻿" + resultat.contenu], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
       const lien = document.createElement("a");
       lien.href = url;
@@ -35,29 +52,74 @@ export function BoutonExportCSV() {
       document.body.removeChild(lien);
       URL.revokeObjectURL(url);
     } catch {
-      setErreur("L'export a echoue. Veuillez reessayer.");
+      setErreur("L'export a échoué. Veuillez réessayer.");
     } finally {
       setEnCours(false);
     }
   }
 
-  return (
-    <div className="flex flex-col items-end gap-1.5">
-      <Button
-        type="button"
-        variant="secondary"
-        size="sm"
-        iconBefore={Download}
-        disabled={enCours}
-        onClick={telecharger}
-      >
-        {enCours ? "Export en cours..." : "Exporter en CSV"}
+  if (!ouvert) {
+    return (
+      <Button type="button" variant="secondary" size="sm" iconBefore={Download} onClick={() => setOuvert(true)}>
+        Exporter en CSV
       </Button>
-      {erreur ? (
-        <p role="alert" className="text-[12px] text-critique">
-          {erreur}
-        </p>
+    );
+  }
+
+  if (state.success && state.jeton) {
+    return (
+      <div className="flex flex-col gap-3">
+        <Alert level="success" title="Identité confirmée">
+          Le fichier est régénéré au moment du téléchargement (valable 5 minutes).
+        </Alert>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          className="w-fit"
+          iconBefore={Download}
+          disabled={enCours}
+          onClick={telecharger}
+        >
+          {enCours ? "Export en cours..." : "Télécharger (CSV)"}
+        </Button>
+        {erreur ? (
+          <p role="alert" className="text-[12px] text-critique">
+            {erreur}
+          </p>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <form action={formAction} className="flex flex-col gap-4">
+      {state.error ? (
+        <Alert level="critical" title="Confirmation impossible">
+          {state.error}
+        </Alert>
       ) : null}
-    </div>
+      <SelectField
+        label="Motif de l'export"
+        name="motif"
+        required
+        placeholder="Choisissez un motif"
+        value={motif}
+        onChange={(event) => setMotif(event.target.value as MotifExport)}
+        options={MOTIFS_EXPORT.map((option) => ({ value: option.value, label: option.label }))}
+      />
+      {motif === "autre" ? (
+        <TextField label="Précisez le motif" name="motifTexte" required minLength={LONGUEUR_MIN_MOTIF_TEXTE_EXPORT} />
+      ) : null}
+      <TextField label="Mot de passe actuel" name="motDePasse" type="password" autoComplete="current-password" required />
+      <div className="flex flex-wrap gap-3">
+        <Button type="submit" variant="primary" size="sm" disabled={pending}>
+          {pending ? "Vérification..." : "Confirmer et préparer l'export"}
+        </Button>
+        <Button type="button" variant="secondary" size="sm" onClick={() => setOuvert(false)}>
+          Annuler
+        </Button>
+      </div>
+    </form>
   );
 }

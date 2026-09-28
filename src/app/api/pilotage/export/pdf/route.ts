@@ -1,7 +1,8 @@
 /**
  * Rapport PDF de pilotage (F-PIL-05 du pack) : filtres, indicateurs cles,
  * graphique, tableau, definitions, mention de masquage. Meme garde d'acces
- * et meme journalisation que la route CSV soeur (./csv/route.ts).
+ * (jeton signe de re-authentification exige) que la route CSV soeur
+ * (./csv/route.ts), journalisee sous l'action "export_pilotage_pdf".
  */
 
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
@@ -17,6 +18,7 @@ import {
   libellePeriode,
 } from "@/modules/pilotage/exports-rendu";
 import { verifierJetonExport } from "@/modules/pilotage/jeton-export";
+import { ACTIONS_AUDIT_EXPORT_PILOTAGE } from "@/modules/pilotage/exports-constantes";
 
 const PERIODES_VALIDES: PeriodeTableauBord[] = ["aujourdhui", "7j", "30j", "mois"];
 
@@ -206,7 +208,7 @@ export async function GET(request: Request) {
 
   await journaliser({
     utilisateurId: session.userId,
-    action: "EXPORT",
+    action: ACTIONS_AUDIT_EXPORT_PILOTAGE.pdf,
     donneeConcernee: `pilotage_${portee}:periode=${periode};format=pdf`,
     adresseTechnique: adresseTechniqueDepuisRequete(request),
     justification: `Export de pilotage (F-PIL-05). Motif : ${libelleMotif(motif, motifTexte)}. Période : ${libellePeriode(periode)}.`,
