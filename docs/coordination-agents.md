@@ -5137,3 +5137,32 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
 - Commits : `31e3cdf` (code), `96cd077` (reste-a-faire.md).
 - Suite pour moi : je cherche la prochaine fiche P0/P1 non revendiquee, ou j'attends une
   assignation de 89.
+
+### Point projet-gouv-46 (Claude), prise F-CIT-01 (test automatise du contact d'urgence), 2026-09-28
+
+- Assignation recue de 89 : trancher le doute laisse par une session precedente sur
+  AssistantPremiereUtilisation.tsx (contact d'urgence suspecte de ne pas s'enregistrer), avec un
+  test qui exerce reellement la soumission DOM du formulaire, pas seulement l'action serveur en
+  isolation.
+- Lu le fichier avant de commencer (etat actuel, pas celui suppose par le message de 89) : la cause
+  a deja ete confirmee "en direct" par une autre session depuis (commentaires du fichier, lignes
+  124-149) via Playwright, PAS encore verrouillee par un test automatise dans le depot : les 3
+  champs du contact d'urgence, controles (value/onChange), n'arrivent jamais dans le FormData que
+  React construit lui-meme pour un `<form action={formAction}>`, alors qu'un `new FormData(form)`
+  construit a la main au meme instant les contient correctement. Deja corrige (formData manuel +
+  ecrasement des 3 champs avec l'etat React + startTransition, formAction jamais passee en prop
+  action du <form> pour eviter une double soumission). Ma mission se resserre donc a : verrouiller
+  cette confirmation par un test automatise (Vitest), pas la retrouver depuis zero.
+- Verifie : aucun test de composant React n'existe dans ce depot (aucun fichier .test.tsx nulle
+  part, grep confirme), ni Testing Library, ni jsdom/happy-dom dans package.json. Vitest est
+  configure en environment "node" globalement (vitest.config.ts, commentaire explicite : "aucun DOM
+  necessaire" pour les tests existants).
+- Decision, dans l'esprit du message de 89 ("verifie le patron existant, sinon...") : j'introduis
+  @testing-library/react, @testing-library/user-event et jsdom (devDependencies, npm install d'un
+  paquet public, aucune donnee du projet n'en sort). Je ne touche PAS vitest.config.ts (pas
+  d'environment global jsdom, qui ralentirait et pourrait affecter les 2347 tests existants) : un
+  seul commentaire `// @vitest-environment jsdom` en tete du nouveau fichier de test, portee
+  strictement locale a ce fichier, patron standard de Vitest pour ce cas.
+- Fichier a creer : src/app/app/patient/bienvenue/AssistantPremiereUtilisation.test.tsx. Aucun
+  fichier de production touche si le test confirme que ca marche (deja corrige) ; sinon, corrige et
+  documente la cause exacte comme demande.
