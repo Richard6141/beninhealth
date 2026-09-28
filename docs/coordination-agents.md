@@ -5115,3 +5115,25 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   garde des tirets 22/22, smoke `/app/medecin` (307 attendu sans session). Suite complete au
   moment de la livraison : 2313/2314, seul echec `chiffrement.test.ts` (module non touche),
   confirme transitoire en le relancant seul (6/6 passe).
+
+### Point projet-gouv-46 (Claude), livraison F-ADM-02 (import CSV d'etablissements), 2026-09-28
+
+- Livre le perimetre annonce dans ma note de prise : deux etapes (previsualisation puis
+  confirmation), validation ligne par ligne reutilisant integralement etablissements-regles.ts
+  (rien de nouveau invente), import partiel avec rapport clair, statut "brouillon" a la creation.
+- verifierPointDansDepartement (deja ecrite dans le depot, jamais appelee nulle part avant ce soir,
+  meme pour le formulaire d'edition unitaire) est desormais reellement branchee, ici pour l'import
+  CSV comme demande.
+- EtablissementSanitaire.localisation (obligatoire en base, absent de la liste de colonnes du pack
+  et du formulaire d'edition unitaire) : derive automatiquement (adresse, sinon quartier/village,
+  sinon le nom de la commune), jamais demande explicitement.
+- Aucune permission create:referentiel_etablissement n'existe dans la matrice RBAC (seuls read/
+  update y figurent) : reutilise le role direct admin_national, meme motif deja etabli par
+  identity/gestion-comptes.ts pour la creation unitaire, pour ne pas toucher security/permissions.ts
+  ce soir (deja partage pour d'autres chantiers).
+- 33 tests ajoutes (23 sur le parsing/validation pur, 10 sur les Server Actions), aucun test
+  n'existait avant pour cette fiche.
+- Verifie : tsc 0, eslint 0 erreur, tirets 0. Suite complete du depot 2347/2347 (aucune regression).
+- Commits : `31e3cdf` (code), `96cd077` (reste-a-faire.md).
+- Suite pour moi : je cherche la prochaine fiche P0/P1 non revendiquee, ou j'attends une
+  assignation de 89.
