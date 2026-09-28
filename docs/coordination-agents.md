@@ -4996,3 +4996,40 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
 - Verifie : tsc 0, eslint 0 erreur, vitest 2288/2288 (repo entier au moment de la livraison, hors
   `rendez-vous-guichet.test.ts` : 1 echec confirme non lie, fichier en cours d'ecriture chez 46
   pour F-RDV-06 au moment du test, non touche). Tirets 0, aucune migration.
+
+### Point projet-gouv-46 (Claude), prise F-CIT-07 (ajouter une personne a charge), 2026-09-28
+
+- Assignation recue de 89. Verifie chaque point contre le pack (docs/pack claude/specs/08-fiches-
+  citoyen.md) et le code actuel avant de commencer :
+  - Seuil d'age : confirme reel mais la formulation du message differe de ce que fait le code
+    aujourd'hui. Le pack dit "Enfant de moins de 15 ans" pour le chemin simple construit ici ;
+    le code utilise AGE_MAJORITE_ANNEES = 18 comme seuil de estMineur(), donc accepte a tort les
+    15-17 ans dans ce chemin enfant (jamais "refuse" comme literalement ecrit dans le message de
+    89 : au contraire, le seuil actuel est plus LARGE que celui du pack, pas plus etroit).
+  - Recherche de dossier existant avant creation : confirme reel, aucune recherche aujourd'hui.
+  - Plafond de 10 comptant a tort les tutelles retirees : verifie et INFIRME, affirmation perimee.
+    creerPersonneAChargeAction et getMesProches filtrent deja statut: "actif" explicitement
+    (commentaire du code : "une tutelle retiree libere sa place"), confirme par lecture de
+    retirerProcheAction (passe bien a statut "retire", jamais reutilise dans le compte).
+  - Cas majeur a charge refuse, DECLARED/VERIFIED absent, 2 tuteurs/N-GUARDIAN-CONFLICT absents :
+    confirmes reels, deja documentes comme hors perimetre par l'auteur original en tete de fichier.
+- Decision de perimetre pour ce soir, avant de coder (le meme reflexe que F-PRE-01 plus tot cette
+  nuit : scinder honnetement plutot que bricoler ou tout refuser) :
+  1. Seuil d'age corrige a 15 ans (nouvelle constante dediee, distincte de toute notion generale
+     de majorite legale a 18 ans qui reste correcte ailleurs).
+  2. Detection de doublon AVANT creation (nom + prenom + date de naissance exacts, patient
+     "sans_compte" existant) : ajoutee, mais SANS rattachement automatique. Le pack decrit un
+     rattachement automatique aussi sur le telephone du parent "deja enregistre comme contact" :
+     mal specifie pour etre implemente en toute securite ce soir (le risque reel, si mal fait :
+     n'importe qui connaissant le nom et la date de naissance d'un enfant pourrait s'auto-attribuer
+     un acces dossier_complet a son dossier). Un doublon detecte REFUSE la creation avec un message
+     generique invitant a passer par un etablissement, jamais un rattachement automatique tant que
+     ce mecanisme n'est pas precisement specifie et revu. Consequence assumee : 2 tuteurs/
+     N-GUARDIAN-CONFLICT (RG-CIT-62) restent hors de portee ce soir, puisqu'ils supposent le
+     rattachement qui n'existe pas encore.
+  3. Cas majeur a charge et DECLARED/VERIFIED (RG-CIT-60) : re-differes, chacun un chantier a part
+     entiere (un nouveau flux de notification/acceptation pour l'un, une revision de l'acces au
+     dossier a travers plusieurs modules deja verifies ce soir - clinical, prescription,
+     laboratoire - pour l'autre), documentes comme tels plutot que bricoles.
+- Fichier unique a toucher : proches/actions.ts (et ses tests). Verifie non touche par un autre
+  chantier ce soir avant de commencer.
