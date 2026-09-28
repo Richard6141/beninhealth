@@ -109,6 +109,12 @@ export async function DashboardLaboratoire() {
           >
             Voir tous les examens
           </Link>
+          <Link
+            href="/app/medecin/laboratoire/validation"
+            className="mt-2 block w-fit text-[13px] font-semibold text-accent hover:underline"
+          >
+            Résultats à valider ({examens.filter((examen) => examen.statut === "resultat_saisi").length})
+          </Link>
         </Card>
       </section>
 

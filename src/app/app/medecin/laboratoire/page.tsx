@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, ShieldCheck } from "lucide-react";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import {
@@ -60,6 +60,13 @@ export default async function LaboratoirePage() {
           devenir visible du patient et du medecin demandeur (principe des
           quatre yeux).
         </p>
+        <Link
+          href="/app/medecin/laboratoire/validation"
+          className="inline-flex w-fit items-center gap-1 text-[14px] font-semibold text-accent hover:underline"
+        >
+          <ShieldCheck size={16} aria-hidden="true" />
+          File de validation ({examens.filter((examen) => examen.statut === "resultat_saisi").length})
+        </Link>
       </header>
 
       <ListeExamensLaboratoire examens={examens} idProfessionnelCourant={idProfessionnelCourant} />

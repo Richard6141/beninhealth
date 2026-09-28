@@ -5166,3 +5166,146 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
 - Fichier a creer : src/app/app/patient/bienvenue/AssistantPremiereUtilisation.test.tsx. Aucun
   fichier de production touche si le test confirme que ca marche (deja corrige) ; sinon, corrige et
   documente la cause exacte comme demande.
+
+### Prise de projet-gouv-8c, F-AUTH-06 (RG-AUTH-53, fenetre de re-authentification de 5 minutes), 2026-09-28
+
+- Assigne par 89, avec une decision explicitement laissee a mon jugement : factoriser un module
+  partage `identity/reauthentification.ts`, ou documenter que c'est trop risque de toucher aux 2
+  flux deja livres et testes ce soir (prescription/reauthentification.ts pour F-PRE-04,
+  patient/jeton-export-donnees.ts pour F-CIT-13).
+- Verifie le code existant avant de decider : les deux flux ont bien chacun DEJA une fenetre de
+  grace de 5 minutes, mais completement cloisonnee a leur propre type d'acte (deux Map/compteurs
+  distincts) ; et surtout, AUCUN des deux ne verifie de code MFA meme quand la MFA est active sur
+  le compte, alors que le pack dit explicitement "mot de passe (+ code MFA si actif)". C'est ca le
+  vrai manque, pas seulement l'absence de fenetre (deja la dans les deux, en silo).
+- Decision : je factorise. Rester a 2 implementations cloisonnees ne fermerait pas RG-AUTH-53 (le
+  texte du pack dit bien "les actes sensibles SUIVANTS", pas "le meme acte a nouveau") et laisserait
+  le vrai trou (MFA jamais verifiee) ouvert des deux cotes. Risque juge maitrisable ce soir : git
+  status verifie propre sur identity/, prescription/actions.ts et patient/droits-donnees.ts avant de
+  commencer (aucune autre session dessus a l'instant), changements mecaniques et bien delimites
+  (import different + un champ optionnel en plus), suites de tests existantes des deux flux
+  entierement reprises plutot que recrees.
+- Perimetre retenu, strictement les 2 flux nommes par 89 :
+  - Nouveau module pur `identity/reauthentification.ts` : reprend integralement la mecanique de
+    l'ancien `prescription/reauthentification.ts` (fenetre de grace 5 min par utilisateur, blocage a
+    3 echecs avec deconnexion a la charge de l'appelant) mais desormais globale (un seul
+    utilisateur, tous actes sensibles confondus, plus de cloisonnement par type d'acte) ; ajoute
+    `motDePasseEtCodeMfaValides(userId, motDePasse, codeMfa)` qui verifie le mot de passe puis, SI
+    ET SEULEMENT SI `mfaActif` sur ce compte, un second facteur (TOTP ou code de secours) via
+    `verifierSecondFacteur` deja existant dans `identity/mfa-totp.ts` (aucune duplication de la
+    logique TOTP).
+  - `prescription/actions.ts` (F-PRE-04) migre vers ce module ; ajoute un champ `codeMfa` optionnel
+    au schema de signature, et `mfaActif` au type de retour deja utilise pour afficher/masquer le
+    champ mot de passe, pour que l'ecran sache s'il doit aussi demander le code.
+  - `patient/droits-donnees.ts`, `verifierMotDePasseExportAction` (F-CIT-13) migre de meme ; ce
+    flux n'avait *aucune* fenetre de grace du tout jusqu'ici (toujours un nouveau mot de passe a
+    chaque visite de l'ecran) : il en gagne une ce soir, partagee avec la prescription (signer une
+    ordonnance puis aller exporter ses donnees dans les 5 minutes qui suivent ne redemandera plus
+    rien).
+  - Ecrans mis a jour en consequence : `FormulairePrescription.tsx`, `RenouvellementPrescription.tsx`,
+    `nouvelle/page.tsx`, `GestionDroitsDonnees.tsx`, `app/patient/droits/page.tsx` (champ code MFA
+    conditionnel, meme patron que le champ mot de passe conditionnel deja existant cote
+    prescription).
+- Explicitement laisse de cote, hors perimetre annonce par 89 : `fermerMonCompteAction` (fermeture
+  de compte, meme fichier droits-donnees.ts) reste a mot de passe seul, demande a chaque fois sans
+  fenetre de grace ; c'est un acte a usage unique et irreversible, pas un acte repete, la fenetre de
+  grace n'a pas de sens la et 89 ne l'a pas nomme. `audit/jeton-export-audit.ts` (F-AUD-01, mon propre
+  chantier de ce soir) est une 3e implementation independante du meme patron, avec le meme manque
+  (pas de fenetre de grace du tout) : 89 ne la connaissait pas en assignant cette fiche (livree apres
+  son message), je la laisse aussi de cote ce soir pour ne pas elargir le perimetre annonce ; bonne
+  candidate a une migration future vers ce meme module partage, notee ici pour ne pas la perdre.
+- Fichiers cibles : nouveau `identity/{reauthentification.ts, reauthentification.test.ts}` ;
+  suppression de `prescription/{reauthentification.ts, reauthentification.test.ts}` (repris dans le
+  module partage) ; `prescription/{actions.ts, actions.test.ts, composition-ordonnance.test.ts}` ;
+  `patient/{droits-donnees.ts, droits-donnees.export.test.ts}` ; les 5 fichiers d'ecran cites plus
+  haut.
+
+### Livraison projet-gouv-8c, F-AUTH-06 (RG-AUTH-53, fenetre de re-authentification partagee), 2026-09-28
+
+- Livre exactement le perimetre annonce dans ma note de prise ci-dessus. Nouveau module
+  `identity/reauthentification.ts` : fenetre de grace de 5 minutes desormais globale par
+  utilisateur (plus de cloisonnement par type d'acte), meme mecanique de blocage a 3 echecs
+  qu'avant (`enregistrerReauthentificationReussie`, `reauthentificationBloquee`,
+  `enregistrerEchecReauthentification`, inchangees dans leur comportement, juste deplacees) ; nouvelle
+  fonction `motDePasseEtCodeMfaValides(userId, motDePasse, codeMfa)` qui verifie le mot de passe puis,
+  UNIQUEMENT si `mfaActif`, un second facteur via `verifierSecondFacteur` deja existant dans
+  `identity/mfa-totp.ts` (zero duplication de logique TOTP).
+- `prescription/actions.ts` (F-PRE-04) migre : `bcrypt` n'y est plus importe du tout (seul usage
+  supprime), les deux blocs de re-authentification quasi identiques (signature, renouvellement)
+  factorises dans une fonction locale `verifierReauthentificationSignature` (journalisation et
+  deconnexion au 3e echec communes), schema et ecrans (`FormulairePrescription.tsx`,
+  `RenouvellementPrescription.tsx`, `nouvelle/page.tsx`) enrichis d'un champ `codeMfaSignature`
+  optionnel, affiche seulement si `mfaActif` (nouveau champ expose par `getConsultationPourPrescription`,
+  une requete `prisma.user.findUnique` de plus, deja necessaire puisque rien n'exposait `mfaActif`
+  avant ce soir a cet endroit).
+- `patient/droits-donnees.ts` (F-CIT-13), `verifierMotDePasseExportAction` migre : ce flux n'avait
+  AUCUNE fenetre de grace avant ce soir (mot de passe redemande a chaque visite de l'ecran, meme
+  juste apres avoir signe une ordonnance) ; il en gagne une, partagee avec la prescription. Nouvelle
+  fonction `getStatutReauthentificationExport()` pour que l'ecran sache, avant meme la premiere
+  soumission, s'il doit encore demander quelque chose (`app/patient/droits/page.tsx` -> `GestionDroitsDonnees.tsx`
+  -> `SectionExportDonnees`). Le compteur d'echecs LOCAL de ce flux (5 par heure, sans deconnexion) est
+  volontairement reste separe de celui de la prescription (3 echecs + deconnexion) : ce n'est pas ce
+  que 89 a demande d'unifier, et durcir cette regle aurait ete un changement de comportement non
+  demande sur un acte different.
+- Explicitement non touche, comme annonce : `fermerMonCompteAction` (mot de passe seul, a chaque fois,
+  acte irreversible non repete) ; `audit/jeton-export-audit.ts` (F-AUD-01, 3e implementation du meme
+  patron, laissee de cote ce soir, bonne candidate a une migration future).
+- Bug d'isolement de tests trouve et corrige au passage : le Map de la fenetre de grace est un
+  singleton du module (comme avant, dans l'ancien fichier), donc un succes enregistre dans un test
+  fuitait vers les tests suivants du meme fichier des que plusieurs tests reutilisaient le meme userId
+  sans avancer l'horloge factice (`droits-donnees.export.test.ts`). Ajoute `viderReauthentifications()`
+  (meme convention que `viderCompteursDebit` dans `lib/limite-debit.ts`), appelee dans son `beforeEach`.
+- Tests : 17 dans le nouveau `identity/reauthentification.test.ts` (reprend integralement les 10
+  tests de l'ancien fichier prescription, renomme RG-AUTH-53, plus 7 nouveaux sur
+  `motDePasseEtCodeMfaValides`) ; 4 nouveaux dans `droits-donnees.export.test.ts` (fenetre partagee,
+  MFA obligatoire/incorrecte/correcte) ; les 19 tests existants de `composition-ordonnance.test.ts`
+  et les 8 existants de `droits-donnees.export.test.ts` continuent de passer sans modification de
+  leur intention (juste le chemin d'import et un `mfaActif: false` explicite dans leurs fixtures).
+- Verifie : `tsc --noEmit` 0 erreur sur mes fichiers (une seule erreur ailleurs dans le depot,
+  `app/etablissement/page.tsx`, confirmee non liee : fichier modifie par une autre session au moment
+  meme de la verification, `git status` a l'appui) ; `eslint` sur les 11 fichiers touches, 0 probleme ;
+  `vitest run` cible (`identity/reauthentification.test.ts`, `composition-ordonnance.test.ts`,
+  `droits-donnees.export.test.ts`, `service-guard.test.ts`, `tirets-interdits.test.ts`) : 50/50 puis,
+  elargi a tout `identity/prescription/patient` + securite, 615/627 avec les 12 seuls echecs dans
+  `gestion-comptes.identite.test.ts`/`gestion-comptes.invitation.test.ts`, confirmes non lies
+  (`gestion-comptes.ts` modifie par une autre session au moment meme du test, `git status` a l'appui,
+  fichier que je n'ai jamais touche). Verification en direct : `/app/medecin/prescriptions/nouvelle`
+  et `/app/patient/droits` repondent 307 (redirection connexion, pas de 500). La suite complete du
+  depot (`vitest run` sans filtre) etait toujours en cours sans sortie apres plusieurs minutes au
+  moment de cette livraison (machine visiblement chargee, plusieurs process node de plus d'1 Go
+  chacun) : non bloquant compte tenu de la verification ciblee deja complete, mais je le signale au
+  cas ou quelqu'un observerait la meme lenteur ce soir.
+- Je ne committe rien moi-meme. Fichiers prets pour revue/commit : nouveau `identity/{reauthentification.ts,
+  reauthentification.test.ts}` ; suppression de `prescription/{reauthentification.ts,
+  reauthentification.test.ts}` ; `prescription/{actions.ts, composition-ordonnance.test.ts}` ;
+  `patient/{droits-donnees.ts, droits-donnees.export.test.ts}` ; `app/app/medecin/prescriptions/nouvelle/
+  {FormulairePrescription.tsx, RenouvellementPrescription.tsx, page.tsx}` ; `app/app/patient/droits/
+  {GestionDroitsDonnees.tsx, page.tsx}` ; `docs/reste-a-faire.md`.
+- Ma file est de nouveau vide.
+
+### Livraison agents lances par 89 (CEO), F-LAB-04/F-PIL-06/F-PIL-05, 2026-09-28
+
+- A la demande de l'utilisateur ("lance plusieurs agent IA sur les taches partiel"), 89 a lance 3
+  agents en parallele via l'outil Agent, chacun dans un worktree isole (aucune interference avec le
+  depot partage pendant leur execution), sur 3 fiches P1 non revendiquees. Les 3 ont termine, verifie
+  chacun contre le code reel avant de coder, et remis leur travail sans committer. 89 a copie/applique
+  chaque lot dans le depot principal, verifie (tsc/eslint/vitest cible) et committe.
+- **F-LAB-04** (validation de resultat) : deux des trois manques du backlog etaient perimes
+  (correction en nouvelle version RG-ROL-31 et anteriorites deja livrees par un lot anterieur).
+  Reellement ajoute : ecran dedie `/app/medecin/laboratoire/validation`, code `LAB_SELF_VALIDATION`
+  pour l'auto-validation (CA-1). 8 tests ajoutes, aucune migration.
+- **F-PIL-06** (alertes epidemiologiques) : bug reel confirme et corrige, la detection ne pouvait
+  jamais se declencher (filtre sur un champ jamais ecrit par les agregats, deja retire d'un cote mais
+  la detection tournait encore a l'ouverture d'une page, ecriture pendant une lecture). Deplacee en
+  tache planifiee horaire (meme patron que F-AUD-03), 3 defauts reels corriges au passage
+  (etablissements sans zone ignores en silence, seuil gonfle par les semaines sans cas, semaines
+  calculees en heure locale au lieu d'UTC). 18 tests ajoutes.
+- **F-PIL-05** (exports pilotage) : le backlog etait en partie perime (les routes csv/pdf exigeaient
+  deja un jeton de re-authentification). La vraie faille restante, `exporterRepartitionCSV` (onglet
+  Indicateurs nationaux), n'avait aucune protection : desormais jeton, motif, mot de passe, masquage
+  des petits effectifs (RG-PIL-02/41) et journalisation. Tests de non-interchangeabilite avec les
+  jetons F-CIT-13 et F-AUD-01 ajoutes.
+- Verifie ensemble apres integration : tsc 0 (hors une erreur confirmee dans le chantier actif de
+  c0/F-ETA-04, non liee), eslint 0 erreur sur les 3 lots, vitest 1190/1190 sur laboratoire + pilotage
+  + analytics, tirets 0. Aucune regression trouvee dans les lignes du backlog deja modifiees ce soir
+  (verifie explicitement avant chaque edition, en relisant depuis HEAD).

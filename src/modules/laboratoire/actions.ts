@@ -88,7 +88,18 @@ export interface ResultatParametre {
 export interface LaboratoireActionState {
   error: string | null;
   success: boolean;
+  /**
+   * Code d'erreur stable, lisible par un client ou un test sans dependre du
+   * libelle. CA-1 de F-LAB-04 du pack : l'auto-validation d'un resultat est
+   * refusee avec le code LAB_SELF_VALIDATION (equivalent, pour une Server
+   * Action, du 403 dedie decrit par le pack pour une API REST). Absent sur
+   * un succes et sur toute autre erreur.
+   */
+  code?: CodeErreurLaboratoire;
 }
+
+/** Codes d'erreur stables des actions du laboratoire (voir LaboratoireActionState.code). */
+export type CodeErreurLaboratoire = "LAB_SELF_VALIDATION";
 
 /** Etablissement de type laboratoire, tel que propose dans un selecteur de demande d'examen. */
 export interface LaboratoireOption {
@@ -1641,6 +1652,7 @@ export async function validerResultatExamenAction(
           error:
             "Vous ne pouvez pas valider un resultat que vous avez vous-meme saisi. Un autre professionnel du laboratoire doit le valider.",
           examen: null,
+          code: "LAB_SELF_VALIDATION" as const,
         };
       }
 
@@ -1677,7 +1689,11 @@ export async function validerResultatExamenAction(
     });
 
     if (resultatTransaction.error || !resultatTransaction.examen) {
-      return { error: resultatTransaction.error ?? "Validation impossible.", success: false };
+      return {
+        error: resultatTransaction.error ?? "Validation impossible.",
+        success: false,
+        ...("code" in resultatTransaction ? { code: resultatTransaction.code } : {}),
+      };
     }
 
     // Notification interne (Phase 10, F-LAB-05 deja implemente ailleurs, non

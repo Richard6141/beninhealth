@@ -105,4 +105,22 @@ describe("validerResultatExamenAction : notification du patient (RG-LAB-41)", ()
     expect(p.examenMedical.update).not.toHaveBeenCalled();
     expect(creerNotificationMock).not.toHaveBeenCalled();
   });
+
+  it("CA-1 : l'auto-validation est refusee avec le code stable LAB_SELF_VALIDATION", async () => {
+    p.examenMedical.findUnique.mockResolvedValue({ ...examenEnAttenteDeValidation(false), saisiParId: "prof-validation" });
+
+    const resultat = await validerResultatExamenAction(etatInitial, formulaire());
+
+    expect(resultat.code).toBe("LAB_SELF_VALIDATION");
+  });
+
+  it("une autre erreur (resultat pas en attente) ne porte pas le code LAB_SELF_VALIDATION", async () => {
+    p.examenMedical.findUnique.mockResolvedValue({ ...examenEnAttenteDeValidation(false), statut: "termine" });
+
+    const resultat = await validerResultatExamenAction(etatInitial, formulaire());
+
+    expect(resultat.success).toBe(false);
+    expect(resultat.code).toBeUndefined();
+    expect(p.examenMedical.update).not.toHaveBeenCalled();
+  });
 });
