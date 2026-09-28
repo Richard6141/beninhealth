@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Upload } from "lucide-react";
 import { getEtablissementsAdmin, getReferentielTerritoire } from "@/modules/administration/etablissements";
 import { EtatVide } from "@/components/ui/EtatVide";
 import { CreationEtablissementModal } from "../CreationEtablissementModal";
@@ -8,8 +8,10 @@ import { SectionEtablissementsAdmin } from "./SectionEtablissementsAdmin";
 /**
  * Ecran "Gérer le référentiel des établissements" (F-ADM-02 du pack),
  * réservé au ministère (admin_national) : voir
- * src/modules/administration/etablissements.ts pour le détail du périmètre
- * (pas d'import CSV, pas de contrôle de contenance géographique).
+ * src/modules/administration/etablissements.ts pour le détail du périmètre.
+ * Import CSV en masse (corrigé le 2026-09-28, affirmation périmée ci-dessus
+ * retirée) : voir import-etablissements{-regles,}.ts et l'écran
+ * /app/ministere/etablissements/import.
  */
 export default async function EtablissementsAdminPage() {
   const [etablissements, departements] = await Promise.all([
@@ -37,7 +39,16 @@ export default async function EtablissementsAdminPage() {
             ses données cliniques : il n&apos;est jamais supprimé.
           </p>
         </div>
-        <CreationEtablissementModal />
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href="/app/ministere/etablissements/import"
+            className="inline-flex items-center gap-1.5 rounded-champ border border-bordure-forte bg-surface px-3 py-2 text-[13px] font-semibold text-encre transition-colors motion-reduce:transition-none hover:bg-surface-appui"
+          >
+            <Upload size={14} aria-hidden="true" />
+            Importer un CSV
+          </Link>
+          <CreationEtablissementModal />
+        </div>
       </header>
 
       {etablissements.length === 0 ? (
