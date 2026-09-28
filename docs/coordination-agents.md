@@ -5309,3 +5309,12 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   c0/F-ETA-04, non liee), eslint 0 erreur sur les 3 lots, vitest 1190/1190 sur laboratoire + pilotage
   + analytics, tirets 0. Aucune regression trouvee dans les lignes du backlog deja modifiees ce soir
   (verifie explicitement avant chaque edition, en relisant depuis HEAD).
+- **F-CIT-02** (tableau de bord citoyen) : lot livre par un agent lance par 89 (worktree isole),
+  verifie et integre. Selecteur de personne dans l'en-tete (soi-meme ou une personne a charge deja
+  autorisee, F-CIT-07), tableau de bord dedie par personne a charge (memes sections et droits deja
+  verifies par `proches/actions.ts`, aucune nouvelle regle d'acces), lien "Itineraire" sur chaque
+  rendez-vous a venir vers la carte du fournisseur choisi par le patient (coordonnees deja portees
+  par l'etablissement, aucune requete supplementaire). Passe le statut de PARTIEL a FAIT (ecart
+  mineur, RG-CIT-12 jamais mesure). Verifie : tsc 0 sur les fichiers du lot (l'unique erreur du depot
+  est dans le chantier actif de c0/F-ETA-04, non liee, non touchee par ce lot), eslint 0 erreur sur
+  les 13 fichiers, vitest 316/316 (facility + patient + proches), tirets 0.

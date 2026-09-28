@@ -108,6 +108,9 @@ export interface RendezVousProcheResume {
   motif: string;
   statut: string;
   etablissementNom: string;
+  /** F-CIT-02 : coordonnees GPS publiques de l'etablissement, pour le lien "Itineraire" (facility/itineraire.ts). */
+  etablissementLatitude: number | null;
+  etablissementLongitude: number | null;
   professionnelNomComplet: string | null;
 }
 
@@ -452,6 +455,9 @@ export async function getRendezVousDuProche(procheId: string): Promise<RendezVou
     motif: rdv.motif,
     statut: rdv.statut,
     etablissementNom: rdv.etablissement.nom,
+    // Etablissement deja charge en entier par l'include ci-dessus : aucune requete de plus.
+    etablissementLatitude: rdv.etablissement.latitude ?? null,
+    etablissementLongitude: rdv.etablissement.longitude ?? null,
     professionnelNomComplet: rdv.professionnel
       ? `Dr. ${rdv.professionnel.user.prenom} ${rdv.professionnel.user.nom}`
       : null,

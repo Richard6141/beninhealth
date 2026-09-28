@@ -8,11 +8,12 @@
  * transfert, prescription, laboratoire, document), chacune deja Zero Trust
  * (derivee de getSession(), jamais d'id en parametre). Pas de nouveau modele.
  *
- * Perimetre reduit assume : le pack impose aussi un selecteur de personne
- * (moi / personnes a charge) permanent dans l'en-tete de tout l'espace
- * citoyen (F-CIT-08). Deja documente comme hors perimetre dans
- * src/modules/proches/actions.ts (un ecran dedie /app/patient/proches/[id]
- * plutot qu'une bascule globale) : ce module ne le reintroduit pas.
+ * Selecteur de personne (moi / personnes a charge) : ajoute le 2026-09-28 sur
+ * le seul tableau de bord (/app/patient?personne=<id>), pas dans ce module.
+ * Les regles pures (lecture du parametre, onglets, rendez-vous a venir) sont
+ * dans tableau-de-bord-regles.ts ; l'acces reste verifie par
+ * proches/actions.ts. La bascule globale de TOUT l'espace citoyen avec
+ * bandeau permanent (F-CIT-08 complet, RG-CIT-70) reste hors perimetre.
  */
 
 import { getSession } from "@/lib/session";

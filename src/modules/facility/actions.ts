@@ -74,6 +74,13 @@ export interface RendezVousResume {
   etablissementNom: string;
   /** Pour l'invitation a appeler l'etablissement apres le delai d'annulation (RG-RDV-10). */
   etablissementTelephone: string | null;
+  /**
+   * F-CIT-02 : coordonnees GPS de l'etablissement (deja publiques dans
+   * l'annuaire, F-ETA-02), pour le lien "Itineraire" du tableau de bord
+   * citoyen (voir facility/itineraire.ts). Null si absentes.
+   */
+  etablissementLatitude: number | null;
+  etablissementLongitude: number | null;
   professionnelNomComplet: string | null;
   professionnelSpecialite: string | null;
   professionnelAvatarUrl: string | null;
@@ -645,7 +652,11 @@ interface RendezVousCharge {
   motifRefus: string | null;
   nombreDeplacements: number;
   heureArrivee: Date | null;
-  etablissement: { nom: string; telephoneEtablissement: string | null };
+  // latitude/longitude optionnelles dans ce type : tous les appelants chargent
+  // deja l'etablissement complet (include: { etablissement: true }), aucune
+  // requete supplementaire ; optionnelles pour ne pas imposer ces champs aux
+  // objets simules des tests existants.
+  etablissement: { nom: string; telephoneEtablissement: string | null; latitude?: number | null; longitude?: number | null };
   professionnel: { specialite: string; user: { nom: string; prenom: string; avatarUrl: string | null } } | null;
 }
 
@@ -660,6 +671,8 @@ function versResume(
     statut: rdv.statut,
     etablissementNom: rdv.etablissement.nom,
     etablissementTelephone: rdv.etablissement.telephoneEtablissement,
+    etablissementLatitude: rdv.etablissement.latitude ?? null,
+    etablissementLongitude: rdv.etablissement.longitude ?? null,
     professionnelNomComplet: rdv.professionnel ? nomCompletProfessionnel(rdv.professionnel.user) : null,
     professionnelSpecialite: rdv.professionnel?.specialite ?? null,
     professionnelAvatarUrl: rdv.professionnel?.user.avatarUrl ?? null,

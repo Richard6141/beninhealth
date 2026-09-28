@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -27,7 +28,13 @@ import {
   getMonDossierPatient,
   type DossierPatientResume,
 } from "@/modules/patient/actions";
-import { getMesRendezVous, type RendezVousResume } from "@/modules/facility/actions";
+import { getMesRendezVous } from "@/modules/facility/actions";
+import { getMesProches, getProcheParId, getRendezVousDuProche } from "@/modules/proches/actions";
+import {
+  lirePersonneDemandee,
+  ongletsPersonnes,
+  rendezVousAVenir,
+} from "@/modules/patient/tableau-de-bord-regles";
 import {
   getMesPrescriptions,
   type PrescriptionResume,
@@ -43,6 +50,9 @@ import {
 } from "@/modules/patient/tableau-de-bord";
 import { estPrescriptionEnCours } from "./prescriptions/lib";
 import { IndicateurConnexion } from "./IndicateurConnexion";
+import { LienItineraire } from "./LienItineraire";
+import { SelecteurPersonne } from "./SelecteurPersonne";
+import { TableauDeBordProche } from "./TableauDeBordProche";
 import { cn } from "@/lib/cn";
 import { Alert } from "@/components/ui/Alert";
 import { Badge } from "@/components/ui/Badge";
@@ -135,23 +145,6 @@ function libelleStatutExamen(statut: string): { texte: string; tone: BadgeTone }
   if (cle === "termine") return { texte: "Terminé", tone: "good" };
   if (cle === "annule") return { texte: "Annulé", tone: "critical" };
   return { texte: statut, tone: "neutral" };
-}
-
-/**
- * Rendez-vous "à venir" pour le tableau de bord : statut demande ou
- * confirme, dont la date n'est pas déjà passée. getMesRendezVous() renvoie
- * déjà les rendez-vous triés par date croissante ; le tri est refait ici par
- * prudence, sans hypothèse sur l'ordre reçu.
- */
-function rendezVousAVenir(rendezVous: RendezVousResume[]): RendezVousResume[] {
-  const maintenant = Date.now();
-  return rendezVous
-    .filter(
-      (rdv) =>
-        (rdv.statut === "demande" || rdv.statut === "confirme") &&
-        new Date(rdv.date).getTime() >= maintenant
-    )
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 }
 
 /**
@@ -380,30 +373,86 @@ function TitreSection({
   );
 }
 
-export default async function PatientPage() {
-  const genereLe = new Date().toISOString();
+interface PatientPageProps {
+  searchParams: Promise<{ personne?: string | string[] }>;
+}
 
-  const [profil, dossier, consentements, rendezVous, prescriptions, examens, qrCode] = await Promise.all([
+/**
+ * Tableau de bord d'une personne a charge (selecteur de personne, F-CIT-02).
+ * Aucune nouvelle regle d'acces : getProcheParId et getRendezVousDuProche
+ * (proches/actions.ts) reverifient chacune la tutelle (Consentement actif du
+ * citoyen connecte sur un patient "sans_compte"). Lancees en parallele : si la
+ * tutelle n'est pas verifiee, les deux renvoient null / [] sans rien exposer,
+ * et la page repond "introuvable" comme /app/patient/proches/[id].
+ */
+async function PageProche({ procheId, genereLe }: { procheId: string; genereLe: string }) {
+  const [proches, proche, rendezVous] = await Promise.all([
+    getMesProches(),
+    getProcheParId(procheId),
+    getRendezVousDuProche(procheId),
+  ]);
+
+  if (!proche) {
+    notFound();
+  }
+
+  return (
+    <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 px-4 py-8 sm:px-6 lg:px-8">
+      <IndicateurConnexion genereLe={genereLe} />
+      <SelecteurPersonne onglets={ongletsPersonnes(proches, proche.id)} />
+      <TableauDeBordProche proche={proche} rendezVous={rendezVous} />
+    </div>
+  );
+}
+
+export default async function PatientPage({ searchParams }: PatientPageProps) {
+  const genereLe = new Date().toISOString();
+  const procheDemande = lirePersonneDemandee((await searchParams).personne);
+
+  if (procheDemande) {
+    return <PageProche procheId={procheDemande} genereLe={genereLe} />;
+  }
+
+  // RG-CIT-12 (chargement rapide) : une seule vague de lectures paralleles.
+  // Auparavant, alertes et derniers documents attendaient la fin de TOUTES
+  // les lectures ci-dessous avant de partir, alors que seules les alertes
+  // dependent d'une d'entre elles (le dossier, pour "profil incomplet") : elles
+  // sont desormais enchainees sur le seul dossier, et les derniers documents
+  // partent immediatement. Meme resultat, chemin critique plus court.
+  const dossierPromesse = getMonDossierPatient();
+  const [
+    profil,
+    dossier,
+    consentements,
+    rendezVous,
+    prescriptions,
+    examens,
+    qrCode,
+    proches,
+    alertesImportantes,
+    derniersDocuments,
+  ] = await Promise.all([
     getMonProfil(),
-    getMonDossierPatient(),
+    dossierPromesse,
     getMesConsentements(),
     getMesRendezVous(),
     getMesPrescriptions(),
     getMesExamens(),
     getMonQrCode(),
+    getMesProches(),
+    // F-CIT-02 : composees a part (src/modules/patient/tableau-de-bord.ts) ;
+    // "profil incomplet" calcule depuis le dossier deja lu (pas de deuxieme
+    // lecture), avec exactement la meme regle que la carte de completude.
+    dossierPromesse.then((dossierLu) =>
+      getAlertesImportantes(dossierLu ? champsManquants(dossierLu).length > 0 : false)
+    ),
+    getDerniersDocuments(),
   ]);
 
   const consentementsActifs = consentements.filter((c) => c.statutEffectif === "actif");
   const completude = dossier ? calculerCompletudeDossier(dossier) : null;
   const manquants = dossier ? champsManquants(dossier) : [];
-
-  // F-CIT-02 : composees a part (src/modules/patient/tableau-de-bord.ts), a
-  // partir de completude/manquants qui viennent d'etre calcules ci-dessus
-  // (evite une deuxieme lecture du dossier pour "profil incomplet").
-  const [alertesImportantes, derniersDocuments] = await Promise.all([
-    getAlertesImportantes(manquants.length > 0),
-    getDerniersDocuments(),
-  ]);
+  const onglets = ongletsPersonnes(proches, null);
   const rendezVousFuturs = rendezVousAVenir(rendezVous);
   const prochainsRendezVous = rendezVousFuturs.slice(0, 2);
   const prescriptionsActives = prescriptionsEnCours(prescriptions);
@@ -417,6 +466,7 @@ export default async function PatientPage() {
   return (
     <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 px-4 py-8 sm:px-6 lg:px-8">
       <IndicateurConnexion genereLe={genereLe} />
+      <SelecteurPersonne onglets={onglets} />
 
       <header className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-col gap-2">
@@ -750,7 +800,7 @@ export default async function PatientPage() {
                     {prochainsRendezVous.map((rdv) => {
                       const estConfirme = rdv.statut === "confirme";
                       return (
-                        <li key={rdv.id}>
+                        <li key={rdv.id} className="flex flex-col">
                           <Link
                             href="/app/patient/rendez-vous"
                             className="flex items-center gap-2.5 rounded-champ px-1.5 py-2.5 transition-colors hover:bg-plan"
@@ -768,13 +818,21 @@ export default async function PatientPage() {
                                 {rdv.motif}
                               </span>
                               <span className="truncate text-[12.5px] text-encre-attenuee">
-                                {formaterDateCourte(rdv.date)} · {formaterHeure(rdv.date)}
+                                {formaterDateCourte(rdv.date)} · {formaterHeure(rdv.date)} · {rdv.etablissementNom}
                               </span>
                             </div>
                             <Badge tone={estConfirme ? "good" : "info"} className="shrink-0">
                               {estConfirme ? "Confirmé" : "Demande"}
                             </Badge>
                           </Link>
+                          {/* Hors du <Link> ci-dessus : un lien ne peut pas en contenir un autre. */}
+                          <div className="pb-1 pl-[26px]">
+                            <LienItineraire
+                              latitude={rdv.etablissementLatitude}
+                              longitude={rdv.etablissementLongitude}
+                              etablissementNom={rdv.etablissementNom}
+                            />
+                          </div>
                         </li>
                       );
                     })}

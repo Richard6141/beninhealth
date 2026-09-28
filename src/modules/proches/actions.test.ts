@@ -316,7 +316,7 @@ describe("getRendezVousDuProche", () => {
         date: new Date("2026-10-01T09:00:00Z"),
         motif: "Vaccin",
         statut: "demande",
-        etablissement: { nom: "CS Akpakpa" },
+        etablissement: { nom: "CS Akpakpa", latitude: 6.37, longitude: 2.44 },
         professionnel: { user: { prenom: "Koffi", nom: "Ahouansou" } },
       },
     ]);
@@ -324,9 +324,35 @@ describe("getRendezVousDuProche", () => {
     const liste = await getRendezVousDuProche("pat-enfant");
 
     expect(liste).toEqual([
-      { id: "rdv-1", date: "2026-10-01T09:00:00.000Z", motif: "Vaccin", statut: "demande", etablissementNom: "CS Akpakpa", professionnelNomComplet: "Dr. Koffi Ahouansou" },
+      {
+        id: "rdv-1",
+        date: "2026-10-01T09:00:00.000Z",
+        motif: "Vaccin",
+        statut: "demande",
+        etablissementNom: "CS Akpakpa",
+        etablissementLatitude: 6.37,
+        etablissementLongitude: 2.44,
+        professionnelNomComplet: "Dr. Koffi Ahouansou",
+      },
     ]);
     expect(prismaMock.rendezVous.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { patientId: "pat-enfant" } }));
+  });
+
+  it("renvoie des coordonnees nulles (donc aucun lien d'itineraire) quand l'etablissement n'en a pas (F-CIT-02)", async () => {
+    prismaMock.rendezVous.findMany.mockResolvedValue([
+      {
+        id: "rdv-2",
+        date: new Date("2026-10-02T09:00:00Z"),
+        motif: "Controle",
+        statut: "confirme",
+        etablissement: { nom: "CS Cotonou" },
+        professionnel: null,
+      },
+    ]);
+
+    const [rdv] = await getRendezVousDuProche("pat-enfant");
+
+    expect(rdv).toMatchObject({ etablissementLatitude: null, etablissementLongitude: null, professionnelNomComplet: null });
   });
 });
 
