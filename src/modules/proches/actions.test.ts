@@ -22,7 +22,7 @@ vi.mock("@/modules/facility/regles-reservation", () => ({ verifierReglesReservat
 vi.mock("@/lib/prisma", () => {
   const prisma = {
     consentement: { findUnique: vi.fn(), findMany: vi.fn(), count: vi.fn(), create: vi.fn(), update: vi.fn() },
-    patient: { findUnique: vi.fn(), count: vi.fn() },
+    patient: { findUnique: vi.fn(), count: vi.fn(), findMany: vi.fn() },
     user: { create: vi.fn() },
     etablissementSanitaire: { findUnique: vi.fn() },
     professionnelSante: { findUnique: vi.fn() },
@@ -51,7 +51,7 @@ import {
 
 const prismaMock = prisma as unknown as {
   consentement: { findUnique: Mock; findMany: Mock; count: Mock; create: Mock; update: Mock };
-  patient: { findUnique: Mock; count: Mock };
+  patient: { findUnique: Mock; count: Mock; findMany: Mock };
   user: { create: Mock };
   etablissementSanitaire: { findUnique: Mock };
   professionnelSante: { findUnique: Mock };
@@ -87,6 +87,7 @@ beforeEach(() => {
   prismaMock.patient.findUnique.mockResolvedValue(PROCHE);
   prismaMock.consentement.count.mockResolvedValue(0);
   prismaMock.patient.count.mockResolvedValue(3);
+  prismaMock.patient.findMany.mockResolvedValue([]);
   prismaMock.user.create.mockResolvedValue({ patient: { id: "pat-nouveau" } });
   prismaMock.consentement.create.mockResolvedValue({});
   prismaMock.etablissementSanitaire.findUnique.mockResolvedValue({ id: "etab-1", statut: "actif" });
@@ -128,11 +129,18 @@ describe("creerPersonneAChargeAction", () => {
     expect((await cas({ dateNaissance: "2027-01-01" })).error).toContain("invalide");
   });
 
-  it("n'accepte que les mineurs : la veille des 18 ans oui, le jour des 18 ans non", async () => {
-    // Aujourd'hui : 2026-09-26. Ne le 2008-09-27 = 17 ans et 364 jours.
-    expect((await cas({ dateNaissance: "2008-09-27" })).success).toBe(true);
-    expect((await cas({ dateNaissance: "2008-09-25" })).error).toContain("majeure");
-    expect((await cas({ dateNaissance: "1990-01-01" })).error).toContain("majeure");
+  it("n'accepte que les enfants de moins de 15 ans (F-CIT-07 du pack) : la veille des 15 ans oui, le jour des 15 ans non", async () => {
+    // Aujourd'hui : 2026-09-26. Ne le 2011-09-27 = 14 ans et 364 jours.
+    expect((await cas({ dateNaissance: "2011-09-27" })).success).toBe(true);
+    expect((await cas({ dateNaissance: "2011-09-26" })).error).toContain("15 ans");
+    expect((await cas({ dateNaissance: "1990-01-01" })).error).toContain("15 ans");
+  });
+
+  it("corrige le seuil perime de 18 ans : un enfant de 16 ans est desormais refuse ici (chemin majeur/accueil), plus accepte a tort", async () => {
+    const resultat = await cas({ dateNaissance: "2010-01-01" }); // 16 ans au 2026-09-26
+    expect(resultat.success).toBe(false);
+    expect(resultat.error).toContain("15 ans");
+    expect(prismaMock.user.create).not.toHaveBeenCalled();
   });
 
   it("refuse un compte sans dossier patient", async () => {
@@ -153,6 +161,48 @@ describe("creerPersonneAChargeAction", () => {
 
     expect(prismaMock.consentement.count).toHaveBeenCalledWith({
       where: { acteurAutoriseId: "user-tuteur", statut: "actif", patient: { user: { statut: "sans_compte" } } },
+    });
+  });
+
+  it("F-CIT-07 : refuse la creation quand un dossier existant a le meme nom, prenom et date de naissance (aucun rattachement automatique)", async () => {
+    prismaMock.patient.findMany.mockResolvedValue([
+      { id: "pat-existant", user: { nom: "Adjovi", prenom: "Luc" } },
+    ]);
+
+    const resultat = await cas();
+
+    expect(resultat.success).toBe(false);
+    expect(resultat.error).toContain("existe deja");
+    expect(prismaMock.user.create).not.toHaveBeenCalled();
+    expect(prismaMock.consentement.create).not.toHaveBeenCalled();
+  });
+
+  it("la detection de doublon ignore les accents et la casse", async () => {
+    prismaMock.patient.findMany.mockResolvedValue([
+      { id: "pat-existant", user: { nom: "ADJÓVÍ", prenom: "luc" } },
+    ]);
+
+    const resultat = await cas();
+
+    expect(resultat.success).toBe(false);
+  });
+
+  it("aucun doublon detecte (nom different) : la creation reussit normalement", async () => {
+    prismaMock.patient.findMany.mockResolvedValue([
+      { id: "pat-autre", user: { nom: "Houngbo", prenom: "Marie" } },
+    ]);
+
+    const resultat = await cas();
+
+    expect(resultat.success).toBe(true);
+  });
+
+  it("cherche le doublon uniquement sur la date de naissance exacte soumise", async () => {
+    await cas();
+
+    expect(prismaMock.patient.findMany).toHaveBeenCalledWith({
+      where: { dateNaissance: new Date("2020-05-10") },
+      include: { user: true },
     });
   });
 

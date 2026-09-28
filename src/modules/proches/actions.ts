@@ -2,17 +2,25 @@
 
 /**
  * Personnes a charge (F-CIT-07/08 du pack, perimetre reduit) : un citoyen
- * peut ajouter un enfant mineur a son propre compte et gerer son dossier de
- * base en son nom (rendez-vous), sans que l'enfant ait son propre compte de
- * connexion.
+ * peut ajouter un enfant de moins de 15 ans a son propre compte et gerer son
+ * dossier de base en son nom (rendez-vous), sans que l'enfant ait son propre
+ * compte de connexion.
  *
  * Perimetre volontairement reduit par rapport au pack (limites assumees,
  * a documenter dans docs/audit-cote-patient.md) :
- * - Seul le cas "enfant mineur cree par son tuteur" est construit ici.
+ * - Seul le cas "enfant de moins de 15 ans cree par son tuteur" est construit
+ *   ici (corrige le 2026-09-28 : ce depot acceptait a tort jusqu'a 18 ans).
  *   L'etape "personne majeure qui doit accepter depuis son propre compte"
- *   et le rattachement a un dossier existant (recherche de doublon avant
- *   creation) ne sont pas construits : chaque personne a charge est
- *   toujours un nouveau dossier "sans compte".
+ *   n'est pas construite. La recherche de doublon existe (corrigee le
+ *   2026-09-28, meme comparaison normalisee que identity/actions.ts,
+ *   F-CLI-03) mais REFUSE la creation plutot que de proposer un rattachement
+ *   automatique : le pack fonde ce rattachement aussi sur "le telephone du
+ *   parent deja enregistre comme contact", mal specifie pour l'implementer
+ *   sans risque (sinon n'importe qui connaissant le nom et la date de
+ *   naissance d'un enfant pourrait s'auto-attribuer un acces
+ *   dossier_complet). Consequence assumee : le plafond de 2 tuteurs verifies
+ *   et la notification N-GUARDIAN-CONFLICT (RG-CIT-62) restent hors de
+ *   portee, puisqu'ils supposent ce rattachement.
  * - Pas de distinction DECLARED/VERIFIE (RG-CIT-60) : aucun accueil
  *   d'etablissement ne peut "verifier" une tutelle dans ce depot, donc
  *   l'acces complet (equivalent "dossier_complet") est accorde des la
@@ -68,7 +76,16 @@ import { CODES_IDENTIFIANT_PAR_ROLE, prefixeIdentifiant, prochainIdentifiant } f
 const ROUNDS_BCRYPT = 12;
 /** RG-CIT-61 (perimetre reduit : pas de notion de tuteurs multiples verifies). */
 const MAX_PERSONNES_A_CHARGE = 10;
-const AGE_MAJORITE_ANNEES = 18;
+/**
+ * F-CIT-07 du pack : "Enfant de moins de 15 ans" pour ce chemin simple.
+ * Corrige le 2026-09-28 : ce depot utilisait par erreur 18 ans (majorite
+ * legale generale, sans rapport avec ce seuil specifique du pack), acceptant
+ * a tort les 15-17 ans dans ce chemin "enfant". Un citoyen de 15 ans ou plus
+ * qu'il souhaite ajouter releve du chemin "personne majeure dont je m'occupe"
+ * (acceptation depuis son propre compte, ou declaration a l'accueil avec
+ * justificatif) : non construit dans ce depot, voir la docstring de module.
+ */
+const AGE_LIMITE_ENFANT_A_CHARGE_ANNEES = 15;
 
 const LIENS_CONNUS = ["mere", "pere", "tuteur_legal", "autre"] as const;
 
@@ -124,6 +141,15 @@ function texte(formData: FormData, cle: string): string {
   return typeof valeur === "string" ? valeur : "";
 }
 
+/** Normalisation pour comparaison de doublon (accents et casse ignores), meme fonction que identity/actions.ts (F-CLI-03), dupliquee ici : ce fichier reste isole du reste, tres partage ce soir (voir docstring de module). */
+function normaliserPourComparaison(nomOuPrenom: string): string {
+  return nomOuPrenom
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
 function premierMessageErreur(erreur: z.ZodError, messageParDefaut: string): string {
   return erreur.issues[0]?.message ?? messageParDefaut;
 }
@@ -138,9 +164,10 @@ async function adresseTechniqueCourante(): Promise<string> {
   }
 }
 
-function estMineur(dateNaissance: Date): boolean {
+/** Moins de 15 ans (F-CIT-07, "Enfant de moins de 15 ans"), pas la majorite legale de 18 ans. */
+function estEligibleEnfantACharge(dateNaissance: Date): boolean {
   const limite = new Date();
-  limite.setFullYear(limite.getFullYear() - AGE_MAJORITE_ANNEES);
+  limite.setFullYear(limite.getFullYear() - AGE_LIMITE_ENFANT_A_CHARGE_ANNEES);
   return dateNaissance > limite;
 }
 
@@ -214,10 +241,10 @@ export async function creerPersonneAChargeAction(
     return { error: "Date de naissance invalide.", success: false };
   }
 
-  if (!estMineur(dateNaissance)) {
+  if (!estEligibleEnfantACharge(dateNaissance)) {
     return {
       error:
-        "Une personne majeure doit accepter elle-meme depuis son propre compte (fonctionnalite non construite dans ce MVP) : seuls les enfants mineurs peuvent etre ajoutes ici.",
+        "Seuls les enfants de moins de 15 ans peuvent etre ajoutes ici. Pour une personne majeure dont vous vous occupez, la tutelle doit etre acceptee par la personne elle-meme depuis son propre compte, ou declaree a l'accueil d'un etablissement (fonctionnalite non construite dans ce MVP).",
       success: false,
     };
   }
@@ -241,6 +268,36 @@ export async function creerPersonneAChargeAction(
     if (nombreExistant >= MAX_PERSONNES_A_CHARGE) {
       return {
         error: `Vous avez deja atteint le maximum de ${MAX_PERSONNES_A_CHARGE} personnes a charge.`,
+        success: false,
+      };
+    }
+
+    // F-CIT-07 du pack : "Le systeme cherche un dossier existant... S'il le
+    // trouve, il propose le rattachement". Rattachement automatique NON
+    // construit ici (le pack le fonde aussi sur "le telephone du parent deja
+    // enregistre comme contact", mal specifie pour l'implementer sans risque :
+    // sans lui, n'importe qui connaissant le nom et la date de naissance d'un
+    // enfant pourrait s'auto-attribuer un acces dossier_complet a son
+    // dossier). Un doublon detecte refuse donc la creation plutot que de
+    // rattacher automatiquement ou de creer un deuxieme dossier pour le meme
+    // enfant : la resolution passe par un etablissement, comme le pack le
+    // prevoit deja pour le cas "personne majeure" (accueil + justificatif).
+    const nomNormalise = normaliserPourComparaison(nom);
+    const prenomNormalise = normaliserPourComparaison(prenom);
+    const patientsMemeNaissance = await prisma.patient.findMany({
+      where: { dateNaissance },
+      include: { user: true },
+    });
+    const doublonDetecte = patientsMemeNaissance.some(
+      (patient) =>
+        normaliserPourComparaison(patient.user.nom) === nomNormalise &&
+        normaliserPourComparaison(patient.user.prenom) === prenomNormalise
+    );
+
+    if (doublonDetecte) {
+      return {
+        error:
+          "Un dossier correspondant a ce nom et cette date de naissance existe deja. Pour vous rattacher comme tuteur, adressez-vous a l'accueil d'un etablissement de sante.",
         success: false,
       };
     }
