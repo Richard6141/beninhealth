@@ -5065,3 +5065,39 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
 - Commits : `ff43be7` (code), `7f7a925` (reste-a-faire.md).
 - Suite pour moi : je cherche la prochaine fiche P0/P1 non revendiquee, ou j'attends une
   assignation de 89.
+
+### Point projet-gouv-46 (Claude), prise F-ADM-02 (import CSV d'etablissements), 2026-09-28
+
+- Assignation recue de 89. Verifie avant de coder : etablissements-regles.ts a deja
+  verifierCoordonnees (emprise Benin), analyserServices, verifierPointDansDepartement (emprise
+  departement via GEOMETRIES_DEPARTEMENTS, pilotage/geometrie-departements.ts) et
+  verifierChangementType, toutes reutilisables telles quelles. Note : verifierPointDansDepartement
+  existe deja mais n'est CALEE nulle part aujourd'hui, meme pas dans modifierEtablissementAction
+  (le formulaire d'edition unitaire) : hors de mon perimetre de la corriger la-bas ce soir, je la
+  branche seulement pour l'import CSV comme demande.
+- EtablissementSanitaire.localisation est un champ obligatoire en base (String, jamais nullable),
+  absent a la fois du schema d'edition (schemaModificationEtablissement) et de la liste de colonnes
+  donnee par 89. Decision : derive automatiquement (adresse, sinon quartier/village, sinon le nom
+  de la commune), jamais demande explicitement dans le CSV, documente dans le code.
+- Decision de transaction (laissee a mon choix par 89, a documenter) : import PARTIEL avec rapport
+  clair, pas tout-ou-rien sur le fichier entier. Chaque ligne est validee independamment (memes
+  regles que la creation/edition unitaire) ; les lignes invalides sont exclues et listees avec leur
+  numero et leur erreur, jamais silencieusement ignorees ; SEULES les lignes valides sont ecrites,
+  dans UNE SEULE transaction atomique (tout-ou-rien pour ce sous-ensemble uniquement : si l'ecriture
+  echoue en base pour une raison imprevue, aucune des lignes valides n'est partiellement creee).
+  Raison : bloquer tout un fichier de plusieurs dizaines de lignes a cause d'une seule erreur de
+  saisie serait plus penalisant que la fiche ne le demande, et le pack lui-meme laisse ce choix
+  ouvert ("a mon choix" selon le message de 89).
+- Flux en deux etapes (previsualisation puis confirmation), jamais un import direct sur upload :
+  le rapport d'erreurs par ligne exige par 89 doit etre vu avant toute ecriture. La confirmation
+  revalide integralement le contenu du fichier cote serveur (Zero Trust, jamais confiance dans un
+  drapeau "ces lignes sont valides" transmis par le client).
+- Etablissements crees au statut "brouillon" (jamais "actif" d'emblee comme la creation unitaire
+  avec admin) : un etablissement importe en masse n'a par construction aucun admin provisionne
+  (l'import ne cree que le referentiel, jamais de compte), le laisser "actif" tromperait un citoyen
+  sur sa disponibilite reelle. Transition vers "actif" via changerStatutEtablissementAction deja
+  existante, une fois le personnel recrute.
+- Fichiers a creer : administration/{import-etablissements-regles.ts (pur, parsing CSV + validation
+  ligne par ligne), import-etablissements.ts (Server Actions)}, app/ministere/etablissements/import/
+  (ecran d'upload + rapport + confirmation). etablissements-regles.ts et etablissements.ts reutilises
+  en lecture, non modifies. Verifie non touches par un autre chantier ce soir avant de commencer.
