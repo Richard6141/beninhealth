@@ -9,6 +9,7 @@ import {
   type RechercheGuichetState,
   type RendezVousGuichetActionState,
 } from "@/modules/facility/rendez-vous-guichet";
+import { ModalNouveauPatient, type PatientCree } from "@/app/app/medecin/patients/ModalNouveauPatient";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -30,9 +31,28 @@ function EtapeRecherche({ onTrouve }: { onTrouve: (patient: { id: string; nomCom
     <Card title="1. Retrouver le patient" description="Recherche exacte uniquement (RG-ACC-40) : aucune recherche par nom.">
       <form action={formAction} aria-busy={pending} className="flex flex-col gap-4">
         {state.error ? (
-          <Alert level="critical" title="Patient introuvable">
-            {state.error}
-          </Alert>
+          <div className="flex flex-col gap-3">
+            <Alert level="critical" title="Patient introuvable">
+              {state.error}
+            </Alert>
+            {/*
+              F-RDV-06 (corrige le 2026-09-28) : ce patient n'a peut-etre
+              simplement pas encore de dossier. ModalNouveauPatient.tsx est
+              deja generique (F-CLI-03, cote medecin) : reutilisee telle
+              quelle, elle enchaine directement sur l'etape 2 (creneau) sans
+              nouvelle recherche.
+            */}
+            <ModalNouveauPatient
+              libelleBouton="Ce patient n'a pas de dossier : en créer un"
+              onPatientCree={(patient: PatientCree) =>
+                onTrouve({
+                  id: patient.patientId,
+                  nomComplet: patient.nomComplet,
+                  anneeNaissance: patient.anneeNaissance ?? new Date().getFullYear(),
+                })
+              }
+            />
+          </div>
         ) : null}
 
         <div className="flex gap-1 rounded-champ border border-bordure bg-plan p-1 w-fit">

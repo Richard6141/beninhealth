@@ -221,6 +221,10 @@ export interface CreationPatientActionState {
   patientId?: string;
   identifiantSante?: string;
   nomComplet?: string;
+  // F-RDV-06 : annee de naissance seule (pas la date complete, RG-CLI-3b),
+  // pour enchainer directement sur la prise de rendez-vous au guichet sans
+  // nouvelle recherche du patient qui vient d'etre cree.
+  anneeNaissance?: number;
   // Rempli quand un doublon probable existe et que confirmerMalgreDoublon
   // n'a pas ete transmis : le formulaire doit alors demander confirmation
   // avant de reessayer (RG-CLI-20/21 du pack).
@@ -299,10 +303,17 @@ export async function creerPatientParProfessionnelAction(
 
   // RBAC (voir src/security/permissions.ts) : la creation d'un dossier
   // patient est reservee aux roles qui peuvent aussi creer une consultation
-  // (medecin) - meme perimetre que F-CLI-03 du pack (DOCTOR, NURSE,
-  // RECEPTIONIST, CHW), reduit ici au seul role realiste de ce depot.
-  if (!session.roles.some((role) => can(role, "create", "consultation"))) {
-    return { error: "Action reservee aux medecins.", success: false };
+  // (medecin), plus admin_etablissement (accueil/guichet, F-RDV-06, corrige
+  // le 2026-09-28) - meme perimetre que F-CLI-03 du pack (DOCTOR, NURSE,
+  // RECEPTIONIST, CHW), reduit ici aux deux roles realistes de ce depot
+  // (pas de role RECEPTIONIST distinct, route vers admin_etablissement comme
+  // le reste de la serie F-RDV-04/05/06). Verification directe du role
+  // plutot qu'une nouvelle entree dans security/permissions.ts (fichier
+  // partage ce soir, meme patron que d'autres reutilisations directes de
+  // role deja faites ce soir).
+  const estAccueil = session.roles.includes("admin_etablissement");
+  if (!session.roles.some((role) => can(role, "create", "consultation")) && !estAccueil) {
+    return { error: "Action reservee aux medecins et a l'accueil de l'etablissement.", success: false };
   }
 
   // Les champs facultatifs (contact d'urgence, confirmation de doublon,
@@ -481,6 +492,7 @@ export async function creerPatientParProfessionnelAction(
       patientId: resultat.patientId,
       identifiantSante: resultat.identifiantSante,
       nomComplet: `${donnees.prenom} ${donnees.nom}`,
+      anneeNaissance: dateNaissance.getFullYear(),
     };
   } catch (erreur) {
     console.error("Erreur lors de la creation du patient par un professionnel :", erreur);

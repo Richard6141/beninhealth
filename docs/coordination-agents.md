@@ -5565,3 +5565,20 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   hors l'erreur deja confirmee sans rapport (chantier actif de c0/F-ETA-04), vitest 532/532 elargi a
   patient+clinical+document+laboratoire, migration rejouee depuis zero (`replay.sh`) : "No difference
   detected", strictement additive.
+
+### Livraison projet-gouv-d4, F-RDV-06 (guichet) livre, F-PHA-01 tranche sans code, 2026-09-28
+
+- F-PHA-01 : verifie contre le code reel (grep sur package.json et tout src/), aucune bibliotheque de
+  lecture QR/camera nulle part (seulement `qrcode` pour la GENERATION). Meme manque deja cite comme
+  absent sur au moins 3 autres fiches ce soir (F-CLI-02, F-RDV-04, F-ETA-02) : fondation transverse
+  manquante, pas un correctif ponctuel. Aucun code ecrit, tranche pour eviter qu'une prochaine session
+  ne retente la meme investigation.
+- F-RDV-06 : le manque re-differe deux fois ce soir ("toucherait identity/actions.ts, activement
+  modifie") s'est debloque, fichier libere. `creerPatientParProfessionnelAction` accepte desormais
+  `admin_etablissement` en plus de medecin (verifie que ce role a bien un `ProfessionnelSante`
+  rattache dans ce depot, sinon la garde existante l'aurait bloque silencieusement).
+  `ModalNouveauPatient.tsx` (deja generique, F-CLI-03) reutilisee telle quelle depuis l'ecran du
+  guichet : quand la recherche echoue, bouton "creer le dossier", qui enchaine directement sur le
+  choix du creneau. Passe de PARTIEL a FAIT (ecarts mineurs).
+- Verifie a l'integration par 89 : eslint 0 probleme, vitest 15/15 sur `creation-patient-doublon.test.ts`,
+  tirets 0. Aucune migration.

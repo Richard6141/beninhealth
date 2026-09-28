@@ -252,5 +252,47 @@ describe("creerPatientParProfessionnelAction : detection de doublon (RG-CLI-20)"
     expect(resultat.success).toBe(false);
     expect(p.patient.findMany).not.toHaveBeenCalled();
   });
+
+  describe("F-RDV-06 (corrige le 2026-09-28) : accueil de l'etablissement (admin_etablissement)", () => {
+    it("un admin_etablissement peut creer un dossier patient, comme un medecin", async () => {
+      getSessionMock.mockResolvedValue({ userId: "accueil-1", roles: ["admin_etablissement"], sessionId: "s-1" });
+      p.professionnelSante.findUnique.mockResolvedValue({ id: "prof-accueil", userId: "accueil-1" });
+      p.patient.findMany.mockResolvedValue([]);
+
+      const resultat = await creerPatientParProfessionnelAction(ETAT, formulaire(champsValides));
+
+      expect(resultat.success).toBe(true);
+      expect(p.user.create).toHaveBeenCalledTimes(1);
+    });
+
+    it("un admin_etablissement sans ProfessionnelSante rattache est refuse (Zero Trust, jamais suppose)", async () => {
+      getSessionMock.mockResolvedValue({ userId: "accueil-2", roles: ["admin_etablissement"], sessionId: "s-2" });
+      p.professionnelSante.findUnique.mockResolvedValue(null);
+      p.patient.findMany.mockResolvedValue([]);
+
+      const resultat = await creerPatientParProfessionnelAction(ETAT, formulaire(champsValides));
+
+      expect(resultat.success).toBe(false);
+      expect(p.user.create).not.toHaveBeenCalled();
+    });
+
+    it("un role qui n'est ni medecin ni admin_etablissement reste refuse (infirmier, pharmacien)", async () => {
+      for (const role of ["infirmier", "pharmacien"]) {
+        getSessionMock.mockResolvedValue({ userId: "u-x", roles: [role], sessionId: "s-x" });
+        const resultat = await creerPatientParProfessionnelAction(ETAT, formulaire(champsValides));
+        expect(resultat.success).toBe(false);
+      }
+      expect(p.user.create).not.toHaveBeenCalled();
+    });
+  });
+
+  it("renvoie l'annee de naissance dans l'etat de succes (F-RDV-06, pour enchainer sans nouvelle recherche)", async () => {
+    p.patient.findMany.mockResolvedValue([]);
+
+    const resultat = await creerPatientParProfessionnelAction(ETAT, formulaire(champsValides));
+
+    expect(resultat.success).toBe(true);
+    expect(resultat.anneeNaissance).toBe(1990);
+  });
 });
 

@@ -23,6 +23,9 @@ export interface PatientCree {
   patientId: string;
   identifiantSante: string;
   nomComplet: string;
+  // F-RDV-06 : facultatif, present uniquement si l'action a pu la calculer
+  // (toujours le cas en pratique, defensif si l'appelant l'omettait un jour).
+  anneeNaissance?: number;
 }
 
 export interface ModalNouveauPatientProps {
@@ -55,6 +58,7 @@ export function ModalNouveauPatient({ onPatientCree, libelleBouton }: ModalNouve
         patientId: state.patientId,
         identifiantSante: state.identifiantSante,
         nomComplet: state.nomComplet ?? "",
+        anneeNaissance: state.anneeNaissance,
       });
       modalRef.current?.close();
     }
