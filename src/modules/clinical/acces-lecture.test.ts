@@ -299,10 +299,28 @@ describe("F-CIT-10 : niveaux d'acces SUMMARY/FULL/FULL_SENSITIVE (RG-ACC-11)", (
     expect(prismaMock.examenMedical.findMany).not.toHaveBeenCalled();
   });
 
-  it("un niveau SUMMARY ouvre quand meme le resume", async () => {
+  it("un niveau SUMMARY ouvre quand meme le resume, mais sans AUCUNE consultation (CA-1, corrige le 2026-09-28)", async () => {
     prismaMock.consentement.findUnique.mockResolvedValue(consentement("dossier_complet", { niveauAcces: "SUMMARY" }));
+    prismaMock.consultation.count.mockResolvedValue(3);
 
-    expect(await getResumePatient("pat-1")).not.toBeNull();
+    const resume = await getResumePatient("pat-1");
+
+    expect(resume).not.toBeNull();
+    expect(resume?.derniersEvenements).toEqual([]);
+    expect(prismaMock.consultation.findMany).not.toHaveBeenCalled();
+    // RG-CLI-30 : le professionnel doit savoir que des elements existent
+    // mais lui sont caches, pas croire a tort a un patient sans historique.
+    expect(resume?.elementsSensiblesMasques).toBe(true);
+    expect(prismaMock.consultation.count).toHaveBeenCalledWith({ where: { patientId: "pat-1", statut: "terminee" } });
+  });
+
+  it("un niveau SUMMARY sans aucune consultation existante ne montre pas la banniere a tort", async () => {
+    prismaMock.consentement.findUnique.mockResolvedValue(consentement("dossier_complet", { niveauAcces: "SUMMARY" }));
+    prismaMock.consultation.count.mockResolvedValue(0);
+
+    const resume = await getResumePatient("pat-1");
+
+    expect(resume?.elementsSensiblesMasques).toBe(false);
   });
 
   it("un niveau FULL ouvre le resume et l'historique, mais masque les consultations et examens sensibles", async () => {

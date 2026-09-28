@@ -760,7 +760,16 @@ export async function getResumePatient(patientId: string): Promise<ResumePatient
     acces.typeAcces === "urgence" ||
     niveauAccesRestreintAuxNonSensibles(acces.niveauAcces);
 
-  const [prescriptionsActives, consultationsRecentes, elementsSensiblesMasques] = await Promise.all([
+  // CA-1 (F-CLI-04, 10-fiches-clinique.md) : "avec une base SUMMARY, la
+  // reponse de l'API ne contient AUCUNE consultation" - une exigence
+  // distincte du filtrage par sensibilite ci-dessus, qui s'applique aussi
+  // au niveau FULL (moins strict : consultations non sensibles visibles).
+  // Corrige le 2026-09-28 : jusqu'ici seul getHistoriquePatient refusait
+  // entierement l'acces pour SUMMARY, le resume affichait encore les 5
+  // dernieres consultations non sensibles, violation directe de ce CA-1.
+  const niveauSummarySeul = acces.source === "consentement" && acces.niveauAcces === "SUMMARY";
+
+  const [prescriptionsActives, consultationsRecentes, consultationsMasquees] = await Promise.all([
     prisma.prescription.findMany({
       where: { patientId, statut: { in: ["validee", "delivree_partiellement"] } },
       include: {
@@ -769,25 +778,31 @@ export async function getResumePatient(patientId: string): Promise<ResumePatient
       },
       orderBy: { date: "desc" },
     }),
-    prisma.consultation.findMany({
-      where: {
-        patientId,
-        statut: "terminee",
-        // RG-CLI-91 : un acces d'urgence ou via reference n'ouvre jamais une
-        // consultation sensible (meme filtre que getHistoriquePatient).
-        ...(accesRestreint ? { sensible: false } : {}),
-      },
-      include: { professionnel: { include: { user: true } } },
-      orderBy: { date: "desc" },
-      take: NOMBRE_DERNIERS_EVENEMENTS,
-    }),
+    niveauSummarySeul
+      ? Promise.resolve([])
+      : prisma.consultation.findMany({
+          where: {
+            patientId,
+            statut: "terminee",
+            // RG-CLI-91 : un acces d'urgence ou via reference n'ouvre jamais une
+            // consultation sensible (meme filtre que getHistoriquePatient).
+            ...(accesRestreint ? { sensible: false } : {}),
+          },
+          include: { professionnel: { include: { user: true } } },
+          orderBy: { date: "desc" },
+          take: NOMBRE_DERNIERS_EVENEMENTS,
+        }),
     // RG-CLI-30 : le resume doit dire explicitement qu'il est incomplet plutot
-    // que de laisser croire a un dossier sans historique sensible. Un simple
+    // que de laisser croire a un dossier sans historique (sensible OU,
+    // depuis ce correctif, simplement hors du niveau SUMMARY). Un simple
     // count, jamais le contenu des consultations exclues.
-    accesRestreint
-      ? prisma.consultation.count({ where: { patientId, statut: "terminee", sensible: true } })
-      : Promise.resolve(0),
+    niveauSummarySeul
+      ? prisma.consultation.count({ where: { patientId, statut: "terminee" } })
+      : accesRestreint
+        ? prisma.consultation.count({ where: { patientId, statut: "terminee", sensible: true } })
+        : Promise.resolve(0),
   ]);
+  const elementsSensiblesMasques = consultationsMasquees;
 
   const adresseTechnique = await adresseTechniqueCourante();
 

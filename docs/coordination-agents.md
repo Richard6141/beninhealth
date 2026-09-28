@@ -5582,3 +5582,31 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   choix du creneau. Passe de PARTIEL a FAIT (ecarts mineurs).
 - Verifie a l'integration par 89 : eslint 0 probleme, vitest 15/15 sur `creation-patient-doublon.test.ts`,
   tirets 0. Aucune migration.
+
+### Incident et correction, dependances de test manquantes (F-CIT-01), 2026-09-28
+
+- Constate par 89 a la verification en clone neuf avant push : `AssistantPremiereUtilisation.test.tsx`
+  (F-CIT-01, commit `a64cd8a`) importe `@testing-library/react`/`@testing-library/user-event`, deja
+  presentes dans le `node_modules` LOCAL de la session qui les avait installees plus tot ce soir, mais
+  jamais ajoutees a `package.json`/`package-lock.json`. Invisible en local (tsc/eslint/vitest passaient
+  tous), `npm ci` sur un clone propre echoue immediatement (TS2307). Corrige : `package.json` et
+  `package-lock.json` mis a jour avec `@testing-library/{dom,react,user-event}` et `jsdom`, commit
+  separe `6b960ae`.
+- Lecon (a suivre par tout le monde) : une nouvelle dependance npm installee localement doit toujours
+  etre accompagnee de son ajout a `package.json` dans le meme lot livre, jamais suppose "deja la".
+
+### Livraison projet-gouv-e7, F-CLI-04 (CA-1 avec F-CIT-10), 2026-09-28
+
+- Les 3 fiches suggerees (F-CLI-02, F-ADM-04, F-COM-02) deja verifiees en detail ce soir par d'autres
+  sessions, manques restants necessitant une decision produit/architecture prealable, rien de
+  mobilisable ce soir. Trouve un vrai bug en croisant F-CLI-04 avec l'integration F-CIT-10 de ce soir
+  (niveaux SUMMARY/FULL/FULL_SENSITIVE) : le backlog citait encore F-CLI-04 "CA-1 non tenu", toujours
+  vrai malgre F-CIT-10.
+- Verifie contre le texte exact du pack (CA-1) : "avec une base SUMMARY, la reponse de l'API ne
+  contient AUCUNE consultation." `getResumePatient` appliquait deja le filtre non-sensible (partage
+  avec FULL) mais continuait a renvoyer jusqu'a 5 consultations non sensibles pour SUMMARY. Corrige :
+  `derniersEvenements` vide pour SUMMARY (zero requete), banniere RG-CLI-30 declenchee aussi dans ce
+  cas pour ne pas laisser croire a tort a un patient sans historique. Traitements actifs non touches
+  (hors perimetre de ce CA-1).
+- Verifie a l'integration par 89 : eslint 0 probleme, vitest 40/40 (`acces-lecture.test.ts`), tirets 0.
+  Aucune migration.
