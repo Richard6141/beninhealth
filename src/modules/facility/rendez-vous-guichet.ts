@@ -24,9 +24,11 @@
  * - "service" (concept du pack, absent de ce depot) : reduit au choix d'un
  *   professionnel (optionnel), meme simplification que F-RDV-01 (citoyen,
  *   `creerRendezVousAction`).
- * - RG-RDV-02 (max 3 rendez-vous futurs par patient) : non implemente non
- *   plus par F-RDV-01 (citoyen) dans ce depot, pas ajoute ici pour rester
- *   coherent (ne pas restreindre l'accueil plus que le patient lui-meme).
+ * - RG-RDV-02 (max 3 rendez-vous futurs par patient, corrige le 2026-09-28 :
+ *   affirmation perimee ci-dessus, ecrite avant que verifierReglesReservation
+ *   soit branchee ici) : appliquee via verifierReglesReservation, la meme
+ *   fonction partagee qu'utilise facility/actions.ts cote citoyen (import,
+ *   pas de duplication).
  * - RG-RDV-03 (reservation atomique par capacite de creneau) : reutilise les
  *   memes verifications que `creerRendezVousAction` (F-ETA-05,
  *   `dateDansUnCreneauDisponible` + `capaciteDuCreneau` + `creerAvecCapacite`,
@@ -46,10 +48,15 @@
 import { headers } from "next/headers";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { getEnv } from "@/lib/env";
 import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
 import { dateDepuisChaineLocaleBenin } from "@/lib/fuseau-horaire";
+import { verifierEtIncrementerDebit } from "@/lib/limite-debit";
+import { creerNotification } from "@/modules/notification/creer";
+import { destinataireNotificationPatient } from "./destinataire-notification-patient";
+import { empreinteCritere } from "@/modules/transfert/code-acces";
 import { capaciteDuCreneau, dateDansUnCreneauDisponible } from "./creneau-disponible";
 import { STATUTS_QUI_LIBERENT_LE_CRENEAU, creerAvecCapacite, estConflitDeCreneau, fenetreCandidats } from "./rendez-vous-etats";
 import { verifierReglesReservation } from "./regles-reservation";
@@ -136,6 +143,13 @@ const schemaRecherche = z
     message: "Saisissez l'identifiant santé, ou le téléphone et la date de naissance.",
   });
 
+// Anti-balayage (F-RDV-06) : sans cette limite, un compte d'accueil pourrait
+// essayer des identifiants sante au hasard jusqu'a en trouver un valide.
+// Meme mecanisme (lib/limite-debit.ts) et ordre de grandeur que les autres
+// recherches sensibles de ce depot ce soir (ex. F-CLI-02, recherches_sans_resultat).
+const RECHERCHES_MAX_PAR_HEURE = 30;
+const UNE_HEURE_MS = 60 * 60 * 1000;
+
 /**
  * Recherche exacte d'un patient (RG-ACC-40), par identifiant sante OU par
  * telephone + date de naissance. Ne renvoie que l'identite minimale (nom,
@@ -143,7 +157,8 @@ const schemaRecherche = z
  * ne sert qu'a identifier le patient pour lui creer un rendez-vous, pas a
  * consulter ses donnees (RG-ACC-40, "uniquement pour enregistrer une
  * arrivee ou un rendez-vous"). Journalisee dans tous les cas (trouve ou
- * non), comme l'exige RG-ACC-40.
+ * non), comme l'exige RG-ACC-40, jamais avec le critere en clair (meme
+ * empreinte HMAC non reversible que transfert/code-acces.ts, RG-CLI-11).
  */
 export async function rechercherPatientGuichetAction(
   prevState: RechercheGuichetState,
@@ -171,6 +186,16 @@ export async function rechercherPatientGuichetAction(
   const { identifiantSante, telephone, dateNaissance } = validation.data;
   const adresseTechnique = await adresseTechniqueCourante();
 
+  const { autorise } = verifierEtIncrementerDebit(
+    `recherche-guichet:${admin.userId}`,
+    RECHERCHES_MAX_PAR_HEURE,
+    UNE_HEURE_MS
+  );
+
+  if (!autorise) {
+    return { error: "Trop de recherches en peu de temps. Réessayez plus tard.", success: false };
+  }
+
   try {
     const patient = identifiantSante.length > 0
       ? await prisma.patient.findUnique({ where: { identifiantSante }, include: { user: true } })
@@ -182,14 +207,19 @@ export async function rechercherPatientGuichetAction(
           include: { user: true },
         });
 
+    const empreinte =
+      identifiantSante.length > 0
+        ? empreinteCritere("identifiant_sante", identifiantSante, getEnv().NEXTAUTH_SECRET)
+        : empreinteCritere("telephone", `${telephone}|${dateNaissance}`, getEnv().NEXTAUTH_SECRET);
+
     await journaliser({
       utilisateurId: admin.userId,
       action: "recherche_patient_guichet",
       donneeConcernee: patient ? `patient:${patient.id}` : "patient:introuvable",
       adresseTechnique,
       justification: identifiantSante.length > 0
-        ? `Recherche par identifiant sante (RG-ACC-40) : ${identifiantSante}`
-        : `Recherche par telephone + date de naissance (RG-ACC-40)`,
+        ? `Recherche par identifiant sante (RG-ACC-40), critere ${empreinte.slice(0, 16)}`
+        : `Recherche par telephone + date de naissance (RG-ACC-40), critere ${empreinte.slice(0, 16)}`,
     });
 
     if (!patient) {
@@ -326,7 +356,7 @@ export async function creerRendezVousGuichetAction(
     const adresseTechnique = await adresseTechniqueCourante();
     const professionnelIdRetenu = professionnelIdNettoye.length > 0 ? professionnelIdNettoye : null;
 
-    await creerAvecCapacite(dateRendezVous, capacite, (dateCandidate) =>
+    const rendezVousCree = await creerAvecCapacite(dateRendezVous, capacite, (dateCandidate) =>
       prisma.$transaction(async (tx) => {
         const rendezVous = await tx.rendezVous.create({
           data: {
@@ -349,8 +379,32 @@ export async function creerRendezVousGuichetAction(
           },
           tx
         );
+
+        return rendezVous;
       })
     );
+
+    // F-RDV-06 : le patient doit etre prevenu du rendez-vous pris pour lui,
+    // routee vers le tuteur pour une personne a charge (sans_compte), meme
+    // principe que la confirmation cote citoyen (facility/actions.ts). Hors
+    // transaction : une notification manquee ne doit jamais defaire une
+    // reservation deja actee en base.
+    try {
+      await creerNotification(
+        await destinataireNotificationPatient(patientId),
+        "rendez_vous_confirme",
+        `Un rendez-vous a ete pris pour vous le ${rendezVousCree.date.toLocaleDateString("fr-FR", {
+          day: "numeric",
+          month: "long",
+          hour: "2-digit",
+          minute: "2-digit",
+          timeZone: "Africa/Porto-Novo",
+        })}.`,
+        "/app/patient/rendez-vous"
+      );
+    } catch (erreur) {
+      console.error("Erreur lors de la notification du patient (rendez-vous guichet) :", erreur);
+    }
 
     return { error: null, success: true };
   } catch (erreur) {
