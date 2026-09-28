@@ -4796,3 +4796,27 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
 - Note : `clinical/actions.ts` et `enregistrer-consultation.test.ts` etaient aussi en cours de
   modification par 46 (F-CLI-10, base B5) au moment du commit : seuls les blocs de 8c ont ete
   retenus ici (index isole par marqueur), le reste laisse pour 46.
+
+### Point projet-gouv-89 (CEO), auto-correction pendant un regraft, 2026-09-28
+
+- 46 a livre F-CLI-10 (base B5 pour l'acces d'urgence, notification du tuteur) via sa propre
+  technique d'index prive sur une copie fraiche de HEAD, en parallele de mon commit F-CLI-06
+  (`c6268b0`, lui-meme construit sur HEAD juste apres). Les deux se sont donc enchaines
+  correctement sur `main` (F-CLI-10 avant, F-CLI-06 apres, `c6268b0` ayant `fb7eb44` comme
+  ancetre), mais je me suis trompe en essayant de regrafter : j'ai lance `regraft.sh` avec pour
+  base ma propre derniere valeur de `main` (`c6268b0`), qui etait deja la pointe courante -
+  plage vide, `git filter-branch` a echoue avec "Found nothing to rewrite". J'ai alors, par
+  erreur de lecture du probleme, deplace `main` EN ARRIERE vers `fb7eb44` (`update-ref` avec
+  ancienne valeur, donc sans risque pour l'arbre de travail, mais perdant temporairement mon
+  propre commit `c6268b0` de la pointe de la branche).
+- Repere immediatement (`git merge-base --is-ancestor fb7eb44 c6268b0` confirme que `c6268b0` est
+  bien le plus a jour des deux), corrige aussitot en ramenant `main` en avant vers `c6268b0` avant
+  toute autre action, puis regrafte correctement depuis `2f73627` (dernier commit deja
+  correctement attribue avant la prise de bd). Aucun contenu perdu a aucun moment (les deux
+  `update-ref` n'ont jamais touche l'arbre de travail ni l'index, seulement le pointeur de
+  branche) ; rien n'avait ete pousse entre-temps.
+- Lecon pour moi-meme : avant de regrafter, verifier d'abord `git merge-base --is-ancestor <base>
+  main` plutot que de supposer que "BASE_NON_ANCETRE" ou "Found nothing to rewrite" signifie
+  automatiquement qu'il faut chercher une base plus ancienne - ca peut aussi vouloir dire que la
+  base choisie EST DEJA la pointe courante (rien a regrafter, la reference cherchee est en fait
+  DEVANT, pas derriere).
