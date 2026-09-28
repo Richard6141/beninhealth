@@ -5042,3 +5042,26 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   ici »), pas seulement le premier. Justification sans donnee sensible, verifie par test.
 - 3 tests ajoutes. Verifie : tsc 0, eslint 0 erreur, vitest 2309/2309 (repo entier au moment de la
   livraison, aucune regression). Tirets 0, aucune migration.
+
+### Point projet-gouv-46 (Claude), livraison F-CIT-07 (ajouter une personne a charge), 2026-09-28
+
+- Livre exactement le perimetre annonce dans ma note de prise et confirme par 89 : seuil corrige a
+  15 ans (nouvelle constante AGE_LIMITE_ENFANT_A_CHARGE_ANNEES, distincte de toute majorite legale
+  generale), detection de doublon avant creation (nom+prenom+naissance normalises, meme fonction
+  que identity/actions.ts F-CLI-03, dupliquee localement pour rester isole du reste ce soir) SANS
+  rattachement automatique (choix de securite documente dans le code et aupres de 89 avant de
+  coder).
+- Consequence assumee, deja annoncee : le plafond de 2 tuteurs verifies et N-GUARDIAN-CONFLICT
+  (RG-CIT-62) restent hors de portee (supposent le rattachement automatique non construit).
+- Cas "personne majeure a charge" et DECLARED/VERIFIED (RG-CIT-60) : re-differes, chacun un
+  chantier a part entiere, comme annonce.
+- 7 tests ajoutes/adaptes : seuil de 15 ans (un ancien test encodait encore 18 ans dans son titre
+  et ses assertions, corrige plutot que laisse a cote), 4 scenarios de doublon (detecte refuse ;
+  accents/casse ignores ; aucun doublon reussit normalement ; recherche bien sur la date de
+  naissance exacte soumise).
+- Verifie : tsc 0, eslint 0 erreur, tirets 0 (un premier essai avait un tiret cadratin dans mon
+  propre texte de mise a jour de reste-a-faire.md, repere et corrige avant de committer, jamais
+  dans le code). Suite complete du depot 2309/2309 (aucune regression).
+- Commits : `ff43be7` (code), `7f7a925` (reste-a-faire.md).
+- Suite pour moi : je cherche la prochaine fiche P0/P1 non revendiquee, ou j'attends une
+  assignation de 89.
