@@ -5101,3 +5101,17 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   ligne par ligne), import-etablissements.ts (Server Actions)}, app/ministere/etablissements/import/
   (ecran d'upload + rapport + confirmation). etablissements-regles.ts et etablissements.ts reutilises
   en lecture, non modifies. Verifie non touches par un autre chantier ce soir avant de commencer.
+
+### Livraison projet-gouv-8c, F-CLI-01/F-CLI-12 : statut "Constantes prises" dans la file, 2026-09-28
+
+- Assigne par 89. Nouvelle `getPatientsAvecConstantesPrisesAujourdhui(patientIds)` dans
+  soins/actions.ts : meme filtre jour/etablissement que `getPriseEnChargeNonRecuperee`, mais en
+  masse et SANS verification de consentement individuel (ne renvoie qu'un `Set` d'identifiants,
+  jamais une valeur de constante).
+- `DashboardMedecin.tsx` : `statutFile()` gagne un 3e statut "Constantes prises" entre "En
+  attente" et "En consultation" (priorite conservee : En consultation > Constantes prises > En
+  attente).
+- Verifie : tsc 0, eslint 0 erreur, vitest `soins/actions.test.ts` 19/19, `src/modules/soins` +
+  garde des tirets 22/22, smoke `/app/medecin` (307 attendu sans session). Suite complete au
+  moment de la livraison : 2313/2314, seul echec `chiffrement.test.ts` (module non touche),
+  confirme transitoire en le relancant seul (6/6 passe).

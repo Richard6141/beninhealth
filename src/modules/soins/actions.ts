@@ -412,6 +412,50 @@ export async function enregistrerPriseEnChargeAction(
  * etablissement, pouvait pre-remplir la consultation du jour sans aucun
  * rapport avec la visite en cours.
  */
+/**
+ * F-CLI-01/F-CLI-12 : parmi `patientIds` (la file du jour d'un medecin,
+ * `facility/actions.ts`), lesquels ont deja une prise en charge infirmiere
+ * "en_attente" enregistree aujourd'hui dans l'etablissement du professionnel
+ * connecte. Meme filtre jour/etablissement que getPriseEnChargeNonRecuperee
+ * ci-dessous, mais SANS verification de consentement par patient : ne
+ * renvoie qu'un booleen d'appartenance (les valeurs des constantes ne sont
+ * jamais exposees ici), pas plus sensible que les autres champs deja
+ * affiches sans verification supplementaire dans cette file (heureArrivee,
+ * statut) - RG-CLI-01 (base d'acces valide) est deja tenue par construction,
+ * `getRendezVousDuProfessionnel` ne renvoie que les patients de CE medecin.
+ */
+export async function getPatientsAvecConstantesPrisesAujourdhui(patientIds: string[]): Promise<Set<string>> {
+  const session = await getSession();
+
+  if (!session || patientIds.length === 0) {
+    return new Set();
+  }
+
+  if (!session.roles.some((role) => can(role, "read", "prise_en_charge_infirmiere"))) {
+    return new Set();
+  }
+
+  const professionnel = await prisma.professionnelSante.findUnique({ where: { userId: session.userId } });
+
+  if (!professionnel) {
+    return new Set();
+  }
+
+  const { debut, fin } = bornesDuJourCourant();
+
+  const prisesEnCharge = await prisma.priseEnChargeInfirmiere.findMany({
+    where: {
+      patientId: { in: patientIds },
+      statut: "en_attente",
+      etablissementId: professionnel.etablissementId,
+      date: { gte: debut, lt: fin },
+    },
+    select: { patientId: true },
+  });
+
+  return new Set(prisesEnCharge.map((prise) => prise.patientId));
+}
+
 export async function getPriseEnChargeNonRecuperee(
   patientId: string
 ): Promise<PriseEnChargeInfirmiereResume | null> {

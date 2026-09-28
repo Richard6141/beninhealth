@@ -19,7 +19,11 @@ vi.mock("@/modules/audit/journaliser", () => ({ journaliser: vi.fn() }));
 
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
-import { enregistrerPriseEnChargeAction, getPriseEnChargeNonRecuperee } from "@/modules/soins/actions";
+import {
+  enregistrerPriseEnChargeAction,
+  getPatientsAvecConstantesPrisesAujourdhui,
+  getPriseEnChargeNonRecuperee,
+} from "@/modules/soins/actions";
 import { PRIORITES_TRI } from "@/modules/soins/priorites";
 
 const p = prisma as unknown as {
@@ -27,7 +31,7 @@ const p = prisma as unknown as {
   patient: { findUnique: Mock };
   consentement: { findUnique: Mock };
   rendezVous: { findUnique: Mock };
-  priseEnChargeInfirmiere: { create: Mock; findFirst: Mock };
+  priseEnChargeInfirmiere: { create: Mock; findFirst: Mock; findMany: Mock };
 };
 const getSessionMock = getSession as unknown as Mock;
 
@@ -199,5 +203,59 @@ describe("getPriseEnChargeNonRecuperee (F-CLI-12 : pre-remplissage de la consult
 
     expect(await getPriseEnChargeNonRecuperee("patient-1")).toBeNull();
     expect(p.priseEnChargeInfirmiere.findFirst).not.toHaveBeenCalled();
+  });
+});
+
+describe("getPatientsAvecConstantesPrisesAujourdhui (F-CLI-01/F-CLI-12 : sous-statut de la file du medecin)", () => {
+  beforeEach(() => {
+    getSessionMock.mockResolvedValue({ userId: "user-med", roles: ["medecin"] });
+    p.professionnelSante.findUnique.mockResolvedValue({ id: "med-1", etablissementId: "etab-1" });
+    p.priseEnChargeInfirmiere.findMany.mockResolvedValue([]);
+  });
+
+  it("renvoie un ensemble vide sans liste de patients, sans meme lire la base", async () => {
+    expect(await getPatientsAvecConstantesPrisesAujourdhui([])).toEqual(new Set());
+    expect(p.priseEnChargeInfirmiere.findMany).not.toHaveBeenCalled();
+  });
+
+  it("filtre sur le jour courant, l'etablissement du medecin connecte et le statut en_attente", async () => {
+    await getPatientsAvecConstantesPrisesAujourdhui(["patient-1", "patient-2"]);
+
+    const filtre = p.priseEnChargeInfirmiere.findMany.mock.calls[0][0].where;
+    expect(filtre).toMatchObject({
+      patientId: { in: ["patient-1", "patient-2"] },
+      statut: "en_attente",
+      etablissementId: "etab-1",
+    });
+    expect(filtre.date).toHaveProperty("gte");
+    expect(filtre.date).toHaveProperty("lt");
+  });
+
+  it("renvoie l'ensemble des patientId trouves, jamais les valeurs des constantes elles-memes", async () => {
+    p.priseEnChargeInfirmiere.findMany.mockResolvedValue([{ patientId: "patient-1" }, { patientId: "patient-3" }]);
+
+    const resultat = await getPatientsAvecConstantesPrisesAujourdhui(["patient-1", "patient-2", "patient-3"]);
+
+    expect(resultat).toEqual(new Set(["patient-1", "patient-3"]));
+    expect(p.priseEnChargeInfirmiere.findMany.mock.calls[0][0]).not.toHaveProperty("include");
+    expect(p.priseEnChargeInfirmiere.findMany.mock.calls[0][0].select).toEqual({ patientId: true });
+  });
+
+  it("sans session ou sans profil professionnel : ensemble vide, sans lire la base", async () => {
+    getSessionMock.mockResolvedValue(null);
+    expect(await getPatientsAvecConstantesPrisesAujourdhui(["patient-1"])).toEqual(new Set());
+
+    getSessionMock.mockResolvedValue({ userId: "user-med", roles: ["medecin"] });
+    p.professionnelSante.findUnique.mockResolvedValue(null);
+    expect(await getPatientsAvecConstantesPrisesAujourdhui(["patient-1"])).toEqual(new Set());
+
+    expect(p.priseEnChargeInfirmiere.findMany).not.toHaveBeenCalled();
+  });
+
+  it("un role sans read:prise_en_charge_infirmiere : ensemble vide", async () => {
+    getSessionMock.mockResolvedValue({ userId: "user-pat", roles: ["patient"] });
+
+    expect(await getPatientsAvecConstantesPrisesAujourdhui(["patient-1"])).toEqual(new Set());
+    expect(p.priseEnChargeInfirmiere.findMany).not.toHaveBeenCalled();
   });
 });

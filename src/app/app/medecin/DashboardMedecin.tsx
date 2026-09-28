@@ -5,6 +5,7 @@ import { getRendezVousDuProfessionnel, type RendezVousResume } from "@/modules/f
 import { getConsultationsDuProfessionnel } from "@/modules/clinical/actions";
 import { getExamensDemandesParProfessionnel } from "@/modules/laboratoire/actions";
 import { getPrescriptionsDuProfessionnel } from "@/modules/prescription/actions";
+import { getPatientsAvecConstantesPrisesAujourdhui } from "@/modules/soins/actions";
 import { getMonQrCode } from "@/modules/verification/actions";
 import { jourCivilBenin } from "@/modules/administration/jours-feries-calcul";
 import { Badge } from "@/components/ui/Badge";
@@ -69,20 +70,38 @@ function estDansLes7DerniersJours(dateIso: string): boolean {
 }
 
 /**
- * Statut du patient dans la file (F-CLI-01 du pack). Ce depot n'a pas de
- * sous-statut "constantes prises" distinct sur RendezVous (F-CLI-12 ecrit
- * PriseEnChargeInfirmiere, une table separee non jointe ici) : seuls "en
- * attente" et "en consultation" (statut RendezVous "en_consultation", pose
- * par enregistrerConsultationAction au demarrage) sont donc distingues,
- * limite assumee plutot qu'une troisieme valeur inventee.
+ * Statut du patient dans la file (F-CLI-01 du pack). Sous-statut
+ * "Constantes prises" (F-CLI-12, croise F-CLI-01, ajoute le 2026-09-28) :
+ * signale qu'une PriseEnChargeInfirmiere "en_attente" existe deja pour ce
+ * patient aujourd'hui (getPatientsAvecConstantesPrisesAujourdhui,
+ * src/modules/soins/actions.ts), sans jamais en reveler les valeurs ici -
+ * seul un booleen d'appartenance. "En consultation" (statut RendezVous
+ * "en_consultation") reste prioritaire : un patient deja pris en charge par
+ * le medecin n'a plus besoin qu'on lui signale que l'infirmier est passe
+ * avant lui.
  */
-function statutFile(rdv: RendezVousResume): { texte: string; tone: "warning" | "good" } {
-  return rdv.statut === "en_consultation"
-    ? { texte: "En consultation", tone: "good" }
-    : { texte: "En attente", tone: "warning" };
+function statutFile(
+  rdv: RendezVousResume,
+  constantesPrises: boolean
+): { texte: string; tone: "warning" | "good" | "info" } {
+  if (rdv.statut === "en_consultation") {
+    return { texte: "En consultation", tone: "good" };
+  }
+  if (constantesPrises) {
+    return { texte: "Constantes prises", tone: "info" };
+  }
+  return { texte: "En attente", tone: "warning" };
 }
 
-function ListePatientsDuJour({ rendezVous, maintenant }: { rendezVous: RendezVousResume[]; maintenant: Date }) {
+function ListePatientsDuJour({
+  rendezVous,
+  maintenant,
+  patientsAvecConstantesPrises,
+}: {
+  rendezVous: RendezVousResume[];
+  maintenant: Date;
+  patientsAvecConstantesPrises: Set<string>;
+}) {
   if (rendezVous.length === 0) {
     return (
       <p className="text-[13px] text-encre-attenuee">
@@ -94,7 +113,7 @@ function ListePatientsDuJour({ rendezVous, maintenant }: { rendezVous: RendezVou
   return (
     <ul className="flex flex-col gap-3">
       {rendezVous.map((rdv) => {
-        const statut = statutFile(rdv);
+        const statut = statutFile(rdv, patientsAvecConstantesPrises.has(rdv.patientId));
         const attente = rdv.heureArrivee ? minutesEcoulees(rdv.heureArrivee, maintenant) : null;
         const attenteLongue = attente !== null && attente > SEUIL_ATTENTE_MINUTES;
         return (
@@ -302,6 +321,9 @@ export async function DashboardMedecin() {
     getPrescriptionsDuProfessionnel(),
     getExamensDemandesParProfessionnel(),
   ]);
+  // F-CLI-12 : sous-statut "Constantes prises" de la file ci-dessous, une
+  // deuxieme lecture separee (pas dans le Promise.all ci-dessus : elle a
+  // besoin de la liste des patients du jour, calculee juste apres).
 
   const maintenant = new Date();
   // F-CLI-01 du pack : "patients arrives dans les services", pas seulement
@@ -318,6 +340,9 @@ export async function DashboardMedecin() {
       estAujourdHui(rdv.date)
   );
   const idsPatientsDuJour = new Set(patientsDuJour.map((rdv) => rdv.id));
+  const patientsAvecConstantesPrises = await getPatientsAvecConstantesPrisesAujourdhui(
+    patientsDuJour.map((rdv) => rdv.patientId)
+  );
   const prochainRendezVous = rendezVous
     .filter(
       (rdv) =>
@@ -421,7 +446,11 @@ export async function DashboardMedecin() {
             description="Patients arrivés aujourd'hui, avec temps d'attente."
             actions={<Badge tone="accent">{patientsDuJour.length}</Badge>}
           >
-            <ListePatientsDuJour rendezVous={patientsDuJour} maintenant={maintenant} />
+            <ListePatientsDuJour
+              rendezVous={patientsDuJour}
+              maintenant={maintenant}
+              patientsAvecConstantesPrises={patientsAvecConstantesPrises}
+            />
           </Card>
           <Card
             title="Rendez-vous"
