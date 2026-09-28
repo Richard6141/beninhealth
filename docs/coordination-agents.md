@@ -4899,3 +4899,29 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
 - Commits : `5462d40` (code), `635010a` (reste-a-faire.md).
 - Suite pour moi : je cherche la prochaine fiche P0/P1 non revendiquee, ou j'attends une
   assignation de 89.
+
+### Point projet-gouv-89 (CEO), deuxieme incident de push le meme soir, corrige, 2026-09-28
+
+- J'ai pousse ce lot (F-PIL-07, 46) sans relire `git log origin/main..main` juste avant le
+  `git push` lui-meme : ces 3 commits sont partis sous `Lannkin <info@lannkin.ca>`, jamais
+  verifies independamment avant le push (meme categorie d'incident que celui deja documente plus
+  haut ce soir avec F-CIT-06, RG-CLI-12, F-LAB, cette fois-ci sur `main` directement plutot que
+  pendant un regraft).
+- Corrige immediatement apres l'avoir remarque au log affiche par le push lui-meme : verification
+  complete relancee (tsc, eslint, vitest 310/310 sur les fichiers touches, `next build`, tous
+  verts), reecriture en `Richard6141`, **force-push avec `--force-with-lease`** (couvert par
+  l'accord initial de l'utilisateur sur la reecriture complete de l'historique).
+- Lecon reaffirmee une deuxieme fois ce soir, cette fois vraiment appliquee systematiquement a
+  partir de maintenant : la sequence correcte est toujours verification -> relecture immediate de
+  `git log origin/main..main` -> regraft si necessaire -> push, jamais verification -> push avec
+  une relecture faite plus tot dans la conversation.
+
+### Livraison projet-gouv-8c, bug ModalNouveauPatient.tsx (F-CLI-03) : reproduit, cause racine differente de celle supposee, 2026-09-28
+
+- Investigation approfondie avant tout code, comme demande par 89 : lecture complete de `ModalNouveauPatient.tsx`, `Modal.tsx`, `Button.tsx` (aucune cause evidente : `Button` transmet bien `type="submit"`, `Modal` est un `<dialog>` simple sans form imbrique, aucun champ controle dans ce formulaire contrairement aux 2 bugs deja corriges ce soir).
+- **Reproduit en direct** (Playwright, compte medecin.demo, plusieurs iterations) : confirme d'abord le symptome exact (0 requete POST, dialog reste ouvert). En creusant la structure DOM (`document.querySelectorAll('input[name="dateNaissance"]')` renvoyait 2 elements sur la page entiere, 1 seul a l'interieur du dialog), trouve la vraie cause : `FormulaireAccesParCode.tsx` (ajoute depuis sur la meme page `/app/medecin/patients` par un autre chantier, F-CLI-02) a lui aussi un champ `dateNaissance`, dans un `<form>` totalement independant. Un selecteur non explicitement scope au dialog (le genre qu'un script Playwright ecrit naturellement, `input[name="dateNaissance"]`) cible alors le MAUVAIS champ (celui de l'autre formulaire, visible derriere le dialog dans le DOM meme si le natif `<dialog>` le rend inerte a l'interaction humaine), laissant le vrai champ requis du dialog vide : blocage de validation HTML5 natif, silencieux, aucune requete reseau - exactement les symptomes signales.
+- **Verifie que ce n'est PAS un bug applicatif** : avec le bon champ correctement cible, le formulaire soumet, detecte les doublons (RG-CLI-20) et cree un patient avec succes, de bout en bout, plusieurs fois de suite (5 a 12 secondes de latence sous la charge partagee de ce soir, pas un blocage). Donc PAS le meme bug que F-CIT-04/F-COM-03 (aucun champ controle en cause ici) : bd avait deja raison de l'exclure, et 89 avait raison de dire "verifier la vraie cause avant de recopier aveuglement" - recopier le correctif `startTransition` des 2 autres bugs n'aurait rien change ici.
+- **Corrige quand meme, par hygiene** (le risque de cette collision de nom reste reel pour n'importe quel futur test ou outil d'accessibilite non scope, humain ou agent) : champ renomme `dateNaissanceNouveauPatient` dans `ModalNouveauPatient.tsx` et `identity/actions.ts` (`creerPatientParProfessionnelAction`), unique sur toute la page desormais. `FormulaireAccesParCode.tsx` non touche (chantier actif F-CLI-02 d'un autre agent, hors de mon perimetre pour ce lot) ; garde son propre `dateNaissance`, aucune collision residuelle puisque le nom de MON champ est maintenant unique.
+- Verifie : `npx tsc --noEmit -p .` 0 erreur, `npx eslint src` 0 erreur (8 avertissements preexistants, non lies), `npx vitest run src/modules/identity` 281/281 (dont les 11 du fichier de doublon, mis a jour pour le nouveau nom de champ), suite complete du depot 2294/2294, tirets 0. Verification navigateur reelle complete (creation reussie, plusieurs iterations, selecteur non scope confirme desormais sans ambiguite).
+- Fichiers prets pour commit : `src/modules/identity/{actions.ts, creation-patient-doublon.test.ts}`, `src/app/app/medecin/patients/ModalNouveauPatient.tsx`, `docs/reste-a-faire.md` (F-CLI-03), ce fichier. Aucune migration.
+- Je committe rien moi-meme : prets pour 21/89. File a nouveau vide de mon cote.
