@@ -276,12 +276,34 @@ describe("creerPatientParProfessionnelAction : detection de doublon (RG-CLI-20)"
       expect(p.user.create).not.toHaveBeenCalled();
     });
 
-    it("un role qui n'est ni medecin ni admin_etablissement reste refuse (infirmier, pharmacien)", async () => {
-      for (const role of ["infirmier", "pharmacien"]) {
-        getSessionMock.mockResolvedValue({ userId: "u-x", roles: [role], sessionId: "s-x" });
-        const resultat = await creerPatientParProfessionnelAction(ETAT, formulaire(champsValides));
-        expect(resultat.success).toBe(false);
-      }
+    it("un role qui n'est ni medecin, ni infirmier, ni admin_etablissement reste refuse (pharmacien)", async () => {
+      getSessionMock.mockResolvedValue({ userId: "u-x", roles: ["pharmacien"], sessionId: "s-x" });
+      const resultat = await creerPatientParProfessionnelAction(ETAT, formulaire(champsValides));
+      expect(resultat.success).toBe(false);
+      expect(p.user.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("RG-ROL-10 du pack (corrige le 2026-09-29) : infirmier", () => {
+    it("un infirmier peut creer un dossier patient, comme un medecin", async () => {
+      getSessionMock.mockResolvedValue({ userId: "infirmier-1", roles: ["infirmier"], sessionId: "s-1" });
+      p.professionnelSante.findUnique.mockResolvedValue({ id: "prof-infirmier", userId: "infirmier-1" });
+      p.patient.findMany.mockResolvedValue([]);
+
+      const resultat = await creerPatientParProfessionnelAction(ETAT, formulaire(champsValides));
+
+      expect(resultat.success).toBe(true);
+      expect(p.user.create).toHaveBeenCalledTimes(1);
+    });
+
+    it("un infirmier sans ProfessionnelSante rattache est refuse (Zero Trust, jamais suppose)", async () => {
+      getSessionMock.mockResolvedValue({ userId: "infirmier-2", roles: ["infirmier"], sessionId: "s-2" });
+      p.professionnelSante.findUnique.mockResolvedValue(null);
+      p.patient.findMany.mockResolvedValue([]);
+
+      const resultat = await creerPatientParProfessionnelAction(ETAT, formulaire(champsValides));
+
+      expect(resultat.success).toBe(false);
       expect(p.user.create).not.toHaveBeenCalled();
     });
   });

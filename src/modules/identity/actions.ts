@@ -320,16 +320,21 @@ export async function creerPatientParProfessionnelAction(
   // RBAC (voir src/security/permissions.ts) : la creation d'un dossier
   // patient est reservee aux roles qui peuvent aussi creer une consultation
   // (medecin), plus admin_etablissement (accueil/guichet, F-RDV-06, corrige
-  // le 2026-09-28) - meme perimetre que F-CLI-03 du pack (DOCTOR, NURSE,
-  // RECEPTIONIST, CHW), reduit ici aux deux roles realistes de ce depot
+  // le 2026-09-28), plus infirmier (RG-ROL-10 du pack, corrige le
+  // 2026-09-29 : "Un NURSE PEUT ... creer un dossier patient (F-CLI-03)",
+  // manque reel, le role existe et est utilise partout ailleurs dans ce
+  // depot) - meme perimetre que F-CLI-03 du pack (DOCTOR, NURSE,
+  // RECEPTIONIST, CHW), reduit ici aux trois roles realistes de ce depot
   // (pas de role RECEPTIONIST distinct, route vers admin_etablissement comme
-  // le reste de la serie F-RDV-04/05/06). Verification directe du role
-  // plutot qu'une nouvelle entree dans security/permissions.ts (fichier
-  // partage ce soir, meme patron que d'autres reutilisations directes de
-  // role deja faites ce soir).
+  // le reste de la serie F-RDV-04/05/06 ; CHW hors perimetre, cree une
+  // PersonneCommunautaire distincte, jamais un Patient). Verification
+  // directe du role plutot qu'une nouvelle entree dans security/permissions.ts
+  // (fichier partage ce soir, meme patron que d'autres reutilisations
+  // directes de role deja faites ce soir).
   const estAccueil = session.roles.includes("admin_etablissement");
-  if (!session.roles.some((role) => can(role, "create", "consultation")) && !estAccueil) {
-    return { error: "Action reservee aux medecins et a l'accueil de l'etablissement.", success: false };
+  const estInfirmier = session.roles.includes("infirmier");
+  if (!session.roles.some((role) => can(role, "create", "consultation")) && !estAccueil && !estInfirmier) {
+    return { error: "Action reservee aux medecins, aux infirmiers et a l'accueil de l'etablissement.", success: false };
   }
 
   // Les champs facultatifs (contact d'urgence, confirmation de doublon,
