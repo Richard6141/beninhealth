@@ -7,7 +7,8 @@ vi.mock("@/lib/prisma", () => {
     patient: { findUnique: vi.fn() },
     consentement: { findUnique: vi.fn() },
     rendezVous: { findUnique: vi.fn() },
-    priseEnChargeInfirmiere: { create: vi.fn(), findFirst: vi.fn(), findMany: vi.fn() },
+    priseEnChargeInfirmiere: { create: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), findUnique: vi.fn() },
+    addendumSoins: { create: vi.fn(), findMany: vi.fn() },
     $transaction: vi.fn(),
   };
   prisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(prisma));
@@ -20,7 +21,9 @@ vi.mock("@/modules/audit/journaliser", () => ({ journaliser: vi.fn() }));
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import {
+  ajouterAddendumSoinsAction,
   enregistrerPriseEnChargeAction,
+  getAddendaSoins,
   getPatientsAvecConstantesPrisesAujourdhui,
   getPriseEnChargeNonRecuperee,
 } from "@/modules/soins/actions";
@@ -31,7 +34,8 @@ const p = prisma as unknown as {
   patient: { findUnique: Mock };
   consentement: { findUnique: Mock };
   rendezVous: { findUnique: Mock };
-  priseEnChargeInfirmiere: { create: Mock; findFirst: Mock; findMany: Mock };
+  priseEnChargeInfirmiere: { create: Mock; findFirst: Mock; findMany: Mock; findUnique: Mock };
+  addendumSoins: { create: Mock; findMany: Mock };
 };
 const getSessionMock = getSession as unknown as Mock;
 
@@ -257,5 +261,120 @@ describe("getPatientsAvecConstantesPrisesAujourdhui (F-CLI-01/F-CLI-12 : sous-st
 
     expect(await getPatientsAvecConstantesPrisesAujourdhui(["patient-1"])).toEqual(new Set());
     expect(p.priseEnChargeInfirmiere.findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("ajouterAddendumSoinsAction (F-CLI-12 : note de soins immuable, addendum possible)", () => {
+  function formulaireAddendum(surcharges: Record<string, string> = {}): FormData {
+    const champs: Record<string, string> = {
+      priseEnChargeId: "pec-1",
+      motif: "complement_information",
+      contenu: "Pansement refait a 14h, aucune complication.",
+      ...surcharges,
+    };
+    const donnees = new FormData();
+    for (const [cle, valeur] of Object.entries(champs)) donnees.set(cle, valeur);
+    return donnees;
+  }
+
+  beforeEach(() => {
+    p.priseEnChargeInfirmiere.findUnique.mockResolvedValue({
+      id: "pec-1",
+      infirmierId: "inf-1",
+      patientId: "patient-1",
+    });
+    p.addendumSoins.create.mockResolvedValue({ id: "add-1" });
+  });
+
+  it("ajoute un addendum sans jamais modifier la note de soins d'origine", async () => {
+    const resultat = await ajouterAddendumSoinsAction(etatInitial, formulaireAddendum());
+
+    expect(resultat).toEqual({ error: null, success: true, priseEnChargeId: "pec-1" });
+    expect(p.addendumSoins.create.mock.calls[0][0].data).toMatchObject({
+      priseEnChargeInfirmiereId: "pec-1",
+      auteurId: "user-infirmier",
+      motif: "complement_information",
+    });
+    expect(p.priseEnChargeInfirmiere.create).not.toHaveBeenCalled();
+  });
+
+  it("refuse un motif invalide ou un contenu vide, sans rien enregistrer", async () => {
+    expect((await ajouterAddendumSoinsAction(etatInitial, formulaireAddendum({ motif: "invente" }))).success).toBe(false);
+    expect((await ajouterAddendumSoinsAction(etatInitial, formulaireAddendum({ contenu: "  " }))).success).toBe(false);
+    expect(p.addendumSoins.create).not.toHaveBeenCalled();
+  });
+
+  it("refuse un role sans droit (un medecin n'ajoute pas d'addendum a une note de soins infirmiere)", async () => {
+    getSessionMock.mockResolvedValue({ userId: "user-medecin", roles: ["medecin"] });
+
+    const resultat = await ajouterAddendumSoinsAction(etatInitial, formulaireAddendum());
+
+    expect(resultat.success).toBe(false);
+    expect(p.addendumSoins.create).not.toHaveBeenCalled();
+  });
+
+  it("refuse un infirmier qui n'est pas l'auteur de la prise en charge", async () => {
+    p.priseEnChargeInfirmiere.findUnique.mockResolvedValue({
+      id: "pec-1",
+      infirmierId: "un-autre-infirmier",
+      patientId: "patient-1",
+    });
+
+    const resultat = await ajouterAddendumSoinsAction(etatInitial, formulaireAddendum());
+
+    expect(resultat.success).toBe(false);
+    expect(resultat.error).toContain("introuvable");
+    expect(p.addendumSoins.create).not.toHaveBeenCalled();
+  });
+
+  it("refuse une prise en charge introuvable", async () => {
+    p.priseEnChargeInfirmiere.findUnique.mockResolvedValue(null);
+
+    const resultat = await ajouterAddendumSoinsAction(etatInitial, formulaireAddendum());
+
+    expect(resultat.success).toBe(false);
+    expect(p.addendumSoins.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("getAddendaSoins (F-CLI-12 : affichage des addenda sous la note de soins)", () => {
+  beforeEach(() => {
+    getSessionMock.mockResolvedValue({ userId: "user-med", roles: ["medecin"] });
+    p.priseEnChargeInfirmiere.findUnique.mockResolvedValue({ id: "pec-1", patientId: "patient-1" });
+    p.consentement.findUnique.mockResolvedValue(consentement());
+    p.addendumSoins.findMany.mockResolvedValue([
+      { id: "add-1", motif: "complement_information", contenu: "RAS", date: new Date("2026-09-29T10:00:00Z") },
+    ]);
+  });
+
+  it("renvoie les addenda du plus ancien au plus recent avec un consentement actif", async () => {
+    const resultat = await getAddendaSoins("pec-1");
+
+    expect(resultat).toEqual([{ id: "add-1", motif: "complement_information", contenu: "RAS", date: "2026-09-29T10:00:00.000Z" }]);
+    expect(p.addendumSoins.findMany.mock.calls[0][0]).toMatchObject({
+      where: { priseEnChargeInfirmiereId: "pec-1" },
+      orderBy: { date: "asc" },
+    });
+  });
+
+  it("sans consentement actif : liste vide, sans lire les addenda", async () => {
+    p.consentement.findUnique.mockResolvedValue(null);
+
+    expect(await getAddendaSoins("pec-1")).toEqual([]);
+    expect(p.addendumSoins.findMany).not.toHaveBeenCalled();
+  });
+
+  it("prise en charge introuvable : liste vide", async () => {
+    p.priseEnChargeInfirmiere.findUnique.mockResolvedValue(null);
+
+    expect(await getAddendaSoins("pec-1")).toEqual([]);
+    expect(p.addendumSoins.findMany).not.toHaveBeenCalled();
+  });
+
+  it("un role sans read:prise_en_charge_infirmiere : liste vide", async () => {
+    getSessionMock.mockResolvedValue({ userId: "user-pat", roles: ["patient"] });
+
+    expect(await getAddendaSoins("pec-1")).toEqual([]);
+    expect(p.addendumSoins.findMany).not.toHaveBeenCalled();
   });
 });

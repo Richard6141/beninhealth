@@ -907,6 +907,16 @@ const TAILLE_PAGE_HISTORIQUE = 25;
  * et tries du plus recent au plus ancien. Meme garde Zero Trust que
  * getResumePatient (Consentement actif requis, RG-CLI-30).
  *
+ * Corrige le 2026-09-29 : le tableau des roles de la fiche precise "DOCTOR,
+ * NURSE (sans sensible)" (docs/pack claude/specs/10-fiches-clinique.md,
+ * section F-CLI-09), a la difference de F-CLI-04 (resume, "DOCTOR, NURSE"
+ * sans cette annotation) : un infirmier n'a jamais acces aux elements
+ * sensibles dans l'HISTORIQUE, quel que soit le niveau du consentement
+ * (meme un FULL_SENSITIVE explicite), alors qu'un medecin y a acces si le
+ * niveau le permet. Aucune verification du role de l'appelant n'existait
+ * jusqu'ici pour cette restriction, seul le niveau d'acces du consentement
+ * et la base (urgence/reference) etaient regardes.
+ *
  * Corrige le 2026-09-28 : l'affirmation "aucun modele de donnees dans ce
  * depot" pour les vaccinations et les documents medicaux etait perimee
  * (les deux existent, voir prisma/schema.prisma, Vaccination et
@@ -1005,10 +1015,14 @@ export async function getHistoriquePatient(
   // exclus entierement de la chronologie plutot que masques partiellement.
   // Meme restriction pour un acces via reference (F-CLI-14) : ni l'un ni
   // l'autre n'est un consentement explicite et specifique du patient.
+  // F-CLI-09 (corrige le 2026-09-29) : l'infirmier n'a jamais acces aux
+  // elements sensibles dans l'historique, quel que soit le niveau du
+  // consentement (texte exact du pack, "DOCTOR, NURSE (sans sensible)").
   const accesRestreint =
     acces.source === "reference" ||
     acces.typeAcces === "urgence" ||
-    niveauAccesRestreintAuxNonSensibles(acces.niveauAcces);
+    niveauAccesRestreintAuxNonSensibles(acces.niveauAcces) ||
+    session.roles.includes("infirmier");
   const examensAccessibles = accesRestreint ? examens.filter((e) => !e.sensible) : examens;
   const consultationsAccessibles = accesRestreint ? consultations.filter((c) => !c.sensible) : consultations;
   // Meme principe RG-CLI-91 applique a DocumentMedical.niveauConfidentialite :

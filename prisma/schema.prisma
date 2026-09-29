@@ -77,6 +77,7 @@ model User {
   notifications Notification[]
   preferencesNotification PreferenceNotification[]
   addendaConsultation AddendumConsultation[]
+  addendaSoins AddendumSoins[]
   documentsMedicaux DocumentMedical[]
   codesVerificationEmail CodeVerificationEmail[]
   codesReinitialisationMotDePasse CodeReinitialisationMotDePasse[]
@@ -1292,6 +1293,35 @@ model PriseEnChargeInfirmiere {
   consultationRattacheeId String? @unique
   consultationRattachee   Consultation? @relation(fields: [consultationRattacheeId], references: [id])
   date                  DateTime @default(now())
+  // F-CLI-12 du pack, complete le 2026-09-29 : "note de soins autonome
+  // immuable avec addendum" (docs/reste-a-faire.md). Cette ligne n'a jamais
+  // eu de mutation permettant de modifier noteSoins ou les constantes apres
+  // creation (aucune fonction "update" dans src/modules/soins/actions.ts) :
+  // l'immuabilite existait deja par construction. Seul manquait le
+  // mecanisme d'ajout, meme patron que AddendumConsultation (F-CLI-08) :
+  // jamais une modification du contenu original, toujours un ajout date et
+  // signe par son auteur.
+  addenda               AddendumSoins[]
+  @@schema("public")
+}
+
+// F-CLI-12 du pack, complete le 2026-09-29 : complement ou correction d'une
+// prise en charge infirmiere deja enregistree, jamais une modification du
+// contenu original (meme principe d'immuabilite que AddendumConsultation,
+// RG-CLI-00, applique ici par analogie a defaut de regle RG-CLI dediee a la
+// note de soins dans le pack). Toujours affiche sous la note de soins, date
+// et signe par son auteur.
+model AddendumSoins {
+  id                        String   @id @default(cuid())
+  priseEnChargeInfirmiereId String
+  priseEnChargeInfirmiere   PriseEnChargeInfirmiere @relation(fields: [priseEnChargeInfirmiereId], references: [id], onDelete: Cascade)
+  auteurId                  String
+  auteur                    User     @relation(fields: [auteurId], references: [id])
+  // complement_information | correction | resultat_recu | autre (memes
+  // motifs que AddendumConsultation, MOTIFS_ADDENDUM de clinical/actions.ts).
+  motif                     String
+  contenu                   String
+  date                      DateTime @default(now())
   @@schema("public")
 }
 

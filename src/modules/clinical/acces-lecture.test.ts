@@ -359,6 +359,39 @@ describe("F-CIT-10 : niveaux d'acces SUMMARY/FULL/FULL_SENSITIVE (RG-ACC-11)", (
   });
 });
 
+describe("F-CLI-09 : role infirmier jamais sur les elements sensibles dans l'historique (corrige le 2026-09-29)", () => {
+  it("un infirmier n'a jamais acces aux examens ni consultations sensibles, meme avec un consentement FULL_SENSITIVE", async () => {
+    getSessionMock.mockResolvedValue({ userId: "user-pro", roles: ["infirmier"] });
+    prismaMock.consentement.findUnique.mockResolvedValue(consentement("dossier_complet", { niveauAcces: "FULL_SENSITIVE" }));
+    prismaMock.examenMedical.findMany.mockResolvedValue([examen("ex-normal"), examen("ex-vih", { sensible: true })]);
+
+    const historique = await getHistoriquePatient("pat-1");
+
+    expect(historique?.evenements.map((e) => e.id)).toEqual(["ex-normal"]);
+  });
+
+  it("un medecin avec le meme consentement FULL_SENSITIVE garde acces aux elements sensibles (pas une regression)", async () => {
+    getSessionMock.mockResolvedValue({ userId: "user-pro", roles: ["medecin"] });
+    prismaMock.consentement.findUnique.mockResolvedValue(consentement("dossier_complet", { niveauAcces: "FULL_SENSITIVE" }));
+    prismaMock.examenMedical.findMany.mockResolvedValue([examen("ex-normal"), examen("ex-vih", { sensible: true })]);
+
+    const historique = await getHistoriquePatient("pat-1");
+
+    expect(historique?.evenements.map((e) => e.id).sort()).toEqual(["ex-normal", "ex-vih"]);
+  });
+
+  it("la restriction infirmier ne s'applique qu'a l'historique (F-CLI-09), pas au resume (F-CLI-04, aucune annotation \"sans sensible\" dans le pack pour cette fiche)", async () => {
+    getSessionMock.mockResolvedValue({ userId: "user-pro", roles: ["infirmier"] });
+    prismaMock.consentement.findUnique.mockResolvedValue(consentement("dossier_complet", { niveauAcces: "FULL_SENSITIVE" }));
+
+    await getResumePatient("pat-1");
+
+    expect(prismaMock.consultation.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { patientId: "pat-1", statut: "terminee" } })
+    );
+  });
+});
+
 describe("historique du patient", () => {
   it("n'inclut que les consultations terminees (RG-CLI-41 : jamais un brouillon d'un autre)", async () => {
     await getHistoriquePatient("pat-1");

@@ -5627,3 +5627,89 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
 - 8 tests ajoutes. Verifie a l'integration par 89 : eslint 0 probleme, tsc 0 hors l'erreur deja
   confirmee sans rapport (chantier actif de c0/F-ETA-04), vitest 60/60 cible, tirets 0, migration
   rejouee depuis zero (`replay.sh`) : "No difference detected", strictement additive.
+
+### Prise de projet-gouv-a8 (ex e7/d4/18/23/3e/8c), F-CLI-09 : role infirmier et filtrage en memoire, 2026-09-29
+
+- A la demande de l'utilisateur ("on peut prendre plusieurs agents pour avancer"), 3 sous-agents
+  lances en parallele (worktrees isoles) sur F-PRE-01, F-CLI-12 et F-PIL-07 ; je continue moi-meme en
+  parallele sur une autre fiche pour ne pas les dupliquer.
+- F-CLI-09 cite deux manques : filtrage en SQL au lieu de la memoire (RG-ACC-05, tout charge puis
+  filtre/pagine en memoire), et une exclusion additionnelle pour le role infirmier "aucune regle
+  existante trouvee a ce jour pour l'appuyer, a confirmer contre le pack avant de l'implementer".
+- Verification en cours contre le texte exact du pack (`docs/pack claude/specs/10-fiches-clinique.md`,
+  section historique complet) avant de decider quoi coder.
+
+### Livraison sous-agent (worktree a168c9a1), F-PRE-01 : poids sur le PDF deja present, affirmation perimee, 2026-09-29
+
+- Sous-agent lance par projet-gouv-a8 (worktree isole) suite a la demande de l'utilisateur de
+  paralleliser. Manque deja perime, aucun code ecrit.
+  `src/app/api/patient/prescriptions/[id]/telecharger/route.ts` (generation reelle du PDF
+  d'ordonnance) imprime deja le poids du patient depuis le correctif F-PRE-04 du 2026-09-27 :
+  `poidsRequisPourPatient` (moins de 12 ans), `debutFenetrePoids`/`poidsRecent` (meme fenetre de 30
+  jours que la signature dans `regles-ordonnance.ts`), memes tables `Consultation`/`PriseEnChargeInfirmiere`
+  que `poidsRecentDuPatient` dans `prescription/actions.ts`. La ligne F-PRE-01 de
+  `docs/reste-a-faire.md` (ecrite le 2026-09-26) n'avait simplement jamais ete rafraichie apres ce
+  correctif du lendemain : son "Reste" contredisait directement la propre ligne F-PRE-04 du meme
+  fichier. Corrige uniquement `docs/reste-a-faire.md`, aucun fichier de code touche.
+- Verifie : garde anti-tiret passee (0 occurrence sur les fichiers touches). Rien d'autre necessaire,
+  aucun code de production modifie.
+- Fichier pret pour revue/commit : `docs/reste-a-faire.md`. Rien committe par le sous-agent.
+
+### Livraison sous-agent (worktree a09b8e2), F-PIL-07 : grain zone des agregats, decision deja coherente, 2026-09-29
+
+### Livraisons projet-gouv-a8, F-CLI-09 et F-CLI-12, 2026-09-29
+
+- **F-CLI-09 (travail direct, non sous-agent)** : verifie contre le texte exact du pack
+  (`docs/pack claude/specs/10-fiches-clinique.md`) le doute laisse par une session precedente sur une
+  "exclusion additionnelle pour le role infirmier" dans l'historique. Trouve une vraie difference
+  entre le tableau de roles de F-CLI-04 (resume, "DOCTOR, NURSE", sans annotation) et celui de
+  F-CLI-09 (historique, "DOCTOR, NURSE (sans sensible)") : un infirmier ne doit jamais voir
+  d'elements sensibles dans l'HISTORIQUE, quel que soit le niveau d'acces du consentement (meme un
+  `FULL_SENSITIVE` explicite), a la difference d'un medecin qui y accede selon le niveau. Cette
+  regle n'existait pas en code avant ce correctif (seuls le niveau d'acces et la base urgence/
+  reference etaient regardes). Corrige uniquement `clinical/actions.ts` (`getHistoriquePatient`,
+  variable locale `accesRestreint`), jamais touche a `getResumePatient` (F-CLI-04), conformement a
+  cette distinction du pack. 3 tests ajoutes dans `acces-lecture.test.ts`.
+- **F-CLI-12 (merge d'un sous-agent lance en worktree isole par projet-gouv-a8, worktree
+  a235d23e)** : note de soins autonome immuable avec addendum, meme patron que l'addendum de
+  consultation (F-CLI-08). Nouveau modele `AddendumSoins` (migration additive
+  `20260929010000_addendum_soins`, relation vers `PriseEnChargeInfirmiere` et `User`),
+  `ajouterAddendumSoinsAction` reservee a l'auteur de la prise en charge (verifie en base, jamais
+  suppose depuis le role seul), `getAddendaSoins` pour l'affichage (meme garde Zero Trust par
+  Consentement actif que `getPriseEnChargeNonRecuperee`). Aucune fonction de `soins/actions.ts` ne
+  modifie plus le contenu original (`noteSoins`) apres creation. A la difference de RG-CLI-70
+  (consultation), le pack ne prevoit ici ni fenetre de temps ni "responsable designe" pour cet
+  addendum : aucun des deux n'est applique. Le sous-agent avait travaille en worktree isole (ne peut
+  pas commiter sur l'arbre principal) : diff relu integralement puis reapplique a la main sur l'arbre
+  principal (schema, migration rejouee avec `migrate deploy` + `generate` sur la base partagee,
+  `soins/actions.ts`, `soins/actions.test.ts`), plutot que d'appliquer le diff brut. 9 tests ajoutes.
+- Verification complete apres fusion : `npx tsc --noEmit -p .` propre sur les fichiers touches (seules
+  erreurs restantes : `app/etablissement/page.tsx`, chantier actif d'une autre session, jamais touche) ;
+  `npx eslint` propre ; `npx vitest run src/modules/soins src/modules/clinical
+  src/security/tirets-interdits.test.ts src/security/service-guard.test.ts` : 0 echec sur l'arbre
+  principal (2567 tests verts ; les 14 echecs affiches viennent de copies figees de
+  `service-guard.test.ts` dans les worktrees d'autres agents, hors de mon perimetre) ; garde
+  anti-tiret passee (0 occurrence sur tous les fichiers touches, y compris la migration SQL).
+- `docs/reste-a-faire.md` mis a jour pour F-CLI-09 et F-CLI-12.
+- Fichiers prets pour revue/commit : `prisma/schema.prisma`,
+  `prisma/migrations/20260929010000_addendum_soins/`, `src/modules/soins/actions.ts`,
+  `src/modules/soins/actions.test.ts`, `src/modules/clinical/actions.ts`,
+  `src/modules/clinical/acces-lecture.test.ts`, `docs/reste-a-faire.md`. Rien committe.
+
+- Sous-agent lance par projet-gouv-a8 (worktree isole). Verifie contre le code reel, le schema et le
+  texte exact du pack avant de coder, comme demande.
+- `AgregatQuotidien.zoneSanitaireId` existe dans le schema mais `agregation.ts` n'ecrit jamais dedans
+  (seulement `etablissementId`, ou `departementId` pour les groupes SENSITIVE de IND-03). Texte exact
+  du pack (F-PIL-07, RG-PIL-60) : "recalcul par jour et par etablissement" - aucune exigence de
+  stockage au grain zone. F-PIL-06 (alertes epidemiologiques, plus tot ce soir) avait deja resolu ce
+  meme besoin sans toucher au grain de stockage : la zone est resolue a la LECTURE via
+  `EtablissementSanitaire.zoneSanitaireId`, jamais stockee en double sur l'agregat.
+- Conclusion : pas un bug, decision deja coherente avec celle prise pour IND-05/IND-06 (remontee
+  territoriale arretee au departement, les 34 zones sanitaires n'ont pas de decoupage officiel dans ce
+  depot). Ecrire un grain zone exigerait une decision produit prealable (quels indicateurs, risque de
+  fausse precision deja ecarte pour IND-05/06) : non mobilisable en correctif ponctuel, meme categorie
+  que F-CLI-08/F-LAB-02 deja tranches ce soir.
+- Aucun code ecrit. `docs/reste-a-faire.md` (F-PIL-07) mis a jour pour refleter precisement ce constat.
+- Verifie : garde anti-tiret passee (0 occurrence). Aucun fichier de code touche
+  (`pilotage/agregation.ts`/`file-taches.ts` relus, non modifies).
+- Fichier pret pour revue/commit : `docs/reste-a-faire.md`. Rien committe par le sous-agent.

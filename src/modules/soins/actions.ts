@@ -57,6 +57,34 @@ export interface PatientAttendantConstantes {
   motif: string;
 }
 
+/** Motifs d'addendum autorises (memes valeurs que MOTIFS_ADDENDUM de clinical/actions.ts, F-CLI-08). */
+const MOTIFS_ADDENDUM_SOINS = [
+  "complement_information",
+  "correction",
+  "resultat_recu",
+  "autre",
+] as const;
+
+const LONGUEUR_MAX_ADDENDUM_SOINS = 2000;
+
+const schemaAjoutAddendumSoins = z.object({
+  priseEnChargeId: z.string().trim().min(1, "La prise en charge est obligatoire."),
+  motif: z.enum(MOTIFS_ADDENDUM_SOINS, { message: "Le motif est invalide." }),
+  contenu: z
+    .string()
+    .trim()
+    .min(1, "Le contenu de l'addendum est obligatoire.")
+    .max(LONGUEUR_MAX_ADDENDUM_SOINS, `${LONGUEUR_MAX_ADDENDUM_SOINS} caracteres maximum.`),
+});
+
+/** Un addendum a une note de soins (F-CLI-12), pret a etre affiche sous la note d'origine. */
+export interface AddendumSoinsResume {
+  id: string;
+  motif: string;
+  contenu: string;
+  date: string; // ISO
+}
+
 /** Contenu d'une prise en charge infirmiere, pret a pre-remplir la consultation du medecin. */
 export interface PriseEnChargeInfirmiereResume {
   id: string;
@@ -526,4 +554,157 @@ export async function getPriseEnChargeNonRecuperee(
     statut: priseEnCharge.statut,
     date: priseEnCharge.date.toISOString(),
   };
+}
+
+/**
+ * Ajoute un addendum a une prise en charge infirmiere (F-CLI-12 du pack,
+ * complete le 2026-09-29 : "note de soins autonome immuable avec addendum",
+ * docs/reste-a-faire.md). Jamais une modification du contenu original
+ * (noteSoins et les constantes restent figees : aucune fonction de ce
+ * fichier ne les modifie apres creation), toujours un ajout date et signe.
+ * Meme patron que ajouterAddendumConsultationAction (F-CLI-08,
+ * clinical/actions.ts). Reserve a l'auteur de la prise en charge (Zero
+ * Trust : verifie en base, jamais suppose depuis le role seul) ; a la
+ * difference de RG-CLI-70 (consultation), le pack ne prevoit ici aucun
+ * "responsable designe" ni aucune fenetre de temps pour l'addendum d'une
+ * note de soins, donc aucune des deux n'est appliquee.
+ */
+export async function ajouterAddendumSoinsAction(
+  prevState: SoinsActionState,
+  formData: FormData
+): Promise<SoinsActionState> {
+  const session = await getSession();
+
+  if (!session) {
+    return { error: "Session expiree. Veuillez vous reconnecter.", success: false };
+  }
+
+  // RBAC explicite, en plus de la verification d'appartenance plus bas : meme
+  // convention Zero Trust que ajouterAddendumConsultationAction, pas
+  // seulement une consequence indirecte du role.
+  if (!session.roles.some((role) => can(role, "create", "prise_en_charge_infirmiere"))) {
+    return { error: "Action reservee au personnel infirmier.", success: false };
+  }
+
+  const validation = schemaAjoutAddendumSoins.safeParse({
+    priseEnChargeId: texte(formData, "priseEnChargeId"),
+    motif: texte(formData, "motif"),
+    contenu: texte(formData, "contenu"),
+  });
+
+  if (!validation.success) {
+    return {
+      error: premierMessageErreur(validation.error, "Donnees d'addendum invalides."),
+      success: false,
+    };
+  }
+
+  const { priseEnChargeId, motif, contenu } = validation.data;
+
+  try {
+    const infirmier = await prisma.professionnelSante.findUnique({
+      where: { userId: session.userId },
+    });
+
+    if (!infirmier) {
+      return { error: "Aucun profil professionnel associe a ce compte.", success: false };
+    }
+
+    const priseEnCharge = await prisma.priseEnChargeInfirmiere.findUnique({
+      where: { id: priseEnChargeId },
+    });
+
+    if (!priseEnCharge || priseEnCharge.infirmierId !== infirmier.id) {
+      return { error: "Cette prise en charge est introuvable.", success: false };
+    }
+
+    const adresseTechnique = await adresseTechniqueCourante();
+
+    await prisma.$transaction(async (tx) => {
+      const addendumCree = await tx.addendumSoins.create({
+        data: {
+          priseEnChargeInfirmiereId: priseEnCharge.id,
+          auteurId: session.userId,
+          motif,
+          contenu,
+        },
+      });
+
+      await journaliser(
+        {
+          utilisateurId: session.userId,
+          action: "ajout_addendum_soins",
+          donneeConcernee: `prise_en_charge_infirmiere:${priseEnCharge.id}`,
+          adresseTechnique,
+          justification: `Addendum ${addendumCree.id} ajoute a la prise en charge infirmiere ${priseEnCharge.id} (motif : ${motif})`,
+        },
+        tx
+      );
+    });
+
+    return { error: null, success: true, priseEnChargeId: priseEnCharge.id };
+  } catch (erreur) {
+    console.error("Erreur lors de l'ajout de l'addendum de soins :", erreur);
+    return {
+      error: "Une erreur est survenue lors de l'ajout de l'addendum. Veuillez reessayer.",
+      success: false,
+    };
+  }
+}
+
+/**
+ * Liste les addenda d'une prise en charge infirmiere, du plus ancien au plus
+ * recent (meme ordre d'affichage que les addenda de consultation). Reserve
+ * aux roles detenant read:prise_en_charge_infirmiere, avec la meme garde
+ * Zero Trust que getPriseEnChargeNonRecuperee : un Consentement actif pour
+ * le patient concerne doit exister pour l'utilisateur connecte.
+ */
+export async function getAddendaSoins(priseEnChargeId: string): Promise<AddendumSoinsResume[]> {
+  const session = await getSession();
+
+  if (!session) {
+    return [];
+  }
+
+  if (!session.roles.some((role) => can(role, "read", "prise_en_charge_infirmiere"))) {
+    return [];
+  }
+
+  const priseEnCharge = await prisma.priseEnChargeInfirmiere.findUnique({
+    where: { id: priseEnChargeId },
+  });
+
+  if (!priseEnCharge) {
+    return [];
+  }
+
+  const consentement = await prisma.consentement.findUnique({
+    where: {
+      patientId_acteurAutoriseId: {
+        patientId: priseEnCharge.patientId,
+        acteurAutoriseId: session.userId,
+      },
+    },
+  });
+
+  const consentementValide =
+    consentement !== null &&
+    consentement.statut === "actif" &&
+    (consentement.dateFin === null || consentement.dateFin > new Date());
+
+  if (!consentementValide) {
+    return [];
+  }
+
+  const addenda = await prisma.addendumSoins.findMany({
+    where: { priseEnChargeInfirmiereId: priseEnChargeId },
+    orderBy: { date: "asc" },
+  });
+
+  return addenda.map((addendum) => ({
+    id: addendum.id,
+    motif: addendum.motif,
+    contenu: addendum.contenu,
+    date: addendum.date.toISOString(),
+  }));
 }
