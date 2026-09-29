@@ -1,8 +1,13 @@
 import Link from "next/link";
 import { ArrowLeft, Eye, ShieldCheck, UserCheck } from "lucide-react";
-import { getMesConsentements, getNiveauVerificationPatientCourantAction } from "@/modules/patient/actions";
+import {
+  getMesAccesContexteSoins,
+  getMesConsentements,
+  getNiveauVerificationPatientCourantAction,
+} from "@/modules/patient/actions";
 import { Card } from "@/components/ui/Card";
 import { ListeConsentements } from "./ListeConsentements";
+import { ListeAccesContexteSoins } from "./ListeAccesContexteSoins";
 import { FormulaireNouveauConsentement } from "./FormulaireNouveauConsentement";
 import { GenerateurCodePartage } from "./GenerateurCodePartage";
 
@@ -35,9 +40,10 @@ const principesConsentement = [
  * confirmation via Modal avant soumission.
  */
 export default async function ConsentementsPage() {
-  const [consentements, niveauVerification] = await Promise.all([
+  const [consentements, niveauVerification, accesContexteSoins] = await Promise.all([
     getMesConsentements(),
     getNiveauVerificationPatientCourantAction(),
+    getMesAccesContexteSoins(),
   ]);
 
   const consentementsActifs = consentements.filter((c) => c.statutEffectif === "actif");
@@ -80,6 +86,8 @@ export default async function ConsentementsPage() {
           ))}
         </div>
       </section>
+
+      <ListeAccesContexteSoins acces={accesContexteSoins} />
 
       <div className="grid gap-8 lg:grid-cols-3">
         <section

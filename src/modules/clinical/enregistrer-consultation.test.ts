@@ -329,6 +329,18 @@ describe("base d'acces en ecriture a la CREATION d'une consultation (RG-ACC-15)"
     expect(critere.where.OR[1]).toMatchObject({ professionnelId: "pro-1", statut: "confirme" });
   });
 
+  it("RG-CIT-81 (corrige le 2026-09-28) : exclut du contexte de soins B4 un rendez-vous que le patient a marque termine lui-meme", async () => {
+    prismaMock.rendezVous.findFirst.mockResolvedValue(null);
+
+    await enregistrerConsultationAction(ETAT, formulaire());
+
+    const critere = prismaMock.rendezVous.findFirst.mock.calls[0][0];
+    expect(critere.where.OR[0].contexteSoinsTermineParPatient).toBe(false);
+    // La base B3 (rendez-vous confirme du jour avec CE professionnel) n'est
+    // jamais concernee par ce champ, propre au contexte de soins B4 seul.
+    expect(critere.where.OR[1]).not.toHaveProperty("contexteSoinsTermineParPatient");
+  });
+
   it("accepte via un rendez-vous confirme du jour avec CE professionnel, meme sans arrivee enregistree", async () => {
     prismaMock.rendezVous.findFirst.mockResolvedValue({
       id: "rdv-confirme",

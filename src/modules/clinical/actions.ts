@@ -1798,6 +1798,12 @@ export async function enregistrerConsultationAction(
                     etablissementId: professionnel.etablissementId,
                     statut: { in: [...STATUTS_ACTIFS] },
                     heureArrivee: { gte: seuilContexteSoins },
+                    // RG-CIT-81 : le patient peut mettre fin par avance a cet
+                    // acces "contexte de soins" (bouton "Mettre fin",
+                    // patient/actions.ts). N'affecte jamais un brouillon deja
+                    // ouvert (voir plus haut, base B7 "auteur" gouverne sa
+                    // poursuite) : seule la CREATION passe par cette requete.
+                    contexteSoinsTermineParPatient: false,
                   },
                   {
                     professionnelId: professionnel.id,

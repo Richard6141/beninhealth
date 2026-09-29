@@ -45,6 +45,35 @@ export interface ListeConsentementsProps {
   consentements: ConsentementAvecActeur[];
 }
 
+/** Fenetre de retention de la section "Expires" (RG-CIT-80 du pack, texte exact : "90 derniers jours"). */
+const FENETRE_EXPIRES_JOURS = 90;
+
+function estExpireDepuisMoinsDe90Jours(consentement: ConsentementAvecActeur): boolean {
+  if (!consentement.dateFin) return false;
+  const seuil = new Date();
+  seuil.setDate(seuil.getDate() - FENETRE_EXPIRES_JOURS);
+  return new Date(consentement.dateFin) >= seuil;
+}
+
+function GrilleConsentements({ consentements }: { consentements: ConsentementAvecActeur[] }) {
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      {consentements.map((consentement) => (
+        <CarteConsentement key={consentement.id} consentement={consentement} />
+      ))}
+    </div>
+  );
+}
+
+/**
+ * RG-CIT-80 du pack, texte exact : "La liste DOIT afficher separement les
+ * autorisations actives, expirees (90 derniers jours) et retirees." Purement
+ * un regroupement d'affichage : statutEffectif ("actif"/"expire"/"retire")
+ * est deja calcule cote serveur (patient/actions.ts, calculerStatutEffectifConsentement),
+ * aucun changement de donnees. Les consentements expires depuis plus de 90
+ * jours sont exclus de la liste (le pack ne demande que cette fenetre pour
+ * cette categorie), jamais les retires, quelle que soit leur anciennete.
+ */
 export function ListeConsentements({ consentements }: ListeConsentementsProps) {
   if (consentements.length === 0) {
     return (
@@ -56,11 +85,40 @@ export function ListeConsentements({ consentements }: ListeConsentementsProps) {
     );
   }
 
+  const actifs = consentements.filter((c) => c.statutEffectif === "actif");
+  const expires = consentements.filter((c) => c.statutEffectif === "expire" && estExpireDepuisMoinsDe90Jours(c));
+  const retires = consentements.filter((c) => c.statutEffectif === "retire");
+
   return (
-    <div className="grid gap-4 md:grid-cols-2">
-      {consentements.map((consentement) => (
-        <CarteConsentement key={consentement.id} consentement={consentement} />
-      ))}
+    <div className="flex flex-col gap-8">
+      <section aria-labelledby="titre-actifs" className="flex flex-col gap-4">
+        <h2 id="titre-actifs" className="text-[16px] font-bold text-encre">
+          Actifs ({actifs.length})
+        </h2>
+        {actifs.length > 0 ? (
+          <GrilleConsentements consentements={actifs} />
+        ) : (
+          <p className="text-[13px] text-encre-attenuee">Aucun accès actif pour le moment.</p>
+        )}
+      </section>
+
+      {expires.length > 0 ? (
+        <section aria-labelledby="titre-expires" className="flex flex-col gap-4">
+          <h2 id="titre-expires" className="text-[16px] font-bold text-encre">
+            Expirés (90 derniers jours) ({expires.length})
+          </h2>
+          <GrilleConsentements consentements={expires} />
+        </section>
+      ) : null}
+
+      {retires.length > 0 ? (
+        <section aria-labelledby="titre-retires" className="flex flex-col gap-4">
+          <h2 id="titre-retires" className="text-[16px] font-bold text-encre">
+            Retirés ({retires.length})
+          </h2>
+          <GrilleConsentements consentements={retires} />
+        </section>
+      ) : null}
     </div>
   );
 }

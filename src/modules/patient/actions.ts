@@ -34,6 +34,7 @@ import {
   normaliserPourRecherche,
   rechercheProfessionnelSuffisante,
 } from "./recherche-professionnel";
+import { STATUTS_ACTIFS } from "@/modules/facility/rendez-vous-etats";
 
 /** Libelles francais des types d'acces (ecran de partage et notifications). */
 const LIBELLES_TYPE_ACCES: Record<string, string> = {
@@ -291,6 +292,135 @@ export async function getMesConsentements(): Promise<ConsentementAvecActeur[]> {
     dateDebut: consentement.dateDebut.toISOString(),
     dateFin: consentement.dateFin ? consentement.dateFin.toISOString() : null,
   }));
+}
+
+// RG-CIT-81 : meme duree que clinical/actions.ts (DUREE_CONTEXTE_SOINS_HEURES,
+// RG-ACC-15), dupliquee ici faute d'export partage entre les deux modules
+// (aucune constante commune n'existe pour ce chiffre, meme choix que le reste
+// de ce depot qui prefere ne pas creer un fichier partage pour une seule
+// valeur reutilisee deux fois).
+const DUREE_CONTEXTE_SOINS_HEURES = 72;
+
+/** Un acces "contexte de soins" (base B4) actuellement ouvert pour le patient connecte (RG-CIT-81). */
+export interface AccesContexteSoins {
+  rendezVousId: string;
+  etablissementNom: string;
+  /** heureArrivee + 72h (RG-ACC-15), ISO. */
+  expireLe: string;
+}
+
+/**
+ * Acces "contexte de soins" (base B4, RG-ACC-15) actuellement ouverts pour
+ * le patient connecte : tout etablissement ou il est arrive (heureArrivee
+ * posee) il y a moins de 72h, pour un rendez-vous encore actif, et qu'il n'a
+ * pas deja termine lui-meme (RG-CIT-81). Meme fenetre que le controle
+ * d'ecriture reel de clinical/actions.ts (enregistrerConsultationAction),
+ * pour que l'affichage corresponde exactement a ce qui donne reellement
+ * acces.
+ */
+export async function getMesAccesContexteSoins(): Promise<AccesContexteSoins[]> {
+  const patient = await patientDeLaSessionCourante();
+
+  if (!patient) {
+    return [];
+  }
+
+  const seuil = new Date(Date.now() - DUREE_CONTEXTE_SOINS_HEURES * 60 * 60 * 1000);
+
+  const rendezVous = await prisma.rendezVous.findMany({
+    where: {
+      patientId: patient.id,
+      statut: { in: [...STATUTS_ACTIFS] },
+      heureArrivee: { gte: seuil },
+      contexteSoinsTermineParPatient: false,
+    },
+    include: { etablissement: true },
+    orderBy: { heureArrivee: "desc" },
+  });
+
+  return rendezVous
+    .filter((rdv): rdv is typeof rdv & { heureArrivee: Date } => rdv.heureArrivee !== null)
+    .map((rdv) => ({
+      rendezVousId: rdv.id,
+      etablissementNom: rdv.etablissement.nom,
+      expireLe: new Date(rdv.heureArrivee.getTime() + DUREE_CONTEXTE_SOINS_HEURES * 60 * 60 * 1000).toISOString(),
+    }));
+}
+
+const schemaFinContexteSoins = z.object({
+  rendezVousId: z.string().trim().min(1, "Le rendez-vous est obligatoire."),
+});
+
+/**
+ * Met fin par avance a un acces "contexte de soins" (RG-CIT-81) : marque le
+ * rendez-vous concerne pour que la CREATION d'une nouvelle consultation via
+ * la base B4 ne soit plus possible (clinical/actions.ts). N'affecte jamais
+ * un brouillon deja ouvert (base B7 "auteur" gouverne sa poursuite, jamais
+ * revalidee). Definitif : jamais de "reactiver" propose (coherent avec le
+ * retrait d'un Consentement ordinaire, lui aussi irreversible depuis cet
+ * ecran).
+ */
+export async function terminerAccesContexteSoinsAction(
+  prevState: PatientActionState,
+  formData: FormData
+): Promise<PatientActionState> {
+  const session = await getSession();
+
+  if (!session) {
+    return { error: "Session expiree. Veuillez vous reconnecter.", success: false };
+  }
+
+  const validation = schemaFinContexteSoins.safeParse({
+    rendezVousId: formData.get("rendezVousId"),
+  });
+
+  if (!validation.success) {
+    return {
+      error: premierMessageErreur(validation.error, "Rendez-vous invalide."),
+      success: false,
+    };
+  }
+
+  const { rendezVousId } = validation.data;
+
+  try {
+    const patient = await prisma.patient.findUnique({ where: { userId: session.userId } });
+
+    if (!patient) {
+      return { error: "Aucun dossier patient associe a ce compte.", success: false };
+    }
+
+    const rendezVous = await prisma.rendezVous.findUnique({ where: { id: rendezVousId } });
+
+    if (!rendezVous || rendezVous.patientId !== patient.id) {
+      return { error: "Ce rendez-vous est introuvable.", success: false };
+    }
+
+    const adresseTechnique = await adresseTechniqueCourante();
+
+    await prisma.$transaction([
+      prisma.rendezVous.update({
+        where: { id: rendezVous.id },
+        data: { contexteSoinsTermineParPatient: true },
+      }),
+      journaliser({
+        utilisateurId: session.userId,
+        action: "acces_contexte_soins_termine",
+        donneeConcernee: `rendez_vous:${rendezVous.id}`,
+        adresseTechnique,
+        justification:
+          "Acces contexte de soins (base B4) termine par le patient avant la fin naturelle de la fenetre de 72h.",
+      }),
+    ]);
+
+    return { error: null, success: true };
+  } catch (erreur) {
+    console.error("Erreur lors de la fin de l'acces contexte de soins :", erreur);
+    return {
+      error: "Une erreur est survenue. Veuillez reessayer.",
+      success: false,
+    };
+  }
 }
 
 /** Un acces au dossier du patient connecte par un tiers (F-CIT-12). */

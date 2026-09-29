@@ -467,6 +467,16 @@ model RendezVous {
   // libre ici) est pose automatiquement par la tache planifiee du meme
   // module quand l'heure est depassee de plus d'1h sans arrivee.
   heureArrivee              DateTime?
+  // RG-CIT-81 du pack : le patient peut mettre fin par avance a l'acces
+  // "contexte de soins" (base B4, clinical/actions.ts) ouvert par sa venue
+  // dans l'etablissement, avant la fin naturelle de la fenetre de 72h.
+  // N'affecte jamais un brouillon de consultation deja ouvert (base B7
+  // "auteur" gouverne sa poursuite, jamais revalidee) : seule la CREATION
+  // d'une nouvelle consultation via ce rendez-vous precis est bloquee une
+  // fois ce champ a true. Jamais remis a false (mettre fin est definitif
+  // pour ce rendez-vous, coherent avec l'irreversibilite du retrait d'un
+  // Consentement ordinaire).
+  contexteSoinsTermineParPatient Boolean @default(false)
   // RG-RDV-11 : nombre de deplacements successifs. Le rendez-vous qui remplace
   // l'ancien herite de son compte + 1 ; au-dela de 2, il faut annuler et reprendre.
   nombreDeplacements        Int       @default(0)

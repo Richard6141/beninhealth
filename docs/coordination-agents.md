@@ -5610,3 +5610,20 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   (hors perimetre de ce CA-1).
 - Verifie a l'integration par 89 : eslint 0 probleme, vitest 40/40 (`acces-lecture.test.ts`), tirets 0.
   Aucune migration.
+
+### Livraison projet-gouv-a8, F-CIT-10 (RG-CIT-80/81), 2026-09-28
+
+- Les deux manques restants de F-CIT-10 etaient mobilisables ce soir malgre l'ampleur apparente.
+- RG-CIT-80 : correctif purement UI, la donnee existait deja (`statutEffectif` deja calcule cote
+  serveur). `ListeConsentements.tsx` reorganisee en 3 sections (Actifs/Expires 90 jours/Retires), zero
+  changement backend.
+- RG-CIT-81 : plus substantiel, migration additive `RendezVous.contexteSoinsTermineParPatient` (defaut
+  `false`). La base B4 (contexte de soins, `clinical/actions.ts`) est purement derivee de
+  `heureArrivee`, aucun enregistrement dedie a afficher/terminer avant ce soir. Point trouve en lisant
+  le commentaire existant : un brouillon deja ouvert ne revalide jamais B4 (base B7 "auteur"), donc
+  "reduit l'acces au seul droit de terminer la consultation en cours" du pack est deja le comportement
+  naturel, rien de special a construire pour cette partie. Nouvel ecran affichant les acces contexte de
+  soins actifs avec bouton "Mettre fin".
+- 8 tests ajoutes. Verifie a l'integration par 89 : eslint 0 probleme, tsc 0 hors l'erreur deja
+  confirmee sans rapport (chantier actif de c0/F-ETA-04), vitest 60/60 cible, tirets 0, migration
+  rejouee depuis zero (`replay.sh`) : "No difference detected", strictement additive.
