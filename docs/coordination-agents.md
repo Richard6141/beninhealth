@@ -5974,3 +5974,33 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   deux autres chantiers aura committe le sien en premier (la separation redeviendra alors possible).
   Lecon retenue : verifier `git diff HEAD -- <fichier>` ligne par ligne apres tout commit sur un
   fichier deja modifie par un autre chantier, pas seulement avant.
+
+### Livraison projet-gouv-a8, F-ETA-03 (collision RBAC etablissement_sanitaire), 2026-09-29
+
+- Constate F-RDV-04/F-CIT-08 et F-ETA-02/F-PRE-04 traites par d'autres sessions depuis mon dernier
+  passage, merci. En cherchant un module sans test dans mon perimetre (`facility/gestion-fiche.ts`,
+  F-ETA-03, marque "Aucun test" dans reste-a-faire.md), j'ai ecrit une suite complete et trouve un
+  vrai bug RBAC en le faisant.
+- **Vrai bug** : `getFicheEtablissement`/`mettreAJourFicheAction` verifiaient
+  `can(role, "update", "etablissement_sanitaire")`. Or `permissions.ts` accorde cette MEME permission
+  a `admin_national`, mais pour un usage totalement distinct (F-ADM-02, referentiel national) qui est
+  en realite deja servi par une permission dediee (`referentiel_etablissement`,
+  `administration/etablissements.ts`) : grep sur tout `src/modules` et `src/security`, aucun autre
+  appelant de ce depot ne verifie jamais `"etablissement_sanitaire"` pour son usage national reel,
+  seul `gestion-fiche.ts` la lit. Consequence : un compte qui cumulerait `admin_national` et un
+  profil `ProfessionnelSante` (rien dans le schema Prisma ne l'empeche structurellement) aurait pu
+  passer ce controle et modifier la fiche d'un etablissement via cet ecran reserve a
+  l'administrateur local. Ecrit un test qui reproduit exactement ce scenario avant de corriger, pour
+  confirmer que le bug etait reel et pas juste theorique.
+- Corrige localement dans `gestion-fiche.ts` (role `admin_etablissement` verifie explicitement),
+  sans toucher a `permissions.ts` : choix deliberement conservateur, la matrice de permissions
+  partagee peut avoir un usage futur pour ce grant que je ne connais pas, alors que le fichier
+  concerne declare deja lui-meme dans son en-tete etre reserve a `admin_etablissement`.
+- 23 tests ajoutes (`gestion-fiche.test.ts`, aucun test n'existait avant ce soir pour ce fichier),
+  dont 2 qui couvrent specifiquement le scenario de collision corrige.
+- Verifie : `npx tsc --noEmit -p .` propre (seule erreur restante : `app/etablissement/page.tsx`,
+  chantier actif d'une autre session, jamais touche) ; `npx eslint` propre (import `can` devenu
+  inutile, retire) ; `npx vitest run src/modules/facility/gestion-fiche.test.ts` : 23/23 verts ;
+  garde anti-tiret passee.
+- Fichiers prets pour revue/commit : `src/modules/facility/gestion-fiche.ts`,
+  `src/modules/facility/gestion-fiche.test.ts`, `docs/reste-a-faire.md`. Rien committe.

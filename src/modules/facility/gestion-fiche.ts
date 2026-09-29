@@ -31,7 +31,6 @@ import { headers } from "next/headers";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
-import { can } from "@/security/permissions";
 import { journaliser } from "@/modules/audit/journaliser";
 
 /** Recupere l'etablissement du titulaire de la session courante (role admin_etablissement), ou null (Zero Trust, jamais d'id transmis par le client). */
@@ -97,7 +96,15 @@ export interface FicheEtablissement {
 export async function getFicheEtablissement(): Promise<FicheEtablissement | null> {
   const session = await getSession();
 
-  if (!session || !session.roles.some((role) => can(role, "update", "etablissement_sanitaire"))) {
+  // Corrige le 2026-09-29 : la permission "update:etablissement_sanitaire"
+  // est aussi accordee a admin_national (permissions.ts), mais pour un usage
+  // distinct et deja servi par une permission dediee ("referentiel_etablissement",
+  // administration/etablissements.ts, F-ADM-02) : aucun autre appelant de ce
+  // depot ne verifie "etablissement_sanitaire". Verifier le role explicitement
+  // ici evite qu'un compte qui cumulerait admin_national et un profil
+  // ProfessionnelSante (schema qui ne l'empeche pas) puisse modifier la fiche
+  // d'un etablissement via cet ecran reserve a l'administrateur local.
+  if (!session || !session.roles.includes("admin_etablissement")) {
     return null;
   }
 
@@ -157,7 +164,11 @@ export async function mettreAJourFicheAction(
     return { error: "Session expiree. Veuillez vous reconnecter.", success: false };
   }
 
-  if (!session.roles.some((role) => can(role, "update", "etablissement_sanitaire"))) {
+  // Corrige le 2026-09-29 : meme raisonnement que getFicheEtablissement
+  // ci-dessus, role verifie explicitement plutot que la permission partagee
+  // "update:etablissement_sanitaire" (aussi accordee a admin_national pour un
+  // usage distinct et deja servi par "referentiel_etablissement").
+  if (!session.roles.includes("admin_etablissement")) {
     return { error: "Action reservee aux administrateurs d'etablissement.", success: false };
   }
 
