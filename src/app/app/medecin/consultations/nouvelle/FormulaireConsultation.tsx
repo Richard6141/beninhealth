@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useId, useState } from "react";
+import { useActionState, useEffect, useId, useRef, useState } from "react";
 import type { ChangeEvent, ReactNode } from "react";
 import Link from "next/link";
 import {
@@ -30,6 +30,7 @@ import {
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { Modal, type ModalHandle } from "@/components/ui/Modal";
 import { TextField } from "@/components/ui/TextField";
 
 const etatInitial: ClinicalActionState = { error: null, success: false };
@@ -281,6 +282,22 @@ export function FormulaireConsultation({
   const [diagnosticsSecondaires, setDiagnosticsSecondaires] = useState<{ code: string; libelle: string }[]>(
     brouillon?.diagnosticsSecondaires ?? []
   );
+  // Etape 4 du pack (F-CLI-07) : recapitulatif en lecture seule avant la
+  // confirmation finale de la signature. Le bouton "Confirmer la validation"
+  // de cette modale soumet le formulaire principal via l'attribut HTML
+  // `form` (voir plus bas) : jamais de champs dupliques, jamais un second
+  // appel a enregistrerConsultationAction.
+  const modalConfirmationRef = useRef<ModalHandle>(null);
+  const idFormulaire = useId();
+
+  // Ferme la modale de confirmation des qu'une soumission se termine (succes
+  // ou erreur) : l'utilisateur voit alors soit l'ecran de validation reussie,
+  // soit le message d'erreur affiche dans le formulaire redevenu visible.
+  useEffect(() => {
+    if (!pending) {
+      modalConfirmationRef.current?.close();
+    }
+  }, [pending]);
 
   // L'action renvoie l'id de la consultation enregistree (creation ou mise a
   // jour) : sert a la fois de valeur pour le champ cache consultationId des
@@ -348,6 +365,21 @@ export function FormulaireConsultation({
     controleIMC,
   ].filter((controle): controle is ResultatControleConstante => controle !== null);
 
+  // Recapitulatif (etape 4 du pack, F-CLI-07) : seules les constantes
+  // effectivement renseignees sont listees, memes libelles/unites que les
+  // champs de saisie ci-dessus.
+  const constantesRenseignees = [
+    { label: "Température", valeur: constantes.temperatureCelsius, unite: "°C" },
+    { label: "Pouls", valeur: constantes.pouls, unite: "bpm" },
+    { label: "Fréquence respiratoire", valeur: constantes.frequenceRespiratoire, unite: "/min" },
+    { label: "Tension systolique", valeur: constantes.tensionSystolique, unite: "mmHg" },
+    { label: "Tension diastolique", valeur: constantes.tensionDiastolique, unite: "mmHg" },
+    { label: "Saturation en oxygène", valeur: constantes.saturationOxygene, unite: "%" },
+    { label: "Poids", valeur: constantes.poidsKg, unite: "kg" },
+    { label: "Taille", valeur: constantes.tailleCm, unite: "cm" },
+    { label: "Glycémie capillaire", valeur: constantes.glycemieGL, unite: "g/L" },
+  ].filter((champ) => champ.valeur.trim() !== "");
+
   const uneValeurRefusee = tousLesControles.some((controle) => controle.statut === "refus");
   const uneValeurEnAlerte = tousLesControles.some((controle) => controle.statut === "alerte");
   const blocageConstantesNonResolu = uneValeurRefusee || (uneValeurEnAlerte && !confirmerAlerte);
@@ -400,7 +432,7 @@ export function FormulaireConsultation({
           : undefined
       }
     >
-      <form action={formAction} aria-busy={pending} className="flex flex-col gap-5">
+      <form id={idFormulaire} action={formAction} aria-busy={pending} className="flex flex-col gap-5">
         <input type="hidden" name="patientId" value={patientId} />
         <input type="hidden" name="rendezVousId" value={rendezVousId} />
         <input type="hidden" name="consultationId" value={consultationIdActuel ?? ""} />
@@ -715,14 +747,13 @@ export function FormulaireConsultation({
             {pending ? "Enregistrement..." : "Enregistrer le brouillon"}
           </Button>
           <Button
-            type="submit"
-            name="intent"
-            value="valider"
+            type="button"
             variant="primary"
             className="w-fit"
             disabled={pending || !peutValider}
+            onClick={() => modalConfirmationRef.current?.showModal()}
           >
-            {pending ? "Validation..." : "Valider la consultation"}
+            Valider la consultation
           </Button>
           {!peutValider && consultationIdActuel ? (
             <span className="text-[13px] text-encre-attenuee">
@@ -731,6 +762,82 @@ export function FormulaireConsultation({
           ) : null}
         </div>
       </form>
+
+      <Modal
+        ref={modalConfirmationRef}
+        title="Confirmer la validation de la consultation ?"
+        description="Après validation, cette consultation ne pourra plus être modifiée (un addendum reste possible)."
+      >
+        <div className="flex flex-col gap-4">
+          <dl className="flex flex-col gap-3 text-[14px]">
+            <div>
+              <dt className="font-semibold text-encre">Motif</dt>
+              <dd className="text-encre-secondaire">{motif.trim() || "Non renseigné"}</dd>
+            </div>
+            {symptomes.trim() ? (
+              <div>
+                <dt className="font-semibold text-encre">Symptômes</dt>
+                <dd className="whitespace-pre-line text-encre-secondaire">{symptomes}</dd>
+              </div>
+            ) : null}
+            {constantesRenseignees.length > 0 ? (
+              <div>
+                <dt className="font-semibold text-encre">Constantes</dt>
+                <dd className="text-encre-secondaire">
+                  {constantesRenseignees.map((champ) => `${champ.label} : ${champ.valeur} ${champ.unite}`).join(" · ")}
+                </dd>
+              </div>
+            ) : null}
+            <div>
+              <dt className="font-semibold text-encre">Diagnostic principal</dt>
+              <dd className="text-encre-secondaire">
+                {diagnosticPrincipal ? (
+                  <>
+                    <span className="chiffres">{diagnosticPrincipal.code}</span> : {diagnosticPrincipal.libelle} (
+                    {certitudeAffichee === "confirme" ? "confirmé" : "suspecté"})
+                  </>
+                ) : (
+                  "Non renseigné"
+                )}
+              </dd>
+            </div>
+            {diagnosticsSecondaires.length > 0 ? (
+              <div>
+                <dt className="font-semibold text-encre">Diagnostics secondaires</dt>
+                <dd className="text-encre-secondaire">
+                  {diagnosticsSecondaires.map((diagnostic) => `${diagnostic.code} : ${diagnostic.libelle}`).join(", ")}
+                </dd>
+              </div>
+            ) : null}
+            <div>
+              <dt className="font-semibold text-encre">Conclusion</dt>
+              <dd className="whitespace-pre-line text-encre-secondaire">{conclusion.trim() || "Non renseigné"}</dd>
+            </div>
+          </dl>
+
+          {state.error ? (
+            <Alert level="critical" title="Consultation non enregistrée">
+              {state.error}
+            </Alert>
+          ) : null}
+
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={() => modalConfirmationRef.current?.close()}>
+              Modifier
+            </Button>
+            <Button
+              type="submit"
+              form={idFormulaire}
+              name="intent"
+              value="valider"
+              variant="primary"
+              disabled={pending}
+            >
+              {pending ? "Validation..." : "Confirmer la validation"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </Card>
   );
 }

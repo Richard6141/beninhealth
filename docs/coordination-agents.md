@@ -5805,3 +5805,57 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   `src/modules/identity/actions.test.ts`, `src/modules/identity/limitation-connexion.ts`,
   `src/modules/identity/limitation-connexion.test.ts`, `src/modules/identity/alertes-securite.ts`,
   `docs/reste-a-faire.md`. Rien committe.
+
+### Livraison projet-gouv-a8, F-CLI-07 : affirmation perimee, CA-1 deja implemente, 2026-09-29
+
+- Peer projet-gouv-41 a integre F-AUTH-02 (commit `1b53e69`), merci. En continuant le balayage de
+  mon perimetre, trouve une affirmation perimee sur F-CLI-07 : "Manquent reellement : liste des
+  sections manquantes, recapitulatif avant signature". Verifie contre le code reel
+  (`clinical/actions.ts` ~ligne 1577) : le CA-1 exact du pack ("sans diagnostic principal, la
+  validation est refusee avec la liste des champs manquants") est deja entierement implemente et
+  teste (`champsManquants`, message "Impossible de valider : renseignez motif, conclusion,
+  diagnostic principal (CIM-10)."), `enregistrer-consultation.test.ts:454-468`. Seul le recapitulatif
+  en lecture seule avant confirmation (etape 4 du pack, chantier UI) reste reellement manquant.
+  Doc seulement, aucun code touche.
+- Verifie : garde anti-tiret passee (0 occurrence).
+- Fichier pret pour revue/commit : `docs/reste-a-faire.md`. Rien committe.
+
+### Livraison projet-gouv-a8, F-CLI-07 (recapitulatif avant signature), 2026-09-29
+
+- A la demande explicite de l'utilisateur ("continue sur les autres points"), j'ai repris le chantier
+  UI reste ouvert sur F-CLI-07 (etape 4 du pack, docs/pack claude/specs/10-fiches-clinique.md:202) :
+  "il affiche un recapitulatif en lecture seule : Apres validation, cette consultation ne pourra plus
+  etre modifiee."
+- Ajoute dans `FormulaireConsultation.tsx` (app/medecin/consultations/nouvelle) : le bouton "Valider
+  la consultation" n'est plus un bouton de soumission direct, il ouvre desormais une fenetre modale
+  (composant `Modal` partage, meme patron que `FormulaireNouveauConsentement.tsx` pour F-CIT-10) qui
+  recapitule motif, symptomes, constantes renseignees, diagnostic principal + certitude, diagnostics
+  secondaires et conclusion, avec l'avertissement exact du pack. Le bouton "Confirmer la validation"
+  de cette modale soumet le VRAI formulaire principal via l'attribut HTML `form` (id genere par
+  `useId()`), donc aucun champ duplique et aucun second appel a `enregistrerConsultationAction` :
+  seule une astuce d'UI, la logique serveur (deja testee, `enregistrer-consultation.test.ts`) n'est
+  pas touchee. La modale se ferme automatiquement des qu'une soumission se termine (succes ou echec),
+  pour laisser voir soit l'ecran de validation reussie, soit le message d'erreur dans le formulaire.
+- **Limite assumee et signalee honnetement** : aucune verification interactive en navigateur n'a ete
+  faite ce soir (pas d'acces a un compte de demonstration medecin connecte dans cette session) ;
+  seuls `npx tsc --noEmit` et `npx eslint` sont propres. Ce fichier n'avait et n'a toujours aucun test
+  automatise (convention deja notee dans ce depot : les ecrans clients ne sont pas testes en
+  isolation, seules les Server Actions le sont). Une tentative de `next build` complet a ete
+  abandonnee apres ~15 minutes sans sortie (probablement un hangup lie a la charge partagee de la
+  machine ce soir, jamais utilise comme verification par aucune session avant celle-ci) : a verifier
+  en direct par le prochain agent qui touche cet ecran, ou par l'utilisateur.
+- Verifie : `npx tsc --noEmit -p .` propre (seule erreur restante : `app/etablissement/page.tsx`,
+  chantier actif d'une autre session, jamais touche) ; `npx eslint` propre ; garde anti-tiret passee
+  (un vrai oubli corrige en cours de route : le caractere U+2014 utilise comme texte de repli pour un
+  champ vide, remplace par "Non renseigne").
+- Fichiers prets pour revue/commit : `src/app/app/medecin/consultations/nouvelle/FormulaireConsultation.tsx`,
+  `docs/reste-a-faire.md`. Rien committe.
+- Integre par 89 : lecture complete du diff (usage correct de l'attribut HTML `form` pour soumettre le
+  vrai formulaire depuis la modale, meme patron deja eprouve dans ce depot pour F-CIT-10), `npx eslint`
+  et `npx tsc --noEmit` reconfirmes propres. Aucun outil de clic navigateur disponible dans cette
+  session non plus : serveur de dev lance localement, `curl` sur `/app/medecin/consultations/nouvelle`
+  et `/` renvoient tous deux 307 (redirection connexion), donc aucun crash serveur, mais ceci NE
+  remplace PAS une verification interactive reelle de l'ouverture/soumission de la modale. Limite
+  assumee inchangee, transmise telle quelle : premiere session avec un compte de demonstration
+  connecte, merci de cliquer sur "Valider la consultation" sur `/app/medecin/consultations/nouvelle`
+  pour confirmer que la modale s'ouvre et se soumet correctement avant de considerer ce point clos.
