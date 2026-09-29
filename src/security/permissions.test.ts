@@ -53,9 +53,9 @@ describe("can (permissions RBAC)", () => {
     });
   });
 
-  describe("document medical (F-CLI-13), reserve aux soignants", () => {
-    it("refuse l'ajout au laboratoire, au pharmacien, a l'agent communautaire et au patient", () => {
-      for (const role of ["laboratoire", "pharmacien", "agent_communautaire", "patient"] as const) {
+  describe("document medical (F-CLI-13), reserve aux soignants et au laboratoire", () => {
+    it("refuse l'ajout au pharmacien, a l'agent communautaire et au patient", () => {
+      for (const role of ["pharmacien", "agent_communautaire", "patient"] as const) {
         expect(can(role, "create", "document_medical")).toBe(false);
       }
     });
@@ -88,6 +88,11 @@ describe("can (permissions RBAC)", () => {
 
     it("refuse la creation d'un examen medical (non accordee)", () => {
       expect(can("laboratoire", "create", "examen_medical")).toBe(false);
+    });
+
+    it("F-CLI-13 (corrige le 2026-09-29) : autorise l'ajout et la lecture d'un document medical (role LAB_* du pack, compte rendu)", () => {
+      expect(can("laboratoire", "create", "document_medical")).toBe(true);
+      expect(can("laboratoire", "read", "document_medical")).toBe(true);
     });
   });
 

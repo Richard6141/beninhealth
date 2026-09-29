@@ -181,6 +181,12 @@ const MATRICE_PERMISSIONS: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     'read:examen_medical',
     'update:examen_medical',
     'create:validation_examen',
+    // F-CLI-13 (roles du pack : DOCTOR, NURSE, LAB_* "compte rendu") : ajouter
+    // un compte rendu au dossier d'un patient, sous le meme Consentement actif
+    // que le medecin et l'infirmier, verifie en base par ajouterDocumentAction
+    // (jamais deduit de ce seul droit).
+    'read:document_medical',
+    'create:document_medical',
   ]),
 
   admin_etablissement: new Set<Permission>([

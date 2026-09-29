@@ -112,14 +112,14 @@ afterEach(() => {
 });
 
 describe("ajouterDocumentAction (F-CLI-13)", () => {
-  it("refuse un role qui ne peut pas creer de document (laboratoire, pharmacien)", async () => {
-    for (const role of ["laboratoire", "pharmacien"]) {
+  it("refuse un role qui ne peut pas creer de document (pharmacien, agent communautaire)", async () => {
+    for (const role of ["pharmacien", "agent_communautaire"]) {
       getSessionMock.mockResolvedValue({ userId: "user-autre", roles: [role] });
 
       const resultat = await ajouterDocumentAction(etatInitial, ajout());
 
       expect(resultat.success).toBe(false);
-      expect(resultat.error).toBe("Action reservee aux medecins et aux infirmiers.");
+      expect(resultat.error).toBe("Action reservee aux medecins, aux infirmiers et au laboratoire.");
     }
     expect(televerserMock).not.toHaveBeenCalled();
   });
@@ -137,6 +137,15 @@ describe("ajouterDocumentAction (F-CLI-13)", () => {
 
     p.consentement.findUnique.mockResolvedValue(null);
     expect((await ajouterDocumentAction(etatInitial, ajout())).error).toContain("Aucun consentement actif");
+  });
+
+  it("F-CLI-13 (corrige le 2026-09-29) : accepte un compte laboratoire sous consentement actif, avec le meme controle que le medecin", async () => {
+    getSessionMock.mockResolvedValue({ userId: "user-lab", roles: ["laboratoire"] });
+    p.professionnelSante.findUnique.mockResolvedValue({ id: "pro-lab", etablissementId: "etab-1" });
+
+    expect((await ajouterDocumentAction(etatInitial, ajout())).success).toBe(true);
+    const { data } = p.documentMedical.create.mock.calls[0][0] as { data: Record<string, unknown> };
+    expect(data.auteurId).toBe("user-lab");
   });
 
   it("purge les metadonnees EXIF d'un JPEG avant l'envoi au stockage et enregistre la taille reellement stockee", async () => {

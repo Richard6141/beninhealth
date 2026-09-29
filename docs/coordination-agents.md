@@ -5750,3 +5750,26 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   mon perimetre) ; garde anti-tiret passee.
 - Fichiers prets pour revue/commit : `src/modules/clinical/actions.ts`,
   `src/modules/clinical/enregistrer-consultation.test.ts`, `docs/reste-a-faire.md`. Rien committe.
+
+### Livraison projet-gouv-a8, F-CLI-13 (laboratoire exclu a tort de l'ajout de document), 2026-09-29
+
+- Peer projet-gouv-41 a integre F-CLI-05 (commit `60723b7`) et pousse les 8 commits precedents sur
+  GitHub avec verifications clean-clone completes, merci. Nouvelle livraison sur mon perimetre.
+- **Vrai bug corrige** : le "Ce qui manque" de F-CLI-13 signalait deja "laboratoire exclu". Verifie
+  contre le texte exact du pack (`docs/pack claude/specs/10-fiches-clinique.md:290`, F-CLI-13,
+  tableau des roles : « DOCTOR, NURSE, LAB_\* (compte rendu) ») : confirme, `permissions.ts`
+  n'accordait `create:document_medical`/`read:document_medical` qu'a medecin et infirmier, avec un
+  test qui affirmait explicitement le refus du laboratoire comme comportement voulu
+  (`permissions.test.ts`). Corrige : role laboratoire ajoute a la matrice RBAC avec le meme
+  Consentement actif verifie en base que le medecin et l'infirmier (`document/actions.ts`, aucune
+  dérogation). Message d'erreur et commentaires mis a jour en consequence. 2 tests ajoutes/modifies
+  (`permissions.test.ts`, `document/actions.test.ts`), un test existant qui encodait l'ancien refus
+  du laboratoire corrige pour refleter le nouveau comportement voulu.
+- Verifie : `npx tsc --noEmit -p .` propre sur mes fichiers (seule erreur restante :
+  `app/etablissement/page.tsx`, chantier actif d'une autre session, jamais touche) ; `npx eslint`
+  propre ; `npx vitest run src/modules/document src/security/permissions.test.ts` : 0 echec sur
+  l'arbre principal (les echecs affiches viennent, comme deja signale plusieurs fois ce soir, de
+  copies figees dans les worktrees d'autres agents, hors de mon perimetre) ; garde anti-tiret passee.
+- Fichiers prets pour revue/commit : `src/security/permissions.ts`, `src/security/permissions.test.ts`,
+  `src/modules/document/actions.ts`, `src/modules/document/actions.test.ts`, `docs/reste-a-faire.md`.
+  Rien committe.

@@ -119,7 +119,7 @@ function texte(formData: FormData, cle: string): string {
 }
 
 /** Message renvoye a un role qui ne peut ni ajouter ni retirer de document. */
-const MESSAGE_ROLE_NON_HABILITE = "Action reservee aux medecins et aux infirmiers.";
+const MESSAGE_ROLE_NON_HABILITE = "Action reservee aux medecins, aux infirmiers et au laboratoire.";
 
 /**
  * Nom complet de l'auteur d'un document, prefixe de "Dr." seulement s'il est
@@ -154,8 +154,9 @@ async function professionnelDeLaSessionCourante() {
 
 /**
  * Ajoute un document au dossier d'un patient (F-CLI-13 du pack), a
- * l'initiative du medecin ou de l'infirmier connecte (derive de getSession(),
- * jamais d'un id transmis par le client). Verification obligatoire avant
+ * l'initiative du medecin, de l'infirmier ou du laboratoire connecte (derive
+ * de getSession(), jamais d'un id transmis par le client). Verification
+ * obligatoire avant
  * toute ecriture : un Consentement actif (dossier_complet ou documents) doit
  * exister pour (patientId, acteurAutoriseId = professionnel connecte). Si un
  * consultationId est fourni, verifie qu'il appartient bien a ce patient et a
@@ -183,7 +184,9 @@ export async function ajouterDocumentAction(
   }
 
   // RBAC (voir src/security/permissions.ts) : ajouter un document medical est
-  // reserve aux roles medecin et infirmier (F-CLI-13 : DOCTOR, NURSE).
+  // reserve aux roles medecin, infirmier et laboratoire (F-CLI-13 : DOCTOR,
+  // NURSE, LAB_* "compte rendu", corrige le 2026-09-29 : le laboratoire etait
+  // exclu jusqu'ici alors que le pack le liste explicitement).
   if (!session.roles.some((role) => can(role, "create", "document_medical"))) {
     return { error: MESSAGE_ROLE_NON_HABILITE, success: false };
   }
