@@ -47,6 +47,24 @@ interface ConstantesFormulaire {
   glycemieGL: string;
 }
 
+/**
+ * Etiquettes de symptomes frequents (F-CLI-06 du pack, section "sections de
+ * saisie" : "Etiquettes a choisir (fievre, toux, cephalees, diarrhee,
+ * vomissements, douleurs abdominales...) + libre"). Un clic ajoute/retire la
+ * ligne correspondante dans le meme champ texte libre : aucune structure de
+ * donnees separee, le champ "symptomes" reste un texte a une ligne par
+ * symptome comme avant.
+ */
+const SYMPTOMES_FREQUENTS = ["Fièvre", "Toux", "Céphalées", "Diarrhée", "Vomissements", "Douleurs abdominales"];
+
+/** Lignes non vides d'un champ symptomes (une par ligne, deja la convention de ce formulaire). */
+function lignesSymptomes(valeur: string): string[] {
+  return valeur
+    .split("\n")
+    .map((ligne) => ligne.trim())
+    .filter((ligne) => ligne.length > 0);
+}
+
 const CONSTANTES_VIDES: ConstantesFormulaire = {
   temperatureCelsius: "",
   pouls: "",
@@ -313,6 +331,18 @@ export function FormulaireConsultation({
     setConstantes((actuelles) => ({ ...actuelles, [champ]: valeur }));
   }
 
+  const symptomesSelectionnes = lignesSymptomes(symptomes);
+
+  /** Ajoute ou retire une etiquette de symptome frequent, sans toucher au reste du texte libre deja saisi. */
+  function basculerSymptomeFrequent(etiquette: string) {
+    const lignes = lignesSymptomes(symptomes);
+    setSymptomes(
+      lignes.includes(etiquette)
+        ? lignes.filter((ligne) => ligne !== etiquette).join("\n")
+        : [...lignes, etiquette].join("\n")
+    );
+  }
+
   const dateNaissance = patientDateNaissance ? new Date(patientDateNaissance) : null;
   const maintenant = new Date();
   const age = dateNaissance ? ageAnnees(dateNaissance, maintenant) : null;
@@ -502,13 +532,31 @@ export function FormulaireConsultation({
           hint="Obligatoire pour valider la consultation, facultatif pour un simple brouillon (200 caracteres maximum)."
         />
 
-        <ChampTexteMultiligne
-          label="Symptomes"
-          name="symptomes"
-          hint="Un symptome par ligne (ex. fievre, toux, douleur abdominale)."
-          value={symptomes}
-          onChange={setSymptomes}
-        />
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap gap-2">
+            {SYMPTOMES_FREQUENTS.map((etiquette) => {
+              const selectionne = symptomesSelectionnes.includes(etiquette);
+              return (
+                <button
+                  key={etiquette}
+                  type="button"
+                  aria-pressed={selectionne}
+                  onClick={() => basculerSymptomeFrequent(etiquette)}
+                  className="rounded-badge focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+                >
+                  <Badge tone={selectionne ? "accent" : "neutral"}>{etiquette}</Badge>
+                </button>
+              );
+            })}
+          </div>
+          <ChampTexteMultiligne
+            label="Symptômes"
+            name="symptomes"
+            hint="Un symptôme par ligne (ex. fièvre, toux, douleur abdominale) : cliquez une étiquette ci-dessus ou complétez librement."
+            value={symptomes}
+            onChange={setSymptomes}
+          />
+        </div>
 
         <div className="flex flex-col gap-3">
           <p className="flex flex-wrap items-baseline gap-1.5 text-[18px] font-semibold text-encre">

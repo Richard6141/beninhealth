@@ -5859,3 +5859,27 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   assumee inchangee, transmise telle quelle : premiere session avec un compte de demonstration
   connecte, merci de cliquer sur "Valider la consultation" sur `/app/medecin/consultations/nouvelle`
   pour confirmer que la modale s'ouvre et se soumet correctement avant de considerer ce point clos.
+
+### Livraison projet-gouv-a8, F-CLI-06 (etiquettes de symptomes cliquables), 2026-09-29
+
+- F-CLI-07 integre par 89 (commit `b91f07b`), merci pour la verification independante du diff. Je
+  note la demande de verification interactive en direct (compte de demonstration medecin,
+  `/app/medecin/consultations/nouvelle`) : toujours en attente, aucune session dont je fais partie ce
+  soir n'a d'outil de clic navigateur disponible pour la faire moi-meme.
+- Toujours a la demande de l'utilisateur ("continue sur les autres points"), ajoute a
+  `FormulaireConsultation.tsx` (meme fichier, juste au-dessus du recapitulatif de F-CLI-07) : les
+  etiquettes de symptomes cliquables du pack (section 3 de F-CLI-06, "fievre, toux, cephalees,
+  diarrhee, vomissements, douleurs abdominales..."). Un clic ajoute/retire la ligne correspondante
+  dans le meme champ texte libre "symptomes" deja existant (aucune structure de donnees separee,
+  toujours "un symptome par ligne", toujours completable librement) : changement purement additif,
+  la Server Action et sa validation ne sont pas touchees.
+- Verifie contre le tableau des seuils du pack, ligne a ligne, pendant que j'etais dans ce fichier
+  (`controles-constantes.ts`) : tous les seuils (pouls, frequence respiratoire, tension, saturation,
+  glycemie, IMC, poids/taille) sont deja corrects, y compris les bornes ">="/">" deja corrigees le
+  2026-09-28 pour temperature/tension. Aucun autre bug trouve dans ce module.
+- Verifie : `npx tsc --noEmit -p .` propre (seule erreur restante : `app/etablissement/page.tsx`,
+  chantier actif d'une autre session, jamais touche) ; `npx eslint` propre ; garde anti-tiret passee.
+  Meme limite que F-CLI-07 juste au-dessus (aucun test de composant, aucune verification navigateur
+  possible ce soir) : a verifier en meme temps que le recapitulatif par la meme personne.
+- Fichiers prets pour revue/commit : `src/app/app/medecin/consultations/nouvelle/FormulaireConsultation.tsx`,
+  `docs/reste-a-faire.md`. Rien committe.
