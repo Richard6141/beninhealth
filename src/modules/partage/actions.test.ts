@@ -87,22 +87,64 @@ afterEach(() => {
 describe("genererCodePartageAction (F-CIT-11, RG-CIT-90)", () => {
   beforeEach(() => {
     getSessionMock.mockResolvedValue({ userId: "user-pat", roles: ["patient"] });
-    p.patient.findUnique.mockResolvedValue({ id: "pat-1", userId: "user-pat" });
+    p.patient.findUnique.mockResolvedValue({
+      id: "pat-1",
+      userId: "user-pat",
+      user: { niveauVerification: "N1" },
+    });
     p.codePartageDossier.deleteMany.mockResolvedValue({ count: 0 });
     p.codePartageDossier.create.mockResolvedValue({ id: "code-1" });
   });
 
+  function formulaireGeneration(niveauAcces = "FULL", duree = "24h"): FormData {
+    return formulaire({ niveauAcces, duree });
+  }
+
   it("refuse un compte qui n'est pas patient", async () => {
     getSessionMock.mockResolvedValue({ userId: "user-med", roles: ["medecin"] });
 
-    const resultat = await genererCodePartageAction(etatInitialGeneration, new FormData());
+    const resultat = await genererCodePartageAction(etatInitialGeneration, formulaireGeneration());
 
     expect(resultat.success).toBe(false);
     expect(p.codePartageDossier.create).not.toHaveBeenCalled();
   });
 
+  it("refuse un niveau d'acces absent ou inconnu", async () => {
+    const resultat = await genererCodePartageAction(etatInitialGeneration, formulaire({ niveauAcces: "AUTRE", duree: "24h" }));
+
+    expect(resultat.success).toBe(false);
+    expect(p.codePartageDossier.create).not.toHaveBeenCalled();
+  });
+
+  it("refuse une duree hors bornes autorisees (24h/7j/30j/6mois/12mois)", async () => {
+    const resultat = await genererCodePartageAction(etatInitialGeneration, formulaire({ niveauAcces: "FULL", duree: "36mois" }));
+
+    expect(resultat.success).toBe(false);
+    expect(p.codePartageDossier.create).not.toHaveBeenCalled();
+  });
+
+  it("refuse FULL_SENSITIVE si le compte patient n'est pas verifie N2 (RG-ACC-13)", async () => {
+    p.patient.findUnique.mockResolvedValue({ id: "pat-1", userId: "user-pat", user: { niveauVerification: "N1" } });
+
+    const resultat = await genererCodePartageAction(etatInitialGeneration, formulaireGeneration("FULL_SENSITIVE", "24h"));
+
+    expect(resultat.success).toBe(false);
+    expect(resultat.error).toContain("vérifié");
+    expect(p.codePartageDossier.create).not.toHaveBeenCalled();
+  });
+
+  it("accepte FULL_SENSITIVE pour un compte patient verifie N2", async () => {
+    p.patient.findUnique.mockResolvedValue({ id: "pat-1", userId: "user-pat", user: { niveauVerification: "N2" } });
+
+    const resultat = await genererCodePartageAction(etatInitialGeneration, formulaireGeneration("FULL_SENSITIVE", "24h"));
+
+    expect(resultat.success).toBe(true);
+    const { data } = p.codePartageDossier.create.mock.calls[0][0] as { data: Record<string, unknown> };
+    expect(data.niveauAcces).toBe("FULL_SENSITIVE");
+  });
+
   it("renvoie un code de 8 caracteres sans caractere ambigu, affiche XXXX-XXXX, valable 10 minutes", async () => {
-    const resultat = await genererCodePartageAction(etatInitialGeneration, new FormData());
+    const resultat = await genererCodePartageAction(etatInitialGeneration, formulaireGeneration());
 
     expect(resultat.success).toBe(true);
     expect(resultat.code).toMatch(/^[2-9A-HJKMNP-Z]{4}-[2-9A-HJKMNP-Z]{4}$/);
@@ -112,7 +154,7 @@ describe("genererCodePartageAction (F-CIT-11, RG-CIT-90)", () => {
   it("la duree de validite vient du parametre partage.code_duree_minutes, relu a chaque generation (F-ADM-07)", async () => {
     (lireParametre as unknown as Mock).mockResolvedValue(30);
 
-    const resultat = await genererCodePartageAction(etatInitialGeneration, new FormData());
+    const resultat = await genererCodePartageAction(etatInitialGeneration, formulaireGeneration());
 
     expect(lireParametre).toHaveBeenCalledWith("partage.code_duree_minutes");
     expect(resultat.expireLe).toBe(new Date(MAINTENANT.getTime() + 30 * 60_000).toISOString());
@@ -120,8 +162,16 @@ describe("genererCodePartageAction (F-CIT-11, RG-CIT-90)", () => {
     expect(data.expireLe.toISOString()).toBe(new Date(MAINTENANT.getTime() + 30 * 60_000).toISOString());
   });
 
+  it("stocke le niveau d'acces et la duree choisis par le patient (comme F-CIT-10)", async () => {
+    await genererCodePartageAction(etatInitialGeneration, formulaireGeneration("SUMMARY", "7j"));
+
+    const { data } = p.codePartageDossier.create.mock.calls[0][0] as { data: Record<string, unknown> };
+    expect(data.niveauAcces).toBe("SUMMARY");
+    expect(data.duree).toBe("7j");
+  });
+
   it("ne stocke que l'empreinte du code et invalide les codes non consommes precedents", async () => {
-    const resultat = await genererCodePartageAction(etatInitialGeneration, new FormData());
+    const resultat = await genererCodePartageAction(etatInitialGeneration, formulaireGeneration());
     const codeBrut = (resultat.code ?? "").replace("-", "");
 
     expect(p.codePartageDossier.deleteMany).toHaveBeenCalledWith({ where: { patientId: "pat-1", consommeLe: null } });
@@ -184,6 +234,8 @@ describe("consommerCodePartageAction (RG-CIT-90, RG-CIT-91)", () => {
       consommeLe: null as Date | null,
       consommeParId: null as string | null,
       expireLe: new Date(MAINTENANT.getTime() + 5 * 60_000),
+      niveauAcces: "FULL",
+      duree: "24h",
       ...surcharge,
     };
   }
@@ -271,7 +323,7 @@ describe("consommerCodePartageAction (RG-CIT-90, RG-CIT-91)", () => {
     expect(resultat).toEqual({ error: null, success: true, patientId: "pat-1" });
   });
 
-  it("donne au professionnel un consentement 'consultations' de 24 h, marque le code consomme et journalise", async () => {
+  it("donne au professionnel un consentement 'consultations' de 24 h au niveau choisi par le patient, marque le code consomme et journalise", async () => {
     const resultat = await consommerCodePartageAction(etatInitialConsommation, formulaire({ code: CODE }));
 
     expect(resultat).toEqual({ error: null, success: true, patientId: "pat-1" });
@@ -284,8 +336,8 @@ describe("consommerCodePartageAction (RG-CIT-90, RG-CIT-91)", () => {
       update: Record<string, unknown>;
     };
     expect(appel.where.patientId_acteurAutoriseId).toEqual({ patientId: "pat-1", acteurAutoriseId: "user-med" });
-    expect(appel.create).toMatchObject({ typeAcces: "consultations", statut: "actif", dateFin: fin });
-    expect(appel.update).toMatchObject({ typeAcces: "consultations", statut: "actif", dateFin: fin });
+    expect(appel.create).toMatchObject({ typeAcces: "consultations", niveauAcces: "FULL", statut: "actif", dateFin: fin });
+    expect(appel.update).toMatchObject({ typeAcces: "consultations", niveauAcces: "FULL", statut: "actif", dateFin: fin });
 
     const marquage = p.codePartageDossier.updateMany.mock.calls[0][0] as {
       where: { id: string; consommeLe: null };
@@ -294,6 +346,29 @@ describe("consommerCodePartageAction (RG-CIT-90, RG-CIT-91)", () => {
     expect(marquage.where).toEqual({ id: "code-1", consommeLe: null });
     expect(marquage.data.consommeParId).toBe("pro-1");
     expect(journaliserMock.mock.calls.some((appelJournal) => appelJournal[0].action === "partage_code_reussi")).toBe(true);
+  });
+
+  it("respecte le niveau SUMMARY et la duree 7 jours choisis a la generation du code", async () => {
+    p.codePartageDossier.findMany.mockResolvedValue([codeActif({ niveauAcces: "SUMMARY", duree: "7j" })]);
+
+    const resultat = await consommerCodePartageAction(etatInitialConsommation, formulaire({ code: CODE }));
+
+    expect(resultat.success).toBe(true);
+    const fin = new Date(MAINTENANT.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const appel = p.consentement.upsert.mock.calls[0][0] as { create: Record<string, unknown> };
+    expect(appel.create).toMatchObject({ niveauAcces: "SUMMARY", dateFin: fin });
+  });
+
+  it("respecte le niveau FULL_SENSITIVE choisi a la generation (le controle N2 a deja ete fait a cet instant)", async () => {
+    p.codePartageDossier.findMany.mockResolvedValue([codeActif({ niveauAcces: "FULL_SENSITIVE", duree: "12mois" })]);
+
+    const resultat = await consommerCodePartageAction(etatInitialConsommation, formulaire({ code: CODE }));
+
+    expect(resultat.success).toBe(true);
+    const fin = new Date(MAINTENANT);
+    fin.setMonth(fin.getMonth() + 12);
+    const appel = p.consentement.upsert.mock.calls[0][0] as { create: Record<string, unknown> };
+    expect(appel.create).toMatchObject({ niveauAcces: "FULL_SENSITIVE", dateFin: fin });
   });
 });
 

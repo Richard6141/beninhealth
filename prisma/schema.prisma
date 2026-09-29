@@ -1492,6 +1492,14 @@ model CodePartageDossier {
   consommeLe    DateTime?
   consommeParId String?
   consommePar   ProfessionnelSante? @relation(fields: [consommeParId], references: [id])
+  // F-CIT-11 : niveau d'acces et duree du consentement resultant, choisis par
+  // le patient au moment de la generation du code (meme mecanisme que F-CIT-10,
+  // src/modules/patient/consentement-niveaux.ts et consentement-durees.ts).
+  // Migration additive : valeurs par defaut identiques au comportement
+  // precedent (niveau "consultations" via typeAcces fixe, duree 24h), pour
+  // ne rien changer aux codes deja en base.
+  niveauAcces   String    @default("FULL")
+  duree         String    @default("24h")
 
   @@schema("public")
 }

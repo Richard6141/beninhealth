@@ -7,9 +7,16 @@ import {
   getStatutCodePartage,
   type GenerationCodePartageState,
 } from "@/modules/partage/actions";
+import { OPTIONS_DUREE_CONSENTEMENT } from "@/modules/patient/consentement-durees";
+import {
+  NIVEAU_VERIFICATION_MINIMAL_FULL_SENSITIVE,
+  OPTIONS_NIVEAU_ACCES_CONSENTEMENT,
+} from "@/modules/patient/consentement-niveaux";
+import type { NiveauAccesConsentement } from "@/modules/patient/consentement-niveaux";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { SelectField } from "@/components/ui/SelectField";
 
 const etatInitial: GenerationCodePartageState = { error: null, success: false };
 
@@ -19,19 +26,45 @@ function secondesRestantes(expireLeISO: string): number {
   return Math.max(0, Math.round((new Date(expireLeISO).getTime() - Date.now()) / 1000));
 }
 
+export interface GenerateurCodePartageProps {
+  /** Niveau de verification d'identite du patient connecte (N0 a N3, meme regle que F-CIT-10, RG-ACC-13/CA-2). */
+  niveauVerification: string | null;
+}
+
 /**
- * Generation d'un code de partage temporaire (F-CIT-11 du pack) : bouton qui
- * declenche genererCodePartageAction, puis affiche le code en grand pendant
- * sa duree de validite (10 min) avec un compte a rebours, en sondant
- * getStatutCodePartage toutes les 5 secondes pour detecter une consommation
- * ("Partagé avec Dr X en temps réel", comme demande par le pack).
+ * Generation d'un code de partage temporaire (F-CIT-11 du pack) : le patient
+ * choisit le niveau d'acces et la duree du consentement resultant (comme
+ * F-CIT-10, memes options), puis declenche genererCodePartageAction. Affiche
+ * ensuite le code en grand pendant sa duree de validite (10 min) avec un
+ * compte a rebours, en sondant getStatutCodePartage toutes les 5 secondes
+ * pour detecter une consommation ("Partagé avec Dr X en temps réel", comme
+ * demande par le pack).
  */
-export function GenerateurCodePartage() {
+export function GenerateurCodePartage({ niveauVerification }: GenerateurCodePartageProps) {
   const [state, formAction, pending] = useActionState(genererCodePartageAction, etatInitial);
   const [statutConsomme, setStatutConsomme] = useState<string | null>(null);
   const [secondes, setSecondes] = useState<number | null>(null);
+  const [niveauAcces, setNiveauAcces] = useState<NiveauAccesConsentement | "">("");
+  const [duree, setDuree] = useState("");
   const intervalleSondage = useRef<ReturnType<typeof setInterval> | null>(null);
   const intervalleCompteARebours = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const compteVerifieN2 = niveauVerification === NIVEAU_VERIFICATION_MINIMAL_FULL_SENSITIVE;
+  const niveauSensibleBloque = niveauAcces === "FULL_SENSITIVE" && !compteVerifieN2;
+  const formulaireComplet = niveauAcces !== "" && duree !== "" && !niveauSensibleBloque;
+
+  const optionsNiveau = OPTIONS_NIVEAU_ACCES_CONSENTEMENT.map((option) => ({
+    value: option.valeur,
+    label:
+      option.valeur === "FULL_SENSITIVE" && !compteVerifieN2
+        ? `${option.libelle} (compte vérifié requis)`
+        : option.libelle,
+  }));
+
+  const optionsDuree = OPTIONS_DUREE_CONSENTEMENT.map((option) => ({
+    value: option.valeur,
+    label: option.libelle,
+  }));
 
   useEffect(() => {
     if (!state.success || !state.codeId || !state.expireLe) {
@@ -92,6 +125,8 @@ export function GenerateurCodePartage() {
         </div>
         {expire ? (
           <form action={formAction}>
+            <input type="hidden" name="niveauAcces" value={niveauAcces} />
+            <input type="hidden" name="duree" value={duree} />
             <Button type="submit" variant="secondary" className="w-fit" disabled={pending}>
               Générer un nouveau code
             </Button>
@@ -104,7 +139,7 @@ export function GenerateurCodePartage() {
   return (
     <Card
       title="Code de partage"
-      description="Génère un code à usage unique, valable 10 minutes, pour donner accès à vos consultations récentes sans chercher le professionnel dans une liste."
+      description="Choisissez le niveau d'informations partagées et la durée : génère un code à usage unique, valable 10 minutes, pour donner accès à votre dossier sans chercher le professionnel dans une liste."
     >
       <form action={formAction} className="flex flex-col gap-4">
         {state.error ? (
@@ -112,7 +147,43 @@ export function GenerateurCodePartage() {
             {state.error}
           </Alert>
         ) : null}
-        <Button type="submit" variant="primary" className="w-fit" iconBefore={Send} disabled={pending}>
+
+        <SelectField
+          label="Niveau d'informations partagées"
+          name="niveauAcces"
+          required
+          options={optionsNiveau}
+          placeholder="Choisir un niveau"
+          value={niveauAcces}
+          onChange={(evenement) => setNiveauAcces(evenement.target.value as NiveauAccesConsentement)}
+          hint="« Tout, y compris les informations sensibles » n'est proposé que depuis un compte vérifié (N2)."
+        />
+        {niveauSensibleBloque ? (
+          <Alert level="warning" title="Compte non vérifié">
+            Le niveau « Tout, y compris les informations sensibles » nécessite
+            un compte vérifié (N2). Faites vérifier votre identité pour
+            débloquer ce niveau.
+          </Alert>
+        ) : null}
+
+        <SelectField
+          label="Durée de l'autorisation"
+          name="duree"
+          required
+          options={optionsDuree}
+          placeholder="Choisir une durée"
+          value={duree}
+          onChange={(evenement) => setDuree(evenement.target.value)}
+          hint="Maximum 12 mois. Vous pourrez retirer l'accès avant l'échéance à tout moment."
+        />
+
+        <Button
+          type="submit"
+          variant="primary"
+          className="w-fit"
+          iconBefore={Send}
+          disabled={pending || !formulaireComplet}
+        >
           {pending ? "Génération en cours..." : "Générer un code de partage"}
         </Button>
       </form>

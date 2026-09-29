@@ -8,16 +8,19 @@
  * obtenir lui-meme un Consentement "consultations" (RG-CIT-90/91), sans que
  * le patient ait besoin de le chercher dans une liste au prealable.
  *
- * Simplifications assumees par rapport a la fiche complete du pack :
- * - Le pack laisse le patient choisir le niveau d'acces et la duree du
- *   consentement resultant ("comme F-CIT-10"). Ce depot n'a que deux niveaux
- *   reels ("dossier_complet"/"consultations", voir TYPES_ACCES_CONSULTATION
- *   dans src/modules/clinical/actions.ts) : fixe a "consultations" ici,
- *   jamais "dossier_complet" par defaut. Duree du consentement resultant
- *   fixee a 24h (le pack ne precise pas de valeur pour ce parcours
- *   simplifie) : suffisant pour la visite en cours, le patient peut
- *   toujours accorder un acces plus long ensuite depuis /app/patient/consentements
- *   si necessaire.
+ * Le patient choisit le niveau d'acces (SUMMARY/FULL/FULL_SENSITIVE) et la
+ * duree du consentement resultant au moment de generer le code, en
+ * reutilisant exactement le meme mecanisme que F-CIT-10 (memes constantes
+ * src/modules/patient/consentement-niveaux.ts et consentement-durees.ts,
+ * meme regle serveur RG-ACC-13 : FULL_SENSITIVE refuse sans compte patient
+ * verifie N2). Le typeAcces du consentement cree reste fixe a
+ * "consultations" (le pack ne demande que le choix du niveau et de la duree
+ * pour ce parcours, jamais du type d'acces) : ce depot n'a que deux types
+ * reels ("dossier_complet"/"consultations", voir TYPES_ACCES_CONSULTATION
+ * dans src/modules/clinical/actions.ts), jamais "dossier_complet" par
+ * defaut pour un partage par code.
+ *
+ * Simplification assumee restante par rapport a la fiche complete du pack :
  * - Recherche du code par comparaison bcrypt sur l'ensemble des codes
  *   actifs (non consommes, non expires), pas par un index direct : le code
  *   en lui-meme ne doit reveler aucune information sur le patient
@@ -37,9 +40,14 @@ import { lireParametre } from "@/modules/administration/parametres-lecture";
 import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
+import { calculerDateFinConsentement, DUREES_CONSENTEMENT_CONNUES, type DureeConsentement } from "@/modules/patient/consentement-durees";
+import {
+  NIVEAU_VERIFICATION_MINIMAL_FULL_SENSITIVE,
+  NIVEAUX_ACCES_CONNUS,
+  type NiveauAccesConsentement,
+} from "@/modules/patient/consentement-niveaux";
 
 const ROUNDS_BCRYPT = 12;
-const DUREE_CONSENTEMENT_ISSU_CODE_HEURES = 24;
 const MAX_TENTATIVES_PAR_HEURE = 5;
 
 // RG-CIT-90 : sans caracteres ambigus (pas de 0/O, 1/I/L).
@@ -93,7 +101,7 @@ async function patientDeLaSessionCourante() {
     return null;
   }
 
-  return prisma.patient.findUnique({ where: { userId: session.userId } });
+  return prisma.patient.findUnique({ where: { userId: session.userId }, include: { user: true } });
 }
 
 /** Etat renvoye par genererCodePartageAction, consomme via useActionState. */
@@ -107,15 +115,31 @@ export interface GenerationCodePartageState {
   expireLe?: string; // ISO
 }
 
+// Meme choix que F-CIT-10 (grantConsentAction) : niveau et duree valides
+// contre les memes constantes, jamais une valeur inventee par ce parcours.
+const schemaGenerationCode = z.object({
+  niveauAcces: z.enum(NIVEAUX_ACCES_CONNUS, {
+    message: "Choisissez un niveau d'accès.",
+  }),
+  duree: z.enum(DUREES_CONSENTEMENT_CONNUES, {
+    message: "Choisissez une durée.",
+  }),
+});
+
 /**
  * Genere un nouveau code de partage pour le patient connecte, invalide tout
  * code non consomme precedent (une seule demande active a la fois, meme
  * principe que creerEtEnvoyerCodeVerificationEmail). Le code en clair n'est
  * renvoye qu'a cet instant, jamais journalise, jamais relisible ensuite.
+ *
+ * F-CIT-11 ("comme F-CIT-10") : le patient choisit ici le niveau d'acces et
+ * la duree du consentement que le code accordera. RG-ACC-13 (meme regle que
+ * grantConsentAction, jamais contournee pour ce parcours) : le niveau
+ * FULL_SENSITIVE est refuse si le compte du patient n'est pas verifie N2.
  */
 export async function genererCodePartageAction(
   prevState: GenerationCodePartageState,
-  _formData: FormData
+  formData: FormData
 ): Promise<GenerationCodePartageState> {
   const session = await getSession();
 
@@ -127,10 +151,34 @@ export async function genererCodePartageAction(
     return { error: "Action reservee aux patients.", success: false };
   }
 
+  const validation = schemaGenerationCode.safeParse({
+    niveauAcces: texte(formData, "niveauAcces"),
+    duree: texte(formData, "duree"),
+  });
+
+  if (!validation.success) {
+    return {
+      error: premierMessageErreur(validation.error, "Niveau ou durée invalide."),
+      success: false,
+    };
+  }
+
+  const { niveauAcces, duree } = validation.data;
+
   const patient = await patientDeLaSessionCourante();
 
   if (!patient) {
     return { error: "Aucun dossier patient associe a ce compte.", success: false };
+  }
+
+  // RG-ACC-13, meme regle que grantConsentAction (F-CIT-10) : jamais
+  // contournee pour ce parcours de partage par code.
+  if (niveauAcces === "FULL_SENSITIVE" && patient.user.niveauVerification !== NIVEAU_VERIFICATION_MINIMAL_FULL_SENSITIVE) {
+    return {
+      error:
+        "Le niveau « Tout, y compris les informations sensibles » nécessite un compte vérifié (niveau N2). Faites vérifier votre identité avant de l'utiliser.",
+      success: false,
+    };
   }
 
   const code = genererCode();
@@ -145,7 +193,7 @@ export async function genererCodePartageAction(
         where: { patientId: patient.id, consommeLe: null },
       }),
       prisma.codePartageDossier.create({
-        data: { patientId: patient.id, codeHash, expireLe },
+        data: { patientId: patient.id, codeHash, expireLe, niveauAcces, duree },
       }),
     ]);
 
@@ -314,9 +362,12 @@ export async function consommerCodePartageAction(
     }
 
     const dateConsommation = new Date();
-    const dateFinConsentement = new Date(
-      dateConsommation.getTime() + DUREE_CONSENTEMENT_ISSU_CODE_HEURES * 60 * 60 * 1000
-    );
+    // F-CIT-11 ("comme F-CIT-10") : niveau et duree choisis par le patient a
+    // la generation du code (schemaGenerationCode les a deja valides contre
+    // NIVEAUX_ACCES_CONNUS/DUREES_CONSENTEMENT_CONNUES), jamais une valeur
+    // fixe ici.
+    const niveauAcces = codeTrouve.niveauAcces as NiveauAccesConsentement;
+    const dateFinConsentement = calculerDateFinConsentement(codeTrouve.duree as DureeConsentement, dateConsommation);
 
     const accorde = await prisma.$transaction(async (tx) => {
       // Usage unique meme si deux professionnels saisissent le code en meme temps :
@@ -341,11 +392,13 @@ export async function consommerCodePartageAction(
           patientId: codeTrouve!.patientId,
           acteurAutoriseId: session.userId,
           typeAcces: "consultations",
+          niveauAcces,
           dateFin: dateFinConsentement,
           statut: "actif",
         },
         update: {
           typeAcces: "consultations",
+          niveauAcces,
           dateFin: dateFinConsentement,
           statut: "actif",
         },
@@ -357,7 +410,7 @@ export async function consommerCodePartageAction(
           action: "partage_code_reussi",
           donneeConcernee: `patient:${codeTrouve!.patientId}`,
           adresseTechnique,
-          justification: `Consentement "consultations" obtenu par code de partage, expire le ${dateFinConsentement.toISOString()}.`,
+          justification: `Consentement "consultations" (niveau ${niveauAcces}) obtenu par code de partage, expire le ${dateFinConsentement.toISOString()}.`,
         },
         tx
       );

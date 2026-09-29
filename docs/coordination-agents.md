@@ -6058,3 +6058,19 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   (chantier actif de c0/F-ETA-04), vitest 42/42 cible (offline + sync), tirets 0. Migration rejouee
   depuis zero (`replay.sh`, apres un premier essai transitoirement injoignable, DNS/reseau) : "No
   difference detected", strictement additive.
+
+### Livraison agent lance par 89 (CEO), F-CIT-11 (niveau et duree du code de partage), 2026-09-29
+
+- Lot livre par un agent lance par 89 (worktree isole), verifie et integre sur le meme schema.prisma
+  que F-COM-01/08 (modeles differents, CodePartageDossier vs PersonneCommunautaire, aucune collision).
+- Le citoyen choisit desormais le niveau d'acces (SUMMARY/FULL/FULL_SENSITIVE) et la duree (24h/7j/30j/
+  6mois/12mois) au moment de generer un code de partage, "comme F-CIT-10" (texte du pack), en
+  reutilisant exactement le mecanisme deja construit pour F-CIT-10 le meme soir (memes constantes,
+  meme ecran de niveau grise cote client si compte non verifie) plutot qu'un nouveau. Deux colonnes
+  additives sur CodePartageDossier (niveauAcces defaut FULL, duree defaut 24h). RG-ACC-13 appliquee a
+  l'identique : FULL_SENSITIVE refuse cote serveur si le compte du patient n'est pas verifie N2,
+  jamais contourne. Passe de PARTIEL a FAIT (ecarts mineurs).
+- 8 tests ajoutes, 24 au total. Verifie a l'integration : eslint 0 erreur (1 avertissement preexistant
+  sans rapport), tsc 0 hors l'erreur deja confirmee sans rapport (chantier actif de c0/F-ETA-04),
+  vitest 36/36 cible, tirets 0. Migration rejouee depuis zero (apres un premier essai avec echec de
+  creation de base transitoire, reussi au second) : "No difference detected", strictement additive.

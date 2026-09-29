@@ -119,7 +119,7 @@ export default async function ConsentementsPage() {
           Partager rapidement par code
         </h2>
         <div className="max-w-md">
-          <GenerateurCodePartage />
+          <GenerateurCodePartage niveauVerification={niveauVerification} />
         </div>
       </section>
     </div>
