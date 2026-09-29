@@ -59,7 +59,17 @@ export default function ConditionsPage() {
       </section>
 
       <section className="flex flex-col gap-2">
-        <h2 className="text-[20px] font-semibold text-titre">5. Suspension et fermeture</h2>
+        <h2 className="text-[20px] font-semibold text-titre">5. Ordonnances électroniques</h2>
+        <p>
+          La confirmation d&apos;une ordonnance par un professionnel de santé (mot de passe, et le cas échéant code de
+          double authentification) ne constitue pas une signature électronique qualifiée au sens juridique. Elle atteste
+          l&apos;identité du prescripteur et l&apos;intégrité du contenu de l&apos;ordonnance au moment de sa création, vérifiables
+          par le numéro et le code figurant sur le document.
+        </p>
+      </section>
+
+      <section className="flex flex-col gap-2">
+        <h2 className="text-[20px] font-semibold text-titre">6. Suspension et fermeture</h2>
         <p>
           Le ministère peut suspendre un compte en cas d&apos;usage abusif ou de suspicion de compromission. Vous pouvez
           demander la fermeture de votre compte et l&apos;exercice de vos droits depuis votre espace, rubrique

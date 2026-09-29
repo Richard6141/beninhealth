@@ -4,4 +4,4 @@
  * texte des pages /conditions et /confidentialite change cette valeur : la
  * preuve d'acceptation d'un compte dit alors quelle version il a acceptee.
  */
-export const VERSION_CONDITIONS = "2026-09-27";
+export const VERSION_CONDITIONS = "2026-09-29";
