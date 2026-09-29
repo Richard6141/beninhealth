@@ -30,7 +30,7 @@ import { journaliser } from "@/modules/audit/journaliser";
 import { ACTIONS_AUDIT_EXPORT_PILOTAGE } from "@/modules/pilotage/exports-constantes";
 import { libelleMotif } from "@/modules/pilotage/exports-rendu";
 import { verifierJetonExport } from "@/modules/pilotage/jeton-export";
-import { masquerPetitEffectif } from "@/modules/pilotage/masquage";
+import { masquerLigneAvecTotal, masquerPetitEffectif, type ValeurMasquee } from "@/modules/pilotage/masquage";
 
 /** Un point d'une serie mensuelle agregee. mois au format "AAAA-MM". */
 export interface PointMensuel {
@@ -48,7 +48,12 @@ export interface StatistiquesEtablissement {
   consultationsParMois: PointMensuel[];
 }
 
-/** Ligne agregee d'un etablissement, pour la repartition nationale. */
+/**
+ * Ligne agregee d'un etablissement (valeurs EXACTES, jamais masquees) : type
+ * interne partage par getStatistiquesNationales (qui masque au moment de
+ * construire RepartitionEtablissementAffichee ci-dessous, RG-PIL-02) et
+ * exporterRepartitionCSV (qui masque a l'export, voir son en-tete).
+ */
 export interface RepartitionEtablissement {
   etablissementNom: string;
   localisation: string;
@@ -58,16 +63,40 @@ export interface RepartitionEtablissement {
   nombreProfessionnels: number;
 }
 
-/** Statistiques agregees a l'echelle nationale, pour le tableau de bord ministere. */
+/**
+ * Ligne de repartition par etablissement telle qu'affichee a l'ecran
+ * (RG-PIL-02/41) : consultations et rendez-vous masques "< 5", jamais le
+ * nombre de professionnels (donnee d'effectif et non d'activite de soins,
+ * meme distinction deja appliquee par exporterRepartitionCSV plus bas).
+ */
+export interface RepartitionEtablissementAffichee {
+  etablissementNom: string;
+  localisation: string;
+  type: string;
+  totalConsultations: ValeurMasquee;
+  totalRendezVous: ValeurMasquee;
+  nombreProfessionnels: number;
+}
+
+/**
+ * Statistiques agregees a l'echelle nationale, pour le tableau de bord
+ * ministere. Corrige le 2026-09-29 (RG-PIL-02) : les comptes d'activite
+ * (consultations, prescriptions, repartition par etablissement, rendez-vous
+ * par statut) sont desormais masques "< 5" quand ils sont dans cette plage,
+ * comme deja fait pour l'export CSV equivalent (exporterRepartitionCSV) mais
+ * jusqu'ici jamais applique a l'ecran lui-meme ; les effectifs
+ * (etablissements, professionnels, patients) restent exacts, meme
+ * distinction que l'export.
+ */
 export interface StatistiquesNationales {
   totalEtablissements: number;
   totalProfessionnels: number;
   totalPatients: number;
-  totalConsultations: number;
-  totalPrescriptions: number;
-  repartitionParEtablissement: RepartitionEtablissement[];
+  totalConsultations: ValeurMasquee;
+  totalPrescriptions: ValeurMasquee;
+  repartitionParEtablissement: RepartitionEtablissementAffichee[];
   consultationsParMois: PointMensuel[];
-  rendezVousParStatut: { statut: string; total: number }[];
+  rendezVousParStatut: { statut: string; total: ValeurMasquee }[];
 }
 
 /** Statuts possibles d'un RendezVous (voir prisma/schema.prisma). Ordre d'affichage fixe. */
@@ -308,10 +337,10 @@ export async function getStatistiquesNationales(): Promise<StatistiquesNationale
     totalEtablissements,
     totalProfessionnels,
     totalPatients,
-    totalConsultations,
-    totalPrescriptions,
-    repartitionParEtablissement,
-    rendezVousParStatut,
+    totalConsultationsBrut,
+    totalPrescriptionsBrut,
+    repartitionParEtablissementBrute,
+    rendezVousParStatutBrut,
     consultationsRecentes,
   ] = await Promise.all([
     prisma.etablissementSanitaire.count(),
@@ -327,18 +356,37 @@ export async function getStatistiquesNationales(): Promise<StatistiquesNationale
     }),
   ]);
 
+  // RG-PIL-03 : les 4 statuts se lisent comme une seule ligne dont les
+  // cellules se completent (le lecteur peut en deduire le total national de
+  // rendez-vous) ; si un seul statut est masque par RG-PIL-02, un deuxieme
+  // (le plus petit des restants) l'est aussi, pour empecher de le retrouver
+  // par soustraction.
+  const cellulesRendezVousMasquees = masquerLigneAvecTotal(
+    rendezVousParStatutBrut.map((ligne) => ({ cle: ligne.statut, valeur: ligne.total }))
+  );
+
   return {
     totalEtablissements,
     totalProfessionnels,
     totalPatients,
-    totalConsultations,
-    totalPrescriptions,
-    repartitionParEtablissement,
+    totalConsultations: masquerPetitEffectif(totalConsultationsBrut),
+    totalPrescriptions: masquerPetitEffectif(totalPrescriptionsBrut),
+    repartitionParEtablissement: repartitionParEtablissementBrute.map((ligne) => ({
+      etablissementNom: ligne.etablissementNom,
+      localisation: ligne.localisation,
+      type: ligne.type,
+      totalConsultations: masquerPetitEffectif(ligne.totalConsultations),
+      totalRendezVous: masquerPetitEffectif(ligne.totalRendezVous),
+      nombreProfessionnels: ligne.nombreProfessionnels,
+    })),
     consultationsParMois: repartirParMois(
       consultationsRecentes.map((consultation) => consultation.date),
       plages
     ),
-    rendezVousParStatut,
+    rendezVousParStatut: rendezVousParStatutBrut.map((ligne) => ({
+      statut: ligne.statut,
+      total: cellulesRendezVousMasquees[ligne.statut],
+    })),
   };
 }
 

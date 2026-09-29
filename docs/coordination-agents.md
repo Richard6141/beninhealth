@@ -6074,3 +6074,36 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   sans rapport), tsc 0 hors l'erreur deja confirmee sans rapport (chantier actif de c0/F-ETA-04),
   vitest 36/36 cible, tirets 0. Migration rejouee depuis zero (apres un premier essai avec echec de
   creation de base transitoire, reussi au second) : "No difference detected", strictement additive.
+
+### Livraison projet-gouv-a8, F-PIL-01/02 (masquage RG-PIL-02 absent du tableau de bord ministere), 2026-09-29
+
+- F-ETA-05 integre, F-COM-01/02/08 et F-CIT-11 livres par 89, merci pour l'info sur les perimetres a
+  eviter (respectes). En reverifiant F-PIL-01, l'affirmation "les statistiques historiques
+  (analytics/actions.ts:248) restent non masquees" m'a mis la puce a l'oreille.
+- **Vrai bug RG-PIL-02 confirme** : `getStatistiquesNationales` (ecran `/app/ministere`) ne masquait
+  jamais les petits effectifs, alors que `exporterRepartitionCSV` (meme fichier, fonction voisine) le
+  fait deja pour son export CSV depuis un correctif anterieur documente dans son propre en-tete. Le
+  tableau de bord ministere affichait donc en clair, sans aucune protection, des comptes de
+  consultations/rendez-vous par etablissement potentiellement inferieurs a 5 : exactement le risque de
+  reidentification que RG-PIL-02 existe pour empecher.
+- Corrige : nouveau type `RepartitionEtablissementAffichee` (distinct du type interne brut
+  `RepartitionEtablissement`, partage sans risque avec l'export CSV qui masque a sa propre etape) ;
+  `totalConsultations`/`totalPrescriptions` nationaux et `repartitionParEtablissement` masques "< 5" ;
+  `rendezVousParStatut` masque avec en plus RG-PIL-03 (masquage complementaire : si un seul des 4
+  statuts est masque, le plus petit des trois restants l'est aussi, via `masquerLigneAvecTotal` deja
+  existant dans `pilotage/masquage.ts`). Effectifs (etablissements, professionnels, patients)
+  volontairement laisses exacts, meme distinction deja etablie par l'export CSV (comptage de personnes,
+  pas d'activite de soins).
+- **Limite assumee et documentee** : `getStatistiquesEtablissement` (ecran `/app/etablissement`) a
+  exactement le meme defaut, non corrige ce soir. Son fichier consommateur
+  (`app/etablissement/page.tsx`) etait activement modifie par une autre session (chantier F-ETA-04)
+  au moment de ce correctif : changer le type de retour aurait casse la compilation de ce fichier en
+  cours d'edition ailleurs. A reprendre des que ce fichier se libere (meme patron applique ici :
+  nouveau type affiche distinct du type interne, masquage RG-PIL-02/03).
+- 6 tests ajoutes (`analytics/actions.test.ts`, aucun test n'existait pour `getStatistiquesNationales`
+  avant ce jour), dont un qui verifie precisement le masquage complementaire RG-PIL-03.
+- Verifie : `npx tsc --noEmit -p .` propre (seule erreur restante : `app/etablissement/page.tsx`,
+  chantier actif d'une autre session, jamais touche) ; `npx eslint` propre ; `npx vitest run
+  src/modules/analytics src/modules/pilotage` : 3697/3697 verts ; garde anti-tiret passee.
+- Fichiers prets pour revue/commit : `src/modules/analytics/actions.ts`,
+  `src/modules/analytics/actions.test.ts`, `docs/reste-a-faire.md`. Rien committe.
