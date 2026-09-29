@@ -43,6 +43,7 @@ import {
   verifierEtConsommerCodeVerificationEmail,
 } from "@/modules/identity/verification-email";
 import { genererIdentifiantSante } from "@/modules/identity/identifiant-sante";
+import { cheminRedirectionValide } from "@/modules/identity/redirection-connexion";
 import { creerCodeReclamation, texteSmsCodeReclamation } from "@/modules/identity/reclamation-emission";
 import { envoyerSms } from "@/modules/notification/sms/envoyer";
 import { can } from "@/security/permissions";
@@ -122,8 +123,21 @@ async function jetonDoublonValide(jeton: string, empreinteAttendue: string): Pro
   }
 }
 
-/** Redirige vers l'espace correspondant aux roles fournis (meme logique pour loginAction et la validation MFA). */
-function redirigerSelonRoles(roles: NomRole[]): never {
+/**
+ * Redirige vers l'espace correspondant aux roles fournis (meme logique pour
+ * loginAction et la validation MFA). Si `next` est un chemin de redirection
+ * post-connexion valide (F-ETA-02, voir redirection-connexion.ts), il prime
+ * sur la destination par defaut : c'est le cas d'usage "Prendre rendez-vous"
+ * depuis la fiche publique d'un etablissement, qui doit ramener le visiteur
+ * la ou il etait plutot que sur le tableau de bord par defaut de son role.
+ */
+function redirigerSelonRoles(roles: NomRole[], next?: unknown): never {
+  const cheminValide = cheminRedirectionValide(next);
+
+  if (cheminValide) {
+    redirect(cheminValide);
+  }
+
   // F-AUTH-07 : un compte qui a plusieurs espaces choisit d'abord celui dans lequel il agit.
   if (roles.length > 1) {
     redirect("/app/espaces");
@@ -722,7 +736,7 @@ export async function verifierCodeEmailEtConnecterAction(
     return { error: MESSAGE_ERREUR_GENERIQUE };
   }
 
-  redirigerSelonRoles(roles);
+  redirigerSelonRoles(roles, formData.get("next"));
 }
 
 /**
@@ -805,7 +819,7 @@ export async function verifierMfaEtConnecterAction(
     return { error: MESSAGE_ERREUR_GENERIQUE };
   }
 
-  redirigerSelonRoles(roles);
+  redirigerSelonRoles(roles, formData.get("next"));
 }
 
 /**

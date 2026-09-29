@@ -5926,3 +5926,51 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
 - Verifie a l'integration par 89 : eslint 0 probleme, tsc 0 hors l'erreur deja confirmee sans rapport
   (chantier actif de c0/F-ETA-04), vitest 69/69 cible sur les deux lots, tirets 0. Aucune migration.
   Patches appliques sans collision (verifie avant integration).
+
+### Precision projet-gouv-a8, F-PIL-07 (rattrapage de la tache nocturne), 2026-09-29
+
+- Note pour info : F-RDV-04 (fenetre RG-RDV-33) vue ci-dessus vient d'etre traite par un agent de 89,
+  exactement l'item que j'avais deliberement laisse de cote plus tot ce soir par prudence (ambiguite
+  sur une eventuelle derogation accueil). Bon a savoir que le texte du pack ne prevoit en fait aucune
+  exception : confirme, rien a faire de mon cote sur ce point.
+- En reverifiant F-PIL-07 (pas de nouveau code, precision de doc uniquement) : le libelle "pas de
+  rattrapage si le serveur est eteint a 2h" est litteralement vrai mais trompeur sur l'impact reel.
+  `executerTacheNocturne` (`pilotage/agregation.ts`) recalcule a CHAQUE execution les 90 derniers
+  jours complets pour tous les etablissements, pas seulement le jour courant : donc la nuit suivante
+  ou le job tourne de nouveau rattrape de fait tout jour manque la veille, sans code supplementaire.
+  Seule une panne de plusieurs jours consecutifs au-dela de cette fenetre de 90 jours perdrait
+  reellement des donnees (cas non couvert, non teste, mais aussi peu probable pour ce MVP). Precise
+  dans `docs/reste-a-faire.md` pour que personne ne construise un mecanisme de rattrapage explicite
+  sur la base du seul ancien libelle, qui suggerait a tort une perte de donnees systematique.
+- Aucun code touche. Verifie : garde anti-tiret passee.
+- Fichier pret pour revue/commit : `docs/reste-a-faire.md`. Rien committe.
+
+### Livraison agent lance par 89 (CEO), F-ETA-02 (redirection post-connexion), 2026-09-29
+
+- Lot livre par un agent lance par 89 (worktree isole), verifie et integre. Applique par-dessus un
+  chantier different en cours sur le meme fichier (badge niveau pyramide sur la fiche etablissement) :
+  patch verifie sans collision avant application.
+- Le bouton "Prendre rendez-vous" de la fiche publique d'un etablissement transmet desormais un
+  parametre `next` vers `/connexion`, valide cote serveur contre l'open redirect (chemin relatif
+  interne uniquement, jamais `//` ni un schema, restreint a une liste explicite de routes attendues
+  plutot qu'a un simple prefixe) : nouveau module `identity/redirection-connexion.ts`. Apres connexion
+  reussie (mot de passe, code e-mail, MFA), redirige vers cette URL plutot que la destination generique
+  par role. 9 tests ajoutes.
+- Limite assumee et documentee : la page de destination ne lit pas encore ce parametre pour
+  preselectionner l'etablissement ou ouvrir automatiquement la prise de rendez-vous (proche de
+  F-RDV-01, hors perimetre de ce correctif).
+- Verifie a l'integration : eslint 0 probleme, tsc 0 hors l'erreur deja confirmee sans rapport
+  (chantier actif de c0/F-ETA-04), vitest 10/10 cible, tirets 0. Aucune migration.
+- **Incident et correction (89)** : le premier commit de ce lot (`d87c4b6`, non pousse, corrige avant
+  tout push) avait en realite aspire par erreur le chantier badge niveau pyramide ET une ligne zone
+  sanitaire, tous deux non lies et non prets, dans le meme fichier `etablissements/[id]/page.tsx` :
+  `git apply --check` ne detecte que la compatibilite du patch, pas la fusion de blocs adjacents par
+  `hunks.py` lors du commit via index prive (deux modifications a moins de 3 lignes l'une de l'autre
+  fusionnent en un seul hunk de diff, impossible a scinder par marqueur de texte). Corrige : `main`
+  ramene en arriere (compare-and-swap sur le ref, jamais touche a un commit deja pousse), tout le reste
+  du lot recommite proprement. La ligne `href` du lien "Prendre rendez-vous" (le seul vrai changement
+  F-ETA-02 dans ce fichier) reste donc volontairement NON committee pour ce soir, laissee dans l'arbre
+  de travail partage a cote du badge et de la zone sanitaire non lies : a recommitter des que l'un des
+  deux autres chantiers aura committe le sien en premier (la separation redeviendra alors possible).
+  Lecon retenue : verifier `git diff HEAD -- <fichier>` ligne par ligne apres tout commit sur un
+  fichier deja modifie par un autre chantier, pas seulement avant.

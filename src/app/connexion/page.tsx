@@ -1,8 +1,10 @@
 "use client";
 
+import { Suspense } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useActionState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   loginAction,
   verifierCodeEmailEtConnecterAction,
@@ -19,7 +21,7 @@ import { TextField } from "@/components/ui/TextField";
  * activee). Le jeton de pre-authentification est transmis tel quel dans un
  * champ cache, jamais modifie ni lu cote client.
  */
-function EtapeCodeMfa({ preAuthToken }: { preAuthToken: string }) {
+function EtapeCodeMfa({ preAuthToken, next }: { preAuthToken: string; next?: string }) {
   const [state, formAction, pending] = useActionState(verifierMfaEtConnecterAction, {
     error: null,
   });
@@ -37,6 +39,7 @@ function EtapeCodeMfa({ preAuthToken }: { preAuthToken: string }) {
         ) : null}
 
         <input type="hidden" name="preAuthToken" value={preAuthToken} />
+        {next ? <input type="hidden" name="next" value={next} /> : null}
 
         <TextField
           label="Code de vérification ou code de secours"
@@ -72,16 +75,18 @@ function EtapeCodeMfa({ preAuthToken }: { preAuthToken: string }) {
 function EtapeCodeEmail({
   preAuthToken,
   codeDemo,
+  next,
 }: {
   preAuthToken: string;
   codeDemo?: string;
+  next?: string;
 }) {
   const [state, formAction, pending] = useActionState(verifierCodeEmailEtConnecterAction, {
     error: null,
   });
 
   if (state.mfaRequis && state.preAuthToken) {
-    return <EtapeCodeMfa preAuthToken={state.preAuthToken} />;
+    return <EtapeCodeMfa preAuthToken={state.preAuthToken} next={next} />;
   }
 
   return (
@@ -103,6 +108,7 @@ function EtapeCodeEmail({
         ) : null}
 
         <input type="hidden" name="preAuthToken" value={preAuthToken} />
+        {next ? <input type="hidden" name="next" value={next} /> : null}
 
         <TextField
           label="Code de verification"
@@ -128,7 +134,17 @@ function EtapeCodeEmail({
   );
 }
 
-export default function ConnexionPage() {
+/**
+ * `next` (F-ETA-02) : chemin de redirection post-connexion, par exemple
+ * envoyé par la fiche publique d'un établissement ("Prendre rendez-vous").
+ * Revalidé côté serveur avant toute redirection (voir redirigerSelonRoles
+ * dans identity/actions.ts et redirection-connexion.ts), jamais fait
+ * confiance tel quel ici : ce composant se contente de le faire suivre.
+ */
+function FormulaireConnexion() {
+  const parametres = useSearchParams();
+  const next = parametres.get("next") ?? undefined;
+
   const [state, formAction, pending] = useActionState(loginAction, {
     error: null,
   });
@@ -145,7 +161,7 @@ export default function ConnexionPage() {
       />
       <div className="w-full max-w-md">
         {state.emailCodeRequis && state.preAuthToken ? (
-          <EtapeCodeEmail preAuthToken={state.preAuthToken} codeDemo={state.codeDemo} />
+          <EtapeCodeEmail preAuthToken={state.preAuthToken} codeDemo={state.codeDemo} next={next} />
         ) : (
           <Card
             title="Connexion"
@@ -216,5 +232,18 @@ export default function ConnexionPage() {
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * useSearchParams() exige une frontiere Suspense pour que la page puisse etre
+ * prerendue : sans elle, `next build` echoue (voir le meme motif dans
+ * mot-de-passe-oublie/nouveau/page.tsx).
+ */
+export default function ConnexionPage() {
+  return (
+    <Suspense fallback={null}>
+      <FormulaireConnexion />
+    </Suspense>
   );
 }
