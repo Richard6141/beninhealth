@@ -801,6 +801,19 @@ model PersonneCommunautaire {
   // F-COM-04 : vaccinations administrees en campagne, voir Vaccination ci-dessous.
   vaccinations    Vaccination[]
   references      ReferenceCommunautaire[]
+  // F-COM-08 (RG-OFF-02) : champs de synchronisation, remplis uniquement pour
+  // une personne creee hors ligne par /api/v1/sync/batches. Toujours nuls
+  // pour une personne creee en ligne (enregistrerPersonneAction), aucune
+  // migration de donnees existantes necessaire (ajout strictement additif).
+  // uuidAppareil est l'identifiant genere sur l'appareil (UUID v7) : unique
+  // pour garantir l'idempotence (renvoyer deux fois le meme lot ne cree
+  // jamais de doublon, RG-OFF-02). statutRevue vaut "REVIEW" quand le
+  // controle de doublon (score >= 80, doublon-score.ts) a ete declenche a la
+  // synchronisation (F-COM-02) ; null sinon.
+  uuidAppareil        String?   @unique
+  statutRevue         String?
+  horodatageLocalSync DateTime?
+  dateReceptionSync   DateTime?
   @@schema("public")
 }
 

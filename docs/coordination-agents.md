@@ -6022,3 +6022,39 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   verts ; garde anti-tiret passee.
 - Fichiers prets pour revue/commit : `src/modules/facility/actions.rendez-vous.test.ts`,
   `docs/reste-a-faire.md`. Rien committe.
+
+### Livraison agent lance par 89 (CEO), F-COM-01/02/08 (hors ligne : PIN, chiffrement, sync), 2026-09-29
+
+- Sur decision explicite de l'utilisateur (question posee avant de lancer, chantier plus gros et plus
+  sensible qu'un correctif ponctuel), agent lance en worktree isole avec un budget de temps large et
+  consigne de ne jamais bacler la securite pour aller plus vite. Une coupure reseau transitoire
+  (ENOTFOUND) l'a arrete en fin de type-check, repris via SendMessage sans perte.
+- Fondation cryptographique (`src/modules/offline/crypto-client.ts`) : cle AES-GCM derivee du PIN via
+  PBKDF2 (310000 iterations, RG-OFF-01), Web Crypto natif du navigateur, aucune dependance npm, cle
+  jamais stockee (recalculee a chaque deverrouillage). UUID v7 pur TypeScript (`uuid-v7.ts`), wrapper
+  IndexedDB maison (`indexeddb-client.ts`).
+- **F-COM-01** : ecran `/terrain/preparation` (PIN a 6 chiffres, refuse 000000/123456/suites
+  triviales/dates evidentes), instantane d'aire chiffre (`GET /api/v1/community/area/snapshot`, limite
+  a 5000 personnes, RG-COM-01). RG-COM-02/03 (5 PIN errones, expiration 30 jours) : logique ecrite et
+  testee, mais l'expiration automatique a 30 jours n'est pas declenchee par une tache de fond cote
+  client (signale honnetement, pas fait). Simplification assumee : "aire affectee" prise comme
+  l'etablissement de l'agent, faute de referentiel villages/quartiers.
+- **F-COM-08** : `POST /api/v1/sync/batches` (lots de 50, idempotence par UUID v7, RG-OFF-02, teste),
+  `GET /api/v1/sync/changes`. RG-COM-21 (ecart de plus de 72h refuse), RG-COM-22 (journal d'audit par
+  lot). RG-COM-20 (retrait de la file locale seulement apres confirmation). Indicateur permanent
+  (RG-OFF-04). Perimetre volontairement reduit a un seul flux de bout en bout (creation hors ligne
+  d'une PersonneCommunautaire, F-COM-02) plutot que visites/vaccinations aussi : "une seule
+  fonctionnalite bien faite vaut mieux que plusieurs bacleees", instruction suivie. Manque : service
+  worker non branche pour la sync automatique au retour reseau, pas d'ecran de revue pour les fiches
+  REVIEW.
+- Migration `20260929120000_sync_hors_ligne_personne_communautaire` : 4 colonnes nullables + un index
+  unique sur `PersonneCommunautaire`, strictement additive.
+- Incident constate et corrige a l'integration par 89 : `npx prisma generate` bloque par un verrou de
+  fichier Windows (EPERM) sur le client Prisma partage, cause par un serveur de dev laisse actif par
+  moi-meme plus tot dans la soiree (smoke test F-CLI-07) et jamais arrete. Identifie via
+  `Get-CimInstance Win32_Process`, processus arretes (les miens uniquement, verifie par ligne de
+  commande avant tout arret), regenere sans probleme ensuite.
+- Verifie a l'integration : eslint 0 probleme, tsc 0 hors l'erreur deja confirmee sans rapport
+  (chantier actif de c0/F-ETA-04), vitest 42/42 cible (offline + sync), tirets 0. Migration rejouee
+  depuis zero (`replay.sh`, apres un premier essai transitoirement injoignable, DNS/reseau) : "No
+  difference detected", strictement additive.
