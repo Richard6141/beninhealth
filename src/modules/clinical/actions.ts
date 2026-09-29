@@ -1802,35 +1802,55 @@ export async function enregistrerConsultationAction(
           const seuilContexteSoins = new Date(dateReference.getTime() - DUREE_CONTEXTE_SOINS_HEURES * 60 * 60 * 1000);
           const { debut: debutJour, fin: finJour } = bornesJourneeBenin(dateReference);
 
-          const baseEcritureValide =
-            accesUrgence ||
-            (await tx.rendezVous.findFirst({
-              where: {
-                patientId,
-                OR: [
-                  {
-                    etablissementId: professionnel.etablissementId,
-                    statut: { in: [...STATUTS_ACTIFS] },
-                    heureArrivee: { gte: seuilContexteSoins },
-                    // RG-CIT-81 : le patient peut mettre fin par avance a cet
-                    // acces "contexte de soins" (bouton "Mettre fin",
-                    // patient/actions.ts). N'affecte jamais un brouillon deja
-                    // ouvert (voir plus haut, base B7 "auteur" gouverne sa
-                    // poursuite) : seule la CREATION passe par cette requete.
-                    contexteSoinsTermineParPatient: false,
-                  },
-                  {
-                    professionnelId: professionnel.id,
-                    statut: "confirme",
-                    date: { gte: debutJour, lt: finJour },
-                  },
-                ],
-              },
-            }));
+          // Capture du rendez-vous trouve (pas seulement un booleen) : corrige
+          // le 2026-09-29, il sert aussi plus bas a faire passer ce
+          // rendez-vous "en_consultation" (IN_CARE, F-RDV-05) quand la base
+          // d'acces est B4 (contexte de soins, patient deja arrive) mais
+          // qu'aucun rendezVousId explicite n'a ete transmis par le
+          // formulaire ; jusqu'ici seul un rendez-vous explicitement choisi
+          // au formulaire etait transitionne, laissant un patient arrive
+          // visible "en attente" sur la file du jour pendant toute sa
+          // consultation. Volontairement PAS applique a la base B3 (rendez-
+          // vous confirme du jour avec ce professionnel, sans arrivee
+          // enregistree) : rien ne garantit alors que ce rendez-vous precis
+          // est bien celui de cette consultation, a la difference de B4 ou
+          // heureArrivee fait foi.
+          const rendezVousBaseEcriture = accesUrgence
+            ? null
+            : await tx.rendezVous.findFirst({
+                where: {
+                  patientId,
+                  OR: [
+                    {
+                      etablissementId: professionnel.etablissementId,
+                      statut: { in: [...STATUTS_ACTIFS] },
+                      heureArrivee: { gte: seuilContexteSoins },
+                      // RG-CIT-81 : le patient peut mettre fin par avance a cet
+                      // acces "contexte de soins" (bouton "Mettre fin",
+                      // patient/actions.ts). N'affecte jamais un brouillon deja
+                      // ouvert (voir plus haut, base B7 "auteur" gouverne sa
+                      // poursuite) : seule la CREATION passe par cette requete.
+                      contexteSoinsTermineParPatient: false,
+                    },
+                    {
+                      professionnelId: professionnel.id,
+                      statut: "confirme",
+                      date: { gte: debutJour, lt: finJour },
+                    },
+                  ],
+                },
+              });
 
-          if (!baseEcritureValide) {
+          if (!accesUrgence && !rendezVousBaseEcriture) {
             throw new Error("BASE_ACCES_ECRITURE_ABSENTE");
           }
+
+          const accesParContexteSoinsB4 =
+            rendezVousBaseEcriture !== null &&
+            rendezVousBaseEcriture.etablissementId === professionnel.etablissementId &&
+            rendezVousBaseEcriture.heureArrivee !== null &&
+            rendezVousBaseEcriture.heureArrivee >= seuilContexteSoins &&
+            !rendezVousBaseEcriture.contexteSoinsTermineParPatient;
 
           const consultationCreee = await tx.consultation.create({
             data: {
@@ -1868,6 +1888,14 @@ export async function enregistrerConsultationAction(
           // F-RDV-05 : le rendez-vous lie passe "en consultation" (IN_CARE du pack), sans jamais bloquer le brouillon.
           if (rendezVousIdValide) {
             await transitionnerRendezVous(tx, rendezVousIdValide, "demarrer_consultation");
+          } else if (accesParContexteSoinsB4 && rendezVousBaseEcriture) {
+            // Corrige le 2026-09-29 : aucun rendezVousId n'a ete transmis par
+            // le formulaire (base B4, patient arrive sans rendez-vous choisi
+            // explicitement), mais le rendez-vous qui a ouvert l'acces en
+            // ecriture ci-dessus doit quand meme passer "en_consultation",
+            // sinon il reste visible "en attente" sur la file du jour
+            // (file-du-jour.ts) pendant toute la duree de la consultation.
+            await transitionnerRendezVous(tx, rendezVousBaseEcriture.id, "demarrer_consultation");
           }
 
           cible = consultationCreee;

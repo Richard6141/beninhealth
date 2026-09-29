@@ -5713,3 +5713,40 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
 - Verifie : garde anti-tiret passee (0 occurrence). Aucun fichier de code touche
   (`pilotage/agregation.ts`/`file-taches.ts` relus, non modifies).
 - Fichier pret pour revue/commit : `docs/reste-a-faire.md`. Rien committe par le sous-agent.
+
+### Livraison projet-gouv-a8, F-CLI-05 (IN_CARE B4 sans rendezVousId) + 3 affirmations perimees, 2026-09-29
+
+- Peer projet-gouv-41 a integre F-CLI-09/F-CLI-12 (commit `b8abdcd`), merci. J'ai continue sur mon
+  perimetre F-PIL/F-ETA/F-CLI/F-RDV/F-AUTH-07 comme convenu.
+- **Trois affirmations perimees corrigees dans `docs/reste-a-faire.md`** (verifiees contre le code
+  reel avant correction, jamais supposees) : F-AUTH-07, F-PIL-03 et F-ADM-05 etaient citees comme les
+  3 seules fiches P0 ABSENT (ligne de synthese), et repetees comme "absentes" dans les tableaux
+  d'epics E05/E08, alors que leurs propres lignes de detail les marquent FAIT depuis des commits
+  anterieurs (`0214056`, deja verifie en listant les fichiers `identity/espaces{,-regles}.ts`,
+  `lib/garde-espace.ts`). Confirme au passage que la table d'affiliations (E05) est bien lue
+  desormais (`administration/etablissements.ts`, `identity/espaces.ts`). Aucun code touche pour ce
+  point, doc seulement.
+- **F-CLI-05, vrai bug corrige** : le "Ce qui manque" de cette ligne signalait deja precisement le
+  gap ("transition IN_CARE du rendez-vous d'arrivee quand la base d'acces est B4 mais qu'aucun
+  rendezVousId n'est transmis au formulaire"). Verifie contre `clinical/actions.ts` : confirme, seul
+  un `rendezVousId` explicitement choisi au formulaire declenchait `demarrer_consultation`
+  (`transitionnerRendezVous`) ; un patient arrive via B4 (contexte de soins, `heureArrivee` posee)
+  sans que le formulaire ne transmette ce champ restait visible "en attente" sur la file du jour
+  pendant toute sa consultation. Corrige : le rendez-vous deja capture par la requete de validation
+  d'acces (`tx.rendezVous.findFirst`, desormais son resultat complet plutot qu'un simple booleen) est
+  transitionne quand il correspond specifiquement a un match B4 (etablissement, `heureArrivee` dans
+  la fenetre de 72h, `contexteSoinsTermineParPatient` false) et qu'aucun `rendezVousId` explicite n'a
+  deja declenche la transition. Volontairement PAS etendu a la base B3 (rendez-vous confirme du jour
+  sans arrivee enregistree) : rien ne garantit que ce match precis est bien celui de la consultation
+  en cours, a la difference de B4 ou `heureArrivee` fait foi. 3 tests ajoutes
+  (`enregistrer-consultation.test.ts`), dont un qui verifie l'absence de double transition quand le
+  rendez-vous est a la fois choisi explicitement et retrouve comme base B4.
+- Verifie : `npx tsc --noEmit -p .` propre sur mes fichiers (seule erreur restante :
+  `app/etablissement/page.tsx`, chantier actif d'une autre session, jamais touche) ; `npx eslint`
+  propre ; `npx vitest run src/modules/clinical src/modules/facility/file-du-jour.test.ts
+  src/security/tirets-interdits.test.ts src/security/service-guard.test.ts` : 0 echec sur l'arbre
+  principal (2266 tests verts ; les 14 echecs affiches viennent, comme deja signale par une session
+  precedente, de copies figees de `service-guard.test.ts` dans les worktrees d'autres agents, hors de
+  mon perimetre) ; garde anti-tiret passee.
+- Fichiers prets pour revue/commit : `src/modules/clinical/actions.ts`,
+  `src/modules/clinical/enregistrer-consultation.test.ts`, `docs/reste-a-faire.md`. Rien committe.

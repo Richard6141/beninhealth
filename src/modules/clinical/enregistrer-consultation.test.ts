@@ -317,6 +317,46 @@ describe("base d'acces en ecriture a la CREATION d'une consultation (RG-ACC-15)"
     expect(resultat.success).toBe(true);
   });
 
+  it("F-RDV-05 (corrige le 2026-09-29) : le rendez-vous qui a ouvert l'acces B4 passe en_consultation meme sans rendezVousId transmis au formulaire", async () => {
+    prismaMock.rendezVous.findFirst.mockResolvedValue({
+      id: "rdv-arrivee",
+      patientId: "pat-1",
+      professionnelId: "pro-autre",
+      etablissementId: "etab-1",
+      statut: "demande",
+      date: new Date(MAINTENANT.getTime() + 3 * 24 * 3600_000),
+      heureArrivee: new Date(MAINTENANT.getTime() - 3600_000),
+    });
+
+    const resultat = await enregistrerConsultationAction(ETAT, formulaire());
+
+    expect(resultat.success).toBe(true);
+    expect(prismaMock.rendezVous.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: "rdv-arrivee" }),
+        data: expect.objectContaining({ statut: "en_consultation" }),
+      })
+    );
+  });
+
+  it("ne transitionne pas deux fois le meme rendez-vous quand il est a la fois choisi explicitement et trouve comme base B4", async () => {
+    prismaMock.rendezVous.findUnique.mockResolvedValue({ id: "rdv-arrivee", patientId: "pat-1", professionnelId: "pro-1" });
+    prismaMock.rendezVous.findFirst.mockResolvedValue({
+      id: "rdv-arrivee",
+      patientId: "pat-1",
+      professionnelId: "pro-autre",
+      etablissementId: "etab-1",
+      statut: "demande",
+      date: new Date(MAINTENANT.getTime() + 3 * 24 * 3600_000),
+      heureArrivee: new Date(MAINTENANT.getTime() - 3600_000),
+    });
+
+    const resultat = await enregistrerConsultationAction(ETAT, formulaire({ rendezVousId: "rdv-arrivee" }));
+
+    expect(resultat.success).toBe(true);
+    expect(prismaMock.rendezVous.updateMany).toHaveBeenCalledTimes(1);
+  });
+
   it("interroge la base sur une fenetre de 72 h exactement pour le contexte de soins B4", async () => {
     prismaMock.rendezVous.findFirst.mockResolvedValue(null);
 
