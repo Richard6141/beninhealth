@@ -499,6 +499,22 @@ export async function getDetailReference(referenceId: string): Promise<Reference
     return null;
   }
 
+  // Corrige le 2026-09-29 : ce detail expose des donnees cliniques (resume,
+  // age, sexe, allergies, cf. commentaire au-dessus de cette fonction) sans
+  // jamais etre journalise jusqu'ici, a la difference de la lecture
+  // equivalente du dossier patient (getResumePatient, clinical/actions.ts).
+  const adresseTechnique = await adresseTechniqueCourante();
+
+  await journaliser({
+    utilisateurId: professionnel.userId,
+    action: "detail_reference_patient",
+    donneeConcernee: `reference_patient:${reference.id}`,
+    adresseTechnique,
+    justification: estReferent
+      ? "Detail de la reference envoyee consulte par son auteur"
+      : "Detail de la reference recue consulte par l'etablissement destinataire",
+  });
+
   return {
     ...versReferenceResume(reference),
     resumeClinique: reference.resumeClinique,

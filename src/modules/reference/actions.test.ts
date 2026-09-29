@@ -279,6 +279,26 @@ describe("lecture des references (RBAC et perimetre)", () => {
     expect(cloturee?.peutRepondre).toBe(false);
   });
 
+  it("F-CLI-14 (corrige le 2026-09-29) : la lecture du detail est journalisee, jamais pour un acces refuse", async () => {
+    p.professionnelSante.findUnique.mockResolvedValue({ id: "pro-autre", userId: "user-referent", etablissementId: "etab-origine" });
+    p.referencePatient.findUnique.mockResolvedValue(referenceEnBase());
+
+    await getDetailReference("ref-1");
+
+    expect(journaliserMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        utilisateurId: "user-referent",
+        action: "detail_reference_patient",
+        donneeConcernee: "reference_patient:ref-1",
+      })
+    );
+
+    journaliserMock.mockClear();
+    p.professionnelSante.findUnique.mockResolvedValue({ id: "pro-tiers", userId: "user-tiers", etablissementId: "etab-tiers" });
+    await getDetailReference("ref-1");
+    expect(journaliserMock).not.toHaveBeenCalled();
+  });
+
   it("le detail ne reprend jamais les observations, la conclusion ni les constantes de la consultation", async () => {
     p.professionnelSante.findUnique.mockResolvedValue({ id: "pro-dest", etablissementId: "etab-dest" });
     p.referencePatient.findUnique.mockResolvedValue(referenceEnBase());

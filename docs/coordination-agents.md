@@ -5883,3 +5883,25 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   possible ce soir) : a verifier en meme temps que le recapitulatif par la meme personne.
 - Fichiers prets pour revue/commit : `src/app/app/medecin/consultations/nouvelle/FormulaireConsultation.tsx`,
   `docs/reste-a-faire.md`. Rien committe.
+
+### Livraison projet-gouv-a8, F-CLI-14 (detail de reference non journalise), 2026-09-29
+
+- F-CLI-06 integre par 89 (commit `bc89a38`), merci. En continuant mon perimetre, j'ai repris les
+  deux ecarts "a verifier" de F-CLI-14 (reference/actions.ts).
+- **"Acces conserve apres cloture" : verifie, ce n'est PAS un bug.** La base d'acces de 30 jours au
+  dossier complet (`ReferencePatient.dateFinAcces`) est deja correctement verifiee la ou elle compte
+  (`accesPatientAutorise`, `clinical/actions.ts:704`, `dateFinAcces: { gt: new Date() }`). Le detail de
+  la reference elle-meme (motif, resume clinique ecrits pour cet echange precis) reste visible sans
+  limite de temps aux deux parties : design assume et coherent (une correspondance entre
+  etablissements reste lisible, meme apres expiration de l'acces plus large au dossier).
+- **"Detail non journalise" : vrai bug corrige.** `getDetailReference` expose des donnees cliniques
+  (resume, age, sexe, allergies) sans jamais tracer sa lecture au JournalAudit, a la difference
+  exacte de la lecture equivalente du dossier patient (`getResumePatient`, qui journalise deja
+  chaque lecture, meme fichier). Corrige : meme convention (`journaliser`, action
+  `detail_reference_patient`, `donneeConcernee: reference_patient:<id>`), jamais appele si l'acces
+  est refuse (ni referent ni etablissement destinataire). 2 tests ajoutes.
+- Verifie : `npx tsc --noEmit -p .` et `npx eslint` propres (confirmes par notification de tache,
+  machine visiblement chargee ce soir, les deux commandes ont depasse 120s) ; `npx vitest run
+  src/modules/reference/actions.test.ts` : 400/400 verts ; garde anti-tiret passee.
+- Fichiers prets pour revue/commit : `src/modules/reference/actions.ts`,
+  `src/modules/reference/actions.test.ts`, `docs/reste-a-faire.md`. Rien committe.
