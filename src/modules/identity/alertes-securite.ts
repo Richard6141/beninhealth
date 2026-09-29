@@ -31,3 +31,37 @@ export async function alerterSecurite(
     console.error("SMS de securite impossible :", erreur);
   }
 }
+
+/**
+ * F-AUTH-02 (corrige le 2026-09-29, tableau du pack 07-fiches-comptes.md) :
+ * "10 echecs en 24h -> verrouillage 24h ; notification a l'administrateur si
+ * le compte est professionnel." Notifie tous les admin_national actifs (role
+ * unique d'autorite de ce depot, pas de notion d'administrateur scope a un
+ * seul etablissement pour cette alerte). Un echec d'envoi individuel
+ * n'interrompt jamais les autres (meme principe que alerterSecurite).
+ */
+export async function notifierAdministrateursVerrouillage24h(compteVerrouille: {
+  email: string;
+}): Promise<void> {
+  try {
+    const administrateurs = await prisma.user.findMany({
+      where: { statut: "actif", roles: { some: { nom: "admin_national" } } },
+      select: { id: true },
+    });
+
+    for (const administrateur of administrateurs) {
+      try {
+        await creerNotification(
+          administrateur.id,
+          "compte_verrouille_24h",
+          `Le compte professionnel ${compteVerrouille.email} a ete verrouille pour 24 heures apres 10 echecs de connexion.`,
+          "/app/ministere/comptes"
+        );
+      } catch (erreur) {
+        console.error("Notification administrateur de verrouillage 24h impossible :", erreur);
+      }
+    }
+  } catch (erreur) {
+    console.error("Recherche des administrateurs a notifier impossible :", erreur);
+  }
+}

@@ -49,7 +49,10 @@ vi.mock("@/lib/session", () => ({
 }));
 
 vi.mock("@/modules/identity/appareils", () => ({ enregistrerAppareilEtAlerter: vi.fn() }));
-vi.mock("@/modules/identity/alertes-securite", () => ({ alerterSecurite: vi.fn() }));
+vi.mock("@/modules/identity/alertes-securite", () => ({
+  alerterSecurite: vi.fn(),
+  notifierAdministrateursVerrouillage24h: vi.fn(),
+}));
 
 vi.mock("@/lib/mail", () => ({
   envoyerEmail: vi.fn(),
@@ -72,7 +75,7 @@ import { envoyerEmail } from "@/lib/mail";
 import bcrypt from "bcryptjs";
 import { redirect } from "next/navigation";
 import { enregistrerAppareilEtAlerter } from "@/modules/identity/appareils";
-import { alerterSecurite } from "@/modules/identity/alertes-securite";
+import { alerterSecurite, notifierAdministrateursVerrouillage24h } from "@/modules/identity/alertes-securite";
 import {
   loginAction,
   verifierCodeEmailEtConnecterAction,
@@ -92,6 +95,7 @@ const bcryptMock = bcrypt as unknown as { compare: Mock; hash: Mock };
 const redirectMock = redirect as unknown as Mock;
 const enregistrerAppareilEtAlerterMock = enregistrerAppareilEtAlerter as unknown as Mock;
 const alerterSecuriteMock = alerterSecurite as unknown as Mock;
+const notifierAdministrateursVerrouillage24hMock = notifierAdministrateursVerrouillage24h as unknown as Mock;
 
 const ETAT_INITIAL: AuthActionState = { error: null };
 
@@ -412,6 +416,54 @@ describe("connexion : appareil partage, alerte de verrouillage (F-AUTH-02)", () 
     const suivant = await loginAction(ETAT_INITIAL, buildFormData({ email: "a@exemple.bj", motDePasse: "faux" }));
     expect(suivant.error).toMatch(/Trop de tentatives/);
     expect(alerterSecuriteMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("F-AUTH-02 (corrige le 2026-09-29) : le 10e echec en 24h verrouille 24h avec un message distinct et notifie les administrateurs pour un compte professionnel", async () => {
+    prismaMock.user.findUnique.mockResolvedValue(utilisateurActif([{ nom: "medecin" }]));
+    bcryptMock.compare.mockResolvedValue(false);
+    vi.useFakeTimers();
+    const debut = Date.now();
+
+    // 10 echecs etales sur plusieurs fenetres de 15 minutes (chacune sous le
+    // seuil de 5) pour n'atteindre que le seuil des 10 echecs en 24h, jamais
+    // le verrou de 15 minutes qui masquerait le comportement teste ici.
+    for (const decalageMinutes of [0, 16, 32, 48]) {
+      vi.setSystemTime(debut + decalageMinutes * 60 * 1000);
+      const nombre = decalageMinutes === 48 ? 1 : 3;
+      for (let i = 0; i < nombre; i++) {
+        await loginAction(ETAT_INITIAL, buildFormData({ email: "a@exemple.bj", motDePasse: "faux" }));
+      }
+    }
+
+    expect(alerterSecuriteMock).toHaveBeenCalledTimes(1);
+    expect(alerterSecuriteMock.mock.calls[0][1].message).toContain("24 heures");
+    expect(alerterSecuriteMock.mock.calls[0][1].message).not.toContain("quelques minutes");
+    expect(notifierAdministrateursVerrouillage24hMock).toHaveBeenCalledTimes(1);
+    expect(notifierAdministrateursVerrouillage24hMock).toHaveBeenCalledWith({ email: "a@exemple.bj" });
+
+    const suivant = await loginAction(ETAT_INITIAL, buildFormData({ email: "a@exemple.bj", motDePasse: "faux" }));
+    expect(suivant.error).toContain("24 heures");
+    expect(suivant.error).not.toMatch(/15 minutes/);
+    vi.useRealTimers();
+  });
+
+  it("F-AUTH-02 (corrige le 2026-09-29) : le verrou 24h d'un compte patient ne notifie aucun administrateur", async () => {
+    prismaMock.user.findUnique.mockResolvedValue(utilisateurActif([{ nom: "patient" }]));
+    bcryptMock.compare.mockResolvedValue(false);
+    vi.useFakeTimers();
+    const debut = Date.now();
+
+    for (const decalageMinutes of [0, 16, 32, 48]) {
+      vi.setSystemTime(debut + decalageMinutes * 60 * 1000);
+      const nombre = decalageMinutes === 48 ? 1 : 3;
+      for (let i = 0; i < nombre; i++) {
+        await loginAction(ETAT_INITIAL, buildFormData({ email: "a@exemple.bj", motDePasse: "faux" }));
+      }
+    }
+
+    expect(alerterSecuriteMock).toHaveBeenCalledTimes(1);
+    expect(notifierAdministrateursVerrouillage24hMock).not.toHaveBeenCalled();
+    vi.useRealTimers();
   });
 
   it("apres le verrouillage, meme le bon mot de passe est refuse (CA-3)", async () => {

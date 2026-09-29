@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
 process.env.NEXTAUTH_SECRET = "secret-de-test-32-caracteres-minimum-xxxx";
@@ -29,12 +29,15 @@ import { loginAction } from "@/modules/identity/actions";
 import {
   ECHECS_MAX_PAR_ADRESSE,
   ECHECS_MAX_PAR_COMPTE,
+  ECHECS_MAX_PAR_COMPTE_24H,
   ECHECS_MFA_MAX_PAR_COMPTE,
+  MESSAGE_COMPTE_VERROUILLE_24H,
   MESSAGE_TROP_DE_TENTATIVES,
   connexionBloquee,
   enregistrerEchecConnexion,
   enregistrerEchecMfa,
   mfaBloquee,
+  typeVerrouillageCompte,
 } from "@/modules/identity/limitation-connexion";
 
 const prismaMock = prisma as unknown as { user: { findUnique: Mock }; journalAudit: { create: Mock } };
@@ -207,5 +210,51 @@ describe("10 echecs en 24 heures (F-AUTH-02)", () => {
 
   it("le message de verrouillage propose la reinitialisation du mot de passe", () => {
     expect(MESSAGE_TROP_DE_TENTATIVES).toBe("Trop de tentatives. Réessayez dans 15 minutes ou réinitialisez votre mot de passe.");
+  });
+});
+
+describe("typeVerrouillageCompte (corrige le 2026-09-29) : distingue le verrou 15 min du verrou 24h", () => {
+  beforeEach(() => {
+    viderCompteursDebit();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("renvoie null sans aucun echec", () => {
+    expect(typeVerrouillageCompte("c@exemple.bj")).toBeNull();
+  });
+
+  it("renvoie 15min apres 5 echecs rapproches", () => {
+    for (let i = 0; i < ECHECS_MAX_PAR_COMPTE; i++) enregistrerEchecConnexion("c@exemple.bj", null);
+    expect(typeVerrouillageCompte("c@exemple.bj")).toBe("15min");
+  });
+
+  it("renvoie 24h apres 10 echecs etales sur plus de 24h de fenetres de 15 min, meme si le verrou 15 min courant est deja expire", () => {
+    const debut = Date.now();
+
+    for (const decalageMinutes of [0, 16, 32]) {
+      vi.setSystemTime(debut + decalageMinutes * 60 * 1000);
+      const nombre = decalageMinutes === 32 ? 2 : 4;
+      for (let i = 0; i < nombre; i++) enregistrerEchecConnexion("d@exemple.bj", null);
+    }
+
+    // Plus de 15 minutes se sont ecoulees depuis le dernier lot : le verrou
+    // 15 min de ce dernier lot (2 echecs, sous le seuil de 5) n'est de toute
+    // facon pas actif, seul le verrou 24h (10 echecs cumules) doit ressortir.
+    expect(typeVerrouillageCompte("d@exemple.bj")).toBe("24h");
+  });
+
+  it("priorise 24h quand les deux verrous sont actifs a la fois", () => {
+    for (let i = 0; i < ECHECS_MAX_PAR_COMPTE_24H; i++) enregistrerEchecConnexion("e@exemple.bj", null);
+    expect(typeVerrouillageCompte("e@exemple.bj")).toBe("24h");
+  });
+
+  it("le message de verrouillage 24h propose aussi la reinitialisation du mot de passe et ne mentionne jamais 15 minutes", () => {
+    expect(MESSAGE_COMPTE_VERROUILLE_24H).toContain("24 heures");
+    expect(MESSAGE_COMPTE_VERROUILLE_24H).not.toContain("15 minutes");
+    expect(MESSAGE_COMPTE_VERROUILLE_24H).toContain("réinitialiser");
   });
 });

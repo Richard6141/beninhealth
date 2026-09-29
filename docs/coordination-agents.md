@@ -5773,3 +5773,35 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
 - Fichiers prets pour revue/commit : `src/security/permissions.ts`, `src/security/permissions.test.ts`,
   `src/modules/document/actions.ts`, `src/modules/document/actions.test.ts`, `docs/reste-a-faire.md`.
   Rien committe.
+
+### Livraison projet-gouv-a8, F-AUTH-02 (message et alerte du verrou 24h, notification admin), 2026-09-29
+
+- Peer projet-gouv-41 a integre F-CLI-13 (commit `4139df5`), merci. Nouvelle livraison sur mon
+  perimetre.
+- **Vrai bug corrige** : verifie contre le tableau exact du pack (`docs/pack claude/specs/07-fiches-comptes.md:103-106`) :
+  « 5 echecs consecutifs -> verrouille 15 minutes, message X » ; « 10 echecs en 24h -> verrouillage
+  24h, notification a l'administrateur si le compte est professionnel ». Le code
+  (`limitation-connexion.ts`, `identity/actions.ts`) implementait bien les deux seuils et compteurs,
+  mais renvoyait dans les DEUX cas le meme message ("Reessayez dans 15 minutes") et la meme alerte au
+  titulaire ("verrouille quelques minutes"), induisant en erreur un titulaire reellement bloque pour
+  24 heures ; et la notification a l'administrateur pour un compte professionnel n'existait pas du
+  tout. Corrige : nouvelle fonction `typeVerrouillageCompte(email)` qui distingue lequel des deux
+  verrous de compte est actif (le 24h prime si les deux le sont a la fois) ; message et alerte
+  dedies pour le cas 24h ; nouvelle fonction `notifierAdministrateursVerrouillage24h` (dans
+  `alertes-securite.ts`) qui notifie tous les admin_national actifs quand le compte verrouille porte
+  un role autre que patient (meme convention "compte professionnel" que F-AUTH-06/politique de mot
+  de passe : `role !== "patient"`). Le verrou par adresse IP (mesure anti-abus generique, hors du
+  tableau du pack) garde le message generique inchange. 9 tests ajoutes
+  (`limitation-connexion.test.ts`, `actions.test.ts`), dont un qui verifie que le verrou 24h d'un
+  compte PATIENT ne notifie aucun administrateur (seul un compte professionnel doit le declencher).
+- Verifie : `npx tsc --noEmit -p .` propre sur mes fichiers (seule erreur restante :
+  `app/etablissement/page.tsx`, chantier actif d'une autre session, jamais touche) ; `npx eslint`
+  propre ; `npx vitest run src/modules/identity/actions.test.ts
+  src/modules/identity/limitation-connexion.test.ts src/security/tirets-interdits.test.ts
+  src/security/service-guard.test.ts --exclude "**/.claude/**"` : 41/41 verts, sans le bruit des
+  copies figees dans les worktrees d'autres agents (confirme aussi par une passe complete sur
+  `src/modules/identity` sans le flag d'exclusion : 0 echec hors worktrees) ; garde anti-tiret passee.
+- Fichiers prets pour revue/commit : `src/modules/identity/actions.ts`,
+  `src/modules/identity/actions.test.ts`, `src/modules/identity/limitation-connexion.ts`,
+  `src/modules/identity/limitation-connexion.test.ts`, `src/modules/identity/alertes-securite.ts`,
+  `docs/reste-a-faire.md`. Rien committe.

@@ -27,14 +27,16 @@ import { getEnv } from "@/lib/env";
 import { televerserImageCloudinary } from "@/lib/cloudinary";
 import { verifierSecondFacteur } from "@/modules/identity/mfa-totp";
 import { enregistrerAppareilEtAlerter } from "@/modules/identity/appareils";
-import { alerterSecurite } from "@/modules/identity/alertes-securite";
+import { alerterSecurite, notifierAdministrateursVerrouillage24h } from "@/modules/identity/alertes-securite";
 import {
+  MESSAGE_COMPTE_VERROUILLE_24H,
   MESSAGE_TROP_DE_TENTATIVES,
   adresseDeLaRequete,
   connexionBloquee,
   enregistrerEchecConnexion,
   enregistrerEchecMfa,
   mfaBloquee,
+  typeVerrouillageCompte,
 } from "@/modules/identity/limitation-connexion";
 import {
   creerEtEnvoyerCodeVerificationEmail,
@@ -554,7 +556,13 @@ export async function loginAction(
   const adresse = await adresseDeLaRequete();
 
   if (connexionBloquee(email, adresse)) {
-    return { error: MESSAGE_TROP_DE_TENTATIVES };
+    // Corrige le 2026-09-29 : le verrou 24h (10 echecs) a son propre message,
+    // distinct du verrou 15 minutes (5 echecs) - le meme message generique
+    // laissait auparavant croire a 15 minutes d'attente meme pendant un
+    // verrouillage de 24h (voir limitation-connexion.ts).
+    return {
+      error: typeVerrouillageCompte(email) === "24h" ? MESSAGE_COMPTE_VERROUILLE_24H : MESSAGE_TROP_DE_TENTATIVES,
+    };
   }
 
   let userId: string;
@@ -578,7 +586,24 @@ export async function loginAction(
       await journaliserEchecAuthentification(utilisateur.id, "connexion_echec", adresse, "Mot de passe incorrect.");
 
       // Le compte vient de se verrouiller : alerte au titulaire (notification et SMS, sans lien).
-      if (connexionBloquee(email, adresse)) {
+      // Corrige le 2026-09-29 : le verrou 24h a son propre message ("quelques
+      // minutes" etait faux dans ce cas) et notifie en plus les administrateurs
+      // nationaux quand le compte est professionnel (F-AUTH-02, tableau du
+      // pack : "10 echecs en 24h -> notification a l'administrateur si le
+      // compte est professionnel").
+      const verrouillageDeclenche = typeVerrouillageCompte(email);
+
+      if (verrouillageDeclenche === "24h") {
+        await alerterSecurite(utilisateur.id, {
+          type: "connexion_verrouillee",
+          message: "Plusieurs tentatives de connexion à votre compte ont échoué : il est verrouillé pendant 24 heures. Si ce n'est pas vous, changez votre mot de passe.",
+          messageSms: "Plusieurs tentatives de connexion a votre compte ont echoue. Il est verrouille 24 heures. Si ce n'est pas vous, changez votre mot de passe.",
+        });
+
+        if (utilisateur.roles.some((role) => role.nom !== "patient")) {
+          await notifierAdministrateursVerrouillage24h({ email: utilisateur.email });
+        }
+      } else if (verrouillageDeclenche === "15min") {
         await alerterSecurite(utilisateur.id, {
           type: "connexion_verrouillee",
           message: "Plusieurs tentatives de connexion à votre compte ont échoué : il est verrouillé quelques minutes. Si ce n'est pas vous, changez votre mot de passe.",

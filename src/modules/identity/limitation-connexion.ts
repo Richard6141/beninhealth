@@ -23,6 +23,15 @@ export const ECHECS_MAX_PAR_ADRESSE = 30;
 export const ECHECS_MFA_MAX_PAR_COMPTE = 5;
 
 export const MESSAGE_TROP_DE_TENTATIVES = "Trop de tentatives. Réessayez dans 15 minutes ou réinitialisez votre mot de passe.";
+/**
+ * Corrige le 2026-09-29 : le tableau du pack (F-AUTH-02, 07-fiches-comptes.md)
+ * distingue explicitement "5 echecs -> 15 minutes" de "10 echecs en 24h ->
+ * 24 heures" avec un message different pour chaque ; jusqu'ici le meme
+ * MESSAGE_TROP_DE_TENTATIVES ("Reessayez dans 15 minutes") etait renvoye dans
+ * les deux cas, induisant en erreur un compte verrouille pour 24 heures.
+ */
+export const MESSAGE_COMPTE_VERROUILLE_24H =
+  "Trop de tentatives. Ce compte est verrouillé pendant 24 heures. Vous pouvez réinitialiser votre mot de passe pour le débloquer immédiatement.";
 
 export async function adresseDeLaRequete(): Promise<string | null> {
   try {
@@ -52,6 +61,26 @@ export function connexionBloquee(email: string, adresse: string | null): boolean
     limiteAtteinte(cleCompte24h(email), ECHECS_MAX_PAR_COMPTE_24H, FENETRE_24H_MS) ||
     (adresse !== null && limiteAtteinte(cleAdresse(adresse), ECHECS_MAX_PAR_ADRESSE, FENETRE_MS))
   );
+}
+
+export type TypeVerrouillageCompte = "15min" | "24h" | null;
+
+/**
+ * Distingue lequel des deux verrous PROPRES AU COMPTE (pas le verrou par
+ * adresse IP, mesure anti-abus generique hors du tableau du pack) est actif,
+ * pour choisir le bon message et la bonne alerte (F-AUTH-02). Le verrou 24h
+ * est verifie en premier : si les deux sont actifs a la fois (l'utilisateur a
+ * attendu la fin de plusieurs verrous de 15 minutes avant d'accumuler 10
+ * echecs sur 24h), c'est le plus severe qui prime.
+ */
+export function typeVerrouillageCompte(email: string): TypeVerrouillageCompte {
+  if (limiteAtteinte(cleCompte24h(email), ECHECS_MAX_PAR_COMPTE_24H, FENETRE_24H_MS)) {
+    return "24h";
+  }
+  if (limiteAtteinte(cleCompte(email), ECHECS_MAX_PAR_COMPTE, FENETRE_MS)) {
+    return "15min";
+  }
+  return null;
 }
 
 export function enregistrerEchecConnexion(email: string, adresse: string | null): void {
