@@ -30,6 +30,10 @@ export const MAX_DEPLACEMENTS = 2;
 export const DELAI_EXPIRATION_DEMANDE_MS = UN_JOUR_MS;
 /** ... ou au plus tard 1 heure avant le creneau, au premier des deux. */
 export const AVANCE_EXPIRATION_AVANT_CRENEAU_MS = UNE_HEURE_MS;
+/** RG-RDV-33 : l'arrivee est possible jusqu'a 2 heures avant l'heure du rendez-vous. */
+export const DELAI_ARRIVEE_AVANT_MS = 2 * UNE_HEURE_MS;
+/** RG-RDV-33 : et jusqu'a 1 heure apres, au-dela l'arrivee n'est plus rattachee a ce rendez-vous. */
+export const DELAI_ARRIVEE_APRES_MS = UNE_HEURE_MS;
 
 export const MOTIFS_REFUS_RENDEZ_VOUS = [
   { code: "creneau_indisponible", libelle: "Créneau indisponible" },
@@ -97,6 +101,22 @@ export function dateExpirationDemande(dateCreation: Date, dateRendezVous: Date):
 
 export function demandeExpiree(dateCreation: Date, dateRendezVous: Date, maintenant: Date): boolean {
   return maintenant.getTime() >= dateExpirationDemande(dateCreation, dateRendezVous).getTime();
+}
+
+export const MESSAGE_ARRIVEE_HORS_FENETRE =
+  "L'arrivée ne peut être enregistrée que de 2 heures avant à 1 heure après l'heure du rendez-vous. Passé ce délai, enregistrez une arrivée sans rendez-vous.";
+
+/**
+ * RG-RDV-33 : l'arrivee est possible de 2 heures avant a 1 heure apres
+ * l'heure du rendez-vous (bornes incluses). Au-dela, le pack prevoit qu'elle
+ * soit enregistree comme "sans rendez-vous" plutot que rattachee a ce
+ * rendez-vous precis (fonctionnalite separee, non construite dans ce depot,
+ * voir docs/reste-a-faire.md F-RDV-04) : cette fonction sert donc ici a
+ * refuser plutot qu'a reclasser.
+ */
+export function arriveeDansLaFenetre(dateRendezVous: Date, maintenant: Date): boolean {
+  const ecart = maintenant.getTime() - dateRendezVous.getTime();
+  return ecart >= -DELAI_ARRIVEE_AVANT_MS && ecart <= DELAI_ARRIVEE_APRES_MS;
 }
 
 /**

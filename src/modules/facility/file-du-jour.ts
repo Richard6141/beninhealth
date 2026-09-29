@@ -45,8 +45,13 @@ import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/modules/audit/journaliser";
 import { getSession } from "@/lib/session";
 import { can } from "@/security/permissions";
-import { STATUTS_QUI_LIBERENT_LE_CRENEAU, TRANSITIONS, transitionnerRendezVous } from "./rendez-vous-etats";
-import { bornesJourLocalBenin } from "./regles-rendez-vous";
+import {
+  STATUTS_QUI_LIBERENT_LE_CRENEAU,
+  TRANSITIONS,
+  type StatutRendezVous,
+  transitionnerRendezVous,
+} from "./rendez-vous-etats";
+import { MESSAGE_ARRIVEE_HORS_FENETRE, arriveeDansLaFenetre, bornesJourLocalBenin } from "./regles-rendez-vous";
 
 function nomComplet(utilisateur: { nom: string; prenom: string }): string {
   return `${utilisateur.prenom} ${utilisateur.nom}`;
@@ -159,7 +164,16 @@ const schemaArrivee = z.object({
  * qu'une confirmation prealable par le professionnel) ; un rendez-vous
  * deja marque "absent" par la tache planifiee peut etre corrige de la
  * meme facon (le patient est visiblement arrive malgre le marquage
- * automatique). Refuse pour "termine"/"annule" (visite deja close).
+ * automatique), MAIS seulement dans la fenetre RG-RDV-33 (voir plus bas) :
+ * un rendez-vous marque "absent" reste corrigible jusqu'a 1h apres son
+ * heure, pas indefiniment. Refuse pour "termine"/"annule" (visite deja
+ * close).
+ *
+ * RG-RDV-33 : refuse hors de la fenetre de 2h avant a 1h apres l'heure du
+ * rendez-vous (bornes incluses), sans exception pour le personnel d'accueil,
+ * le pack ne prevoyant aucune derogation pour ce role (seule alternative
+ * decrite : enregistrer une arrivee "sans rendez-vous", fonctionnalite
+ * separee non construite dans ce depot, voir docs/reste-a-faire.md F-RDV-04).
  */
 export async function enregistrerArriveeAction(
   prevState: FileDuJourActionState,
@@ -196,6 +210,19 @@ export async function enregistrerArriveeAction(
 
     const adresseTechnique = await adresseTechniqueCourante();
     const maintenant = new Date();
+
+    // RG-RDV-33 : fenetre de 2h avant a 1h apres l'heure du rendez-vous.
+    // Verifiee uniquement quand une transition serait de toute facon
+    // tentee (statut encore "demande"/"confirme"/"absent") : sur un
+    // rendez-vous deja "termine"/"annule", le message reste "deja cloture"
+    // (verifie plus bas par transitionnerRendezVous), plus precis que la
+    // fenetre horaire ici hors sujet.
+    if (
+      TRANSITIONS.enregistrer_arrivee.depuis.includes(rendezVous.statut as StatutRendezVous) &&
+      !arriveeDansLaFenetre(rendezVous.date, maintenant)
+    ) {
+      return { error: MESSAGE_ARRIVEE_HORS_FENETRE, success: false };
+    }
 
     const enregistree = await prisma.$transaction(async (tx) => {
       const transition = await transitionnerRendezVous(tx, rendezVousId, "enregistrer_arrivee", {

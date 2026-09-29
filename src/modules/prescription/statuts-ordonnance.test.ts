@@ -10,6 +10,11 @@ vi.mock("@/lib/prisma", () => {
     evenementPrescription: { create: vi.fn() },
     delivrance: { findUnique: vi.fn(), update: vi.fn() },
     ligneDelivrance: { groupBy: vi.fn() },
+    // F-CIT-08 : destinataireNotificationPatient (non mockee ici, voir plus
+    // bas) lit ces deux tables elle-meme pour router vers le tuteur d'une
+    // personne a charge, meme pattern que rappels-rendez-vous.test.ts.
+    patient: { findUnique: vi.fn() },
+    consentement: { findFirst: vi.fn() },
     $queryRaw: vi.fn(async () => [{ id: "presc-1" }]),
     $transaction: vi.fn(),
   };
@@ -45,6 +50,8 @@ const p = prisma as unknown as {
   evenementPrescription: { create: Mock };
   delivrance: { findUnique: Mock; update: Mock };
   ligneDelivrance: { groupBy: Mock };
+  patient: { findUnique: Mock };
+  consentement: { findFirst: Mock };
 };
 const getSessionMock = getSession as unknown as Mock;
 const notifierMock = creerNotification as unknown as Mock;
@@ -63,6 +70,7 @@ function prescription(statut: string, surcharge: Record<string, unknown> = {}) {
     id: "presc-1",
     numero: "RX-2026-0001",
     statut,
+    patientId: "pat-1",
     medecinPrescripteurId: "pro-med",
     patient: { userId: "user-pat" },
     delivrances: [],
@@ -74,6 +82,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   p.evenementPrescription.create.mockResolvedValue({});
   p.prescription.update.mockResolvedValue({});
+  // F-CIT-08 : par defaut un patient normal, notifie directement.
+  p.patient.findUnique.mockResolvedValue({ userId: "user-pat", user: { statut: "actif" } });
 });
 
 describe("statuts d'une ordonnance (F-PRE-05)", () => {
@@ -132,6 +142,61 @@ describe("statuts d'une ordonnance (F-PRE-05)", () => {
       expect(resultat.success).toBe(false);
       expect(resultat.error).toContain("arretee");
       expect(p.prescription.update).not.toHaveBeenCalled();
+    });
+
+    // F-CIT-08 : le patient d'une prescription peut etre une personne a
+    // charge sans compte (F-CIT-07). creerNotification(patient.userId, ...)
+    // perdait alors silencieusement la notification, le compte
+    // "sans_compte" n'etant jamais connecte. Meme correctif que
+    // rappels-rendez-vous.test.ts, verifie ici pour annuler/arreter.
+    it("annuler : une personne a charge (sans_compte) est notifiee via son tuteur, jamais son compte placeholder", async () => {
+      p.prescription.findUnique.mockResolvedValue(prescription("validee"));
+      p.patient.findUnique.mockResolvedValue({ userId: "user-placeholder", user: { statut: "sans_compte" } });
+      p.consentement.findFirst.mockResolvedValue({ acteurAutoriseId: "user-tuteur" });
+
+      const resultat = await annulerPrescriptionAction(
+        etatInitial,
+        formulaire({ prescriptionId: "presc-1", motif: MOTIF })
+      );
+
+      expect(resultat).toEqual({ error: null, success: true });
+      expect(notifierMock).toHaveBeenCalledWith(
+        "user-tuteur",
+        "prescription",
+        expect.stringContaining("annulee"),
+        "/app/patient/prescriptions"
+      );
+      expect(notifierMock).not.toHaveBeenCalledWith(
+        "user-placeholder",
+        expect.anything(),
+        expect.anything(),
+        expect.anything()
+      );
+    });
+
+    it("arreter : une personne a charge (sans_compte) est notifiee via son tuteur, jamais son compte placeholder", async () => {
+      p.prescription.findUnique.mockResolvedValue(prescription("delivree_partiellement"));
+      p.patient.findUnique.mockResolvedValue({ userId: "user-placeholder", user: { statut: "sans_compte" } });
+      p.consentement.findFirst.mockResolvedValue({ acteurAutoriseId: "user-tuteur" });
+
+      const resultat = await arreterPrescriptionAction(
+        etatInitial,
+        formulaire({ prescriptionId: "presc-1", motif: MOTIF })
+      );
+
+      expect(resultat).toEqual({ error: null, success: true });
+      expect(notifierMock).toHaveBeenCalledWith(
+        "user-tuteur",
+        "prescription",
+        expect.stringContaining("arretee"),
+        "/app/patient/prescriptions"
+      );
+      expect(notifierMock).not.toHaveBeenCalledWith(
+        "user-placeholder",
+        expect.anything(),
+        expect.anything(),
+        expect.anything()
+      );
     });
   });
 

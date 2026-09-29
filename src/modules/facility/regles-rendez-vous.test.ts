@@ -4,6 +4,7 @@ import {
   MESSAGE_TROP_LOIN,
   MESSAGE_TROP_PROCHE,
   annulationPatientPossible,
+  arriveeDansLaFenetre,
   bornesJourLocalBenin,
   dateExpirationDemande,
   demandeExpiree,
@@ -78,6 +79,26 @@ describe("RG-RDV-20 : expiration d'une demande", () => {
     expect(dateExpirationDemande(creation, rendezVous).getTime()).toBe(rendezVous.getTime() - HEURE);
     expect(demandeExpiree(creation, rendezVous, dans(4 * HEURE - 1))).toBe(false);
     expect(demandeExpiree(creation, rendezVous, dans(4 * HEURE))).toBe(true);
+  });
+});
+
+describe("RG-RDV-33 : fenetre d'arrivee", () => {
+  it("accepte de 2 heures avant a 1 heure apres l'heure du rendez-vous, bornes incluses", () => {
+    const rendezVous = MAINTENANT;
+    expect(arriveeDansLaFenetre(rendezVous, dans(-2 * HEURE))).toBe(true);
+    expect(arriveeDansLaFenetre(rendezVous, dans(-1))).toBe(true);
+    expect(arriveeDansLaFenetre(rendezVous, dans(0))).toBe(true);
+    expect(arriveeDansLaFenetre(rendezVous, dans(HEURE))).toBe(true);
+  });
+
+  it("refuse juste avant la borne des 2 heures avant", () => {
+    const rendezVous = MAINTENANT;
+    expect(arriveeDansLaFenetre(rendezVous, dans(-2 * HEURE - 1))).toBe(false);
+  });
+
+  it("refuse juste apres la borne de l'heure apres", () => {
+    const rendezVous = MAINTENANT;
+    expect(arriveeDansLaFenetre(rendezVous, dans(HEURE + 1))).toBe(false);
   });
 });
 

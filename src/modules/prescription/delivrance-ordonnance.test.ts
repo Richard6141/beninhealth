@@ -29,6 +29,7 @@ function ordonnance() {
     numero: "RX-2026-0001",
     statut: base.statut,
     date: base.date,
+    patientId: "pat-1",
     patient: { userId: "user-pat" },
     delivrances: base.dejaServiIci ? [{ id: "deliv-anterieure" }] : [],
     lignes: [
@@ -98,6 +99,11 @@ vi.mock("@/lib/prisma", () => {
   const prisma = {
     professionnelSante: { findUnique: vi.fn() },
     etablissementSanitaire: { findUnique: vi.fn() },
+    // F-CIT-08 : destinataireNotificationPatient (non mockee, voir plus bas)
+    // lit ces deux tables elle-meme pour router vers le tuteur d'une
+    // personne a charge, meme pattern que rappels-rendez-vous.test.ts.
+    patient: { findUnique: vi.fn() },
+    consentement: { findFirst: vi.fn() },
     $transaction: vi.fn(),
   };
   return { prisma };
@@ -118,14 +124,19 @@ vi.mock("@/modules/pilotage/file-taches", () => ({ publierEvenementPilotage: vi.
 
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
+import { creerNotification } from "@/modules/notification/creer";
 import { delivrerPrescriptionAction } from "@/modules/prescription/actions";
 import { creerJetonPresentation } from "@/modules/prescription/presentation";
 import { estFonctionnaliteActive } from "@/modules/administration/parametres";
 import { MESSAGE_MODULE_INACTIF } from "@/modules/administration/modules-actifs";
 
+const notifierMock = creerNotification as unknown as Mock;
+
 const p = prisma as unknown as {
   professionnelSante: { findUnique: Mock };
   etablissementSanitaire: { findUnique: Mock };
+  patient: { findUnique: Mock };
+  consentement: { findFirst: Mock };
   $transaction: Mock;
 };
 const getSessionMock = getSession as unknown as Mock;
@@ -162,6 +173,8 @@ beforeEach(() => {
   getSessionMock.mockResolvedValue({ userId: "user-ph", roles: ["pharmacien"] });
   p.professionnelSante.findUnique.mockResolvedValue({ id: "pro-ph", etablissementId: "etab-ph" });
   p.etablissementSanitaire.findUnique.mockResolvedValue({ nom: "Pharmacie du Port" });
+  // F-CIT-08 : par defaut un patient normal, notifie directement.
+  p.patient.findUnique.mockResolvedValue({ userId: "user-pat", user: { statut: "actif" } });
   p.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => {
     const { tx, liberer } = fabriquerTransaction();
     try {
@@ -284,6 +297,45 @@ describe("delivrerPrescriptionAction, delivrance a zero", () => {
     expect(resultat).toEqual({ error: null, success: true });
     expect(base.totalLivre).toBe(4);
     expect(base.statut).toBe("delivree_partiellement");
+  });
+});
+
+// F-CIT-08 : le patient d'une prescription peut etre une personne a charge
+// sans compte (F-CIT-07). creerNotification(patient.userId, ...) perdait
+// alors silencieusement la notification, le compte "sans_compte" n'etant
+// jamais connecte. Meme correctif que rappels-rendez-vous.test.ts.
+describe("delivrerPrescriptionAction, destinataire (F-CIT-08)", () => {
+  it("une personne a charge (sans_compte) est notifiee via son tuteur, jamais son compte placeholder", async () => {
+    p.patient.findUnique.mockResolvedValue({ userId: "user-placeholder", user: { statut: "sans_compte" } });
+    p.consentement.findFirst.mockResolvedValue({ acteurAutoriseId: "user-tuteur" });
+
+    const resultat = await delivrerPrescriptionAction(etatInitial, delivrance(10));
+
+    expect(resultat).toEqual({ error: null, success: true });
+    expect(notifierMock).toHaveBeenCalledWith(
+      "user-tuteur",
+      "delivrance",
+      expect.stringContaining("delivree"),
+      "/app/patient/prescriptions"
+    );
+    expect(notifierMock).not.toHaveBeenCalledWith(
+      "user-placeholder",
+      expect.anything(),
+      expect.anything(),
+      expect.anything()
+    );
+  });
+
+  it("un patient normal est notifie directement", async () => {
+    const resultat = await delivrerPrescriptionAction(etatInitial, delivrance(10));
+
+    expect(resultat).toEqual({ error: null, success: true });
+    expect(notifierMock).toHaveBeenCalledWith(
+      "user-pat",
+      "delivrance",
+      expect.stringContaining("delivree"),
+      "/app/patient/prescriptions"
+    );
   });
 });
 

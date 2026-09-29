@@ -64,8 +64,13 @@ vi.mock("@/modules/administration/validation-professionnels-controle", () => ({
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
+import { creerNotification } from "@/modules/notification/creer";
+import { destinataireNotificationPatient } from "@/modules/facility/destinataire-notification-patient";
 import { creerPrescriptionAction, renouvelerPrescriptionAction } from "@/modules/prescription/actions";
 import { PREFIXE_EMPREINTE, verifierIntegriteOrdonnance } from "./empreinte";
+
+const notifierMock = creerNotification as unknown as Mock;
+const destinataireMock = destinataireNotificationPatient as unknown as Mock;
 
 const p = prisma as unknown as {
   user: { findUnique: Mock };
@@ -364,6 +369,26 @@ describe("renouvelerPrescriptionAction", () => {
       lignes: data.lignes.create,
     };
     expect(verifierIntegriteOrdonnance(data.empreinteContenu, relue)).toBe("conforme");
+  });
+
+  // F-CIT-08 : le patient de l'ordonnance renouvelee peut etre une personne
+  // a charge sans compte (F-CIT-07) ; le routage effectif est teste dans
+  // facility/destinataire-notification-patient.test.ts, ici on verifie
+  // seulement que renouvelerPrescriptionAction passe bien par cette
+  // fonction (jamais patient.userId directement) avec le bon patientId.
+  it("notifie via destinataireNotificationPatient (routage tuteur), pas directement patient.userId", async () => {
+    p.prescription.findUnique.mockResolvedValue(ancienne());
+
+    const resultat = await renouvelerPrescriptionAction(etatInitial, formulaireRenouvellement());
+
+    expect(resultat).toEqual({ error: null, success: true });
+    expect(destinataireMock).toHaveBeenCalledWith("pat-1");
+    expect(notifierMock).toHaveBeenCalledWith(
+      "pat-1",
+      "prescription",
+      expect.stringContaining("renouvellement"),
+      "/app/patient/prescriptions"
+    );
   });
 });
 

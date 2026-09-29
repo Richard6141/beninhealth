@@ -5905,3 +5905,24 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   src/modules/reference/actions.test.ts` : 400/400 verts ; garde anti-tiret passee.
 - Fichiers prets pour revue/commit : `src/modules/reference/actions.ts`,
   `src/modules/reference/actions.test.ts`, `docs/reste-a-faire.md`. Rien committe.
+
+### Livraisons agents lances par 89 (CEO), F-RDV-04 et F-CIT-08, 2026-09-29
+
+- 89 a lance 2 agents en parallele (worktrees isoles) sur F-RDV-04 (fenetre d'arrivee RG-RDV-33) et
+  F-CIT-08 (routage notification tuteur restant dans prescription/laboratoire/clinical). Les deux ont
+  subi une coupure reseau transitoire en fin de verification (ENOTFOUND), repris sans perte via
+  SendMessage, termines normalement.
+- **F-RDV-04** : fenetre d'arrivee RG-RDV-33 (2h avant a 1h apres l'heure du rendez-vous, bornes
+  incluses) appliquee dans `enregistrerArriveeAction`, refus strict sans derogation accueil (texte
+  exact du pack verifie : aucune exception prevue pour ce role, seule alternative decrite etant une
+  arrivee "sans rendez-vous", non construite ici). Sans effet de bord verifie sur F-RDV-06 (guichet,
+  heure exacte deja enregistree) ni sur `marquage-absences.ts` (non touche). 11 tests ajoutes.
+- **F-CIT-08** : le soupcon "probablement ailleurs" d'une session precedente confirme et corrige dans
+  `prescription/actions.ts` (4 appels directs `creerNotification(patient.userId, ...)` :
+  `annulerPrescriptionAction`, `arreterPrescriptionAction`, `renouvelerPrescriptionAction`,
+  `delivrerPrescriptionAction`), routes vers `destinataireNotificationPatient`. `laboratoire/actions.ts`
+  et `clinical/actions.ts` reverifies : deja entierement corrects (une session anterieure les avait
+  deja traites malgre le doute), aucun code necessaire, documente comme tel.
+- Verifie a l'integration par 89 : eslint 0 probleme, tsc 0 hors l'erreur deja confirmee sans rapport
+  (chantier actif de c0/F-ETA-04), vitest 69/69 cible sur les deux lots, tirets 0. Aucune migration.
+  Patches appliques sans collision (verifie avant integration).

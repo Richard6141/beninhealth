@@ -1355,8 +1355,11 @@ export async function annulerPrescriptionAction(
       );
     });
 
+    // destinataireNotificationPatient route vers le tuteur si le patient est
+    // une personne a charge (sans_compte), meme correctif que le reste de ce
+    // fichier (creerPrescriptionAction).
     await creerNotification(
-      prescription.patient.userId,
+      await destinataireNotificationPatient(prescription.patientId),
       "prescription",
       `Votre ordonnance ${prescription.numero} a ete annulee par votre medecin.`,
       "/app/patient/prescriptions"
@@ -1461,8 +1464,10 @@ export async function arreterPrescriptionAction(
       );
     });
 
+    // destinataireNotificationPatient route vers le tuteur si le patient est
+    // une personne a charge (sans_compte).
     await creerNotification(
-      prescription.patient.userId,
+      await destinataireNotificationPatient(prescription.patientId),
       "prescription",
       `Votre ordonnance ${prescription.numero} : la delivrance des medicaments restants a ete arretee par votre medecin.`,
       "/app/patient/prescriptions"
@@ -1749,8 +1754,10 @@ export async function renouvelerPrescriptionAction(
 
     void nouvelleId;
 
+    // destinataireNotificationPatient route vers le tuteur si le patient est
+    // une personne a charge (sans_compte).
     await creerNotification(
-      ancienne.patient.userId,
+      await destinataireNotificationPatient(ancienne.patientId),
       "prescription",
       `Une nouvelle ordonnance a ete ajoutee a votre dossier (renouvellement de ${ancienne.numero}).`,
       "/app/patient/prescriptions"
@@ -2685,7 +2692,7 @@ export async function delivrerPrescriptionAction(
         ok: true as const,
         statut: nouveauStatut,
         numero: prescriptionActuelle.numero,
-        patientUserId: prescriptionActuelle.patient.userId,
+        patientId: prescriptionActuelle.patientId,
         nomsLignesIncompletes,
       };
     });
@@ -2704,7 +2711,14 @@ export async function delivrerPrescriptionAction(
         ? `Votre ordonnance ${resultat.numero} a ete delivree a ${nomEtablissement}.`
         : `Votre ordonnance ${resultat.numero} a ete delivree en partie a ${nomEtablissement}. Encore en attente : ${resultat.nomsLignesIncompletes.join(", ")}.`;
 
-    await creerNotification(resultat.patientUserId, "delivrance", message, "/app/patient/prescriptions");
+    // destinataireNotificationPatient route vers le tuteur si le patient est
+    // une personne a charge (sans_compte).
+    await creerNotification(
+      await destinataireNotificationPatient(resultat.patientId),
+      "delivrance",
+      message,
+      "/app/patient/prescriptions"
+    );
 
     revalidatePath("/app/medecin/pharmacie");
     revalidatePath(`/app/medecin/pharmacie/${prescriptionId}`);
