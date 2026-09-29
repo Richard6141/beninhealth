@@ -403,6 +403,40 @@ describe("creerRendezVousAction : regles et double reservation", () => {
       data: expect.objectContaining({ patientId: "pat-1", professionnelId: "pro-1", statut: "demande" }),
     });
   });
+
+  describe("sans professionnel choisi (F-ETA-05, chemin jusqu'ici non teste)", () => {
+    const SANS_PROFESSIONNEL = { etablissementId: "etab-1", date: "2026-10-05T09:00", motif: "Controle" };
+
+    it("cree la demande sans jamais consulter l'agenda d'un professionnel (aucune regle d'agenda ne s'applique)", async () => {
+      const resultat = await creerRendezVousAction(ETAT, formulaire(SANS_PROFESSIONNEL));
+
+      expect(resultat).toEqual({ error: null, success: true });
+      expect(disponibiliteMock).not.toHaveBeenCalled();
+      expect(capaciteMock).not.toHaveBeenCalled();
+      expect(prismaMock.professionnelSante.findUnique).not.toHaveBeenCalled();
+      expect(prismaMock.rendezVous.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ patientId: "pat-1", professionnelId: null, statut: "demande" }),
+      });
+    });
+
+    it("respecte quand meme les regles de prise (fenetre, plafond, meme jour), qui s'appliquent independamment du professionnel", async () => {
+      reglesMock.mockResolvedValue("Vous avez déjà 3 rendez-vous prévus. Annulez-en un pour en prendre un nouveau.");
+
+      const resultat = await creerRendezVousAction(ETAT, formulaire(SANS_PROFESSIONNEL));
+
+      expect(resultat.error).toContain("3 rendez-vous");
+      expect(prismaMock.rendezVous.create).not.toHaveBeenCalled();
+    });
+
+    it("n'applique jamais le controle de capacite du creneau nominal (reserve aux rendez-vous avec professionnel)", async () => {
+      prismaMock.rendezVous.count.mockResolvedValue(50); // n'a aucun effet ici, jamais interroge
+
+      const resultat = await creerRendezVousAction(ETAT, formulaire(SANS_PROFESSIONNEL));
+
+      expect(resultat).toEqual({ error: null, success: true });
+      expect(prismaMock.rendezVous.count).not.toHaveBeenCalled();
+    });
+  });
 });
 
 describe("deplacerRendezVousAction (F-RDV-02, RG-RDV-11)", () => {

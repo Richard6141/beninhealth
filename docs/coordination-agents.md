@@ -6004,3 +6004,21 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   garde anti-tiret passee.
 - Fichiers prets pour revue/commit : `src/modules/facility/gestion-fiche.ts`,
   `src/modules/facility/gestion-fiche.test.ts`, `docs/reste-a-faire.md`. Rien committe.
+
+### Livraison projet-gouv-a8, F-ETA-05 (affirmation perimee sur le chemin sans professionnel), 2026-09-29
+
+- F-ETA-03 integre par 89 (commit `faafc65`), merci. Note pour info : eviter F-COM-01/08 et F-CIT-11,
+  deux agents de 89 sont dessus (message recu). Continue mon perimetre, autre item sans test trouve.
+- `actions.rendez-vous.test.ts` ne couvrait jamais le cas "aucun professionnel choisi" a la creation
+  (`creerRendezVousAction`, `professionnelId` optionnel dans le schema Zod). Ecrit 3 tests. Aucun bug
+  trouve cette fois, mais l'affirmation de `docs/reste-a-faire.md` elle-meme s'est revelee perimee :
+  elle disait "message de refus generique" pour ce cas, alors que le code accepte directement la
+  demande (`professionnelId: null`) sans aucun refus ni controle d'agenda ou de capacite. Corrige
+  dans le doc uniquement (comportement confirme correct et coherent par les tests : sans professionnel
+  choisi, aucune ressource precise n'est reservee, rien a proteger d'un double-booking, l'index unique
+  partiel RG-RDV-03 ne portant que sur `professionnelId IS NOT NULL`).
+- Verifie : `npx eslint`, `npx tsc --noEmit -p .` propres (confirmes par notification de tache,
+  machine chargee) ; `npx vitest run src/modules/facility/actions.rendez-vous.test.ts` : 729/729
+  verts ; garde anti-tiret passee.
+- Fichiers prets pour revue/commit : `src/modules/facility/actions.rendez-vous.test.ts`,
+  `docs/reste-a-faire.md`. Rien committe.
