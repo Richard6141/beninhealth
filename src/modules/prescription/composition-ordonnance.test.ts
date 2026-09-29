@@ -60,6 +60,13 @@ vi.mock("@/modules/administration/validation-professionnels-controle", () => ({
   professionnelValide: vi.fn(async () => true),
   MESSAGE_ORDRE_NON_VERIFIE: "Votre numéro d'Ordre n'est pas encore vérifié par le ministère.",
 }));
+// RG-PRE-10 : table de correspondance allergie -> classe ATC, testee dans
+// son propre fichier (administration/correspondance-allergie-atc.test.ts) et
+// dans referentiel-allergies.test.ts, pas ici : ce fichier ne couvre pas les
+// alertes allergie (aucun patient avec allergies non vide ci-dessous).
+vi.mock("@/modules/administration/correspondance-allergie-atc", () => ({
+  getCorrespondancesAllergieAtcActives: vi.fn(async () => []),
+}));
 
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";

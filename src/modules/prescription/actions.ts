@@ -54,6 +54,12 @@ import {
   allergieCorrespondante,
   LONGUEUR_MIN_JUSTIFICATION_FORCAGE,
 } from "./referentiel-allergies";
+// RG-PRE-10 : table de correspondance allergie -> classe ATC, administrable
+// (voir src/modules/administration/correspondance-allergie-atc.ts).
+import { getCorrespondancesAllergieAtcActives } from "@/modules/administration/correspondance-allergie-atc";
+
+/** Catalogue section 18.8 du pack : code d'erreur stable d'une alerte de securite bloquante non justifiee (RG-PRE-11), HTTP 422. */
+const CODE_ERREUR_ALERTE_BLOQUANTE = "PRE_BLOCKING_ALERT";
 import {
   avertissementPourLigne,
   libelleAvertissement,
@@ -111,6 +117,11 @@ import {
 export interface PrescriptionActionState {
   error: string | null;
   success: boolean;
+  // Code d'erreur stable (catalogue section 18.8 du pack), en plus du
+  // message. RG-PRE-11 : une alerte bloquante non justifiee renvoie
+  // "PRE_BLOCKING_ALERT" (422). Absent (undefined) pour les erreurs qui
+  // n'ont pas de code dedie dans le catalogue.
+  code?: string;
 }
 
 /** Medicament du catalogue, tel que propose dans un selecteur de creation de prescription. */
@@ -974,17 +985,22 @@ export async function creerPrescriptionAction(
     const lignesForcees: { medicamentNom: string; allergie: string; justification: string }[] = [];
 
     if (allergiesPatient.length > 0) {
+      // RG-PRE-10 : table de correspondance allergie -> classe ATC, chargee
+      // une seule fois pour toutes les lignes de cette prescription.
+      const correspondancesAllergieAtc = await getCorrespondancesAllergieAtcActives();
+
       for (const ligne of lignes) {
         const medicament = medicamentParId.get(ligne.medicamentId);
         if (!medicament) continue;
 
-        const allergie = allergieCorrespondante(medicament, allergiesPatient);
+        const allergie = allergieCorrespondante(medicament, allergiesPatient, correspondancesAllergieAtc);
         if (!allergie) continue;
 
         if (!ligne.forcerAlerteAllergie) {
           return {
             error: `Alerte allergie bloquante : le patient est declare allergique a "${allergie}", ce qui correspond a ${medicament.nom} (${medicament.principeActif}). Retirez cette ligne ou forcez la prescription avec une justification.`,
             success: false,
+            code: CODE_ERREUR_ALERTE_BLOQUANTE,
           };
         }
 
@@ -992,6 +1008,7 @@ export async function creerPrescriptionAction(
           return {
             error: `La justification du forcage de l'alerte allergie sur ${medicament.nom} doit comporter au moins ${LONGUEUR_MIN_JUSTIFICATION_FORCAGE} caracteres.`,
             success: false,
+            code: CODE_ERREUR_ALERTE_BLOQUANTE,
           };
         }
 
@@ -1020,6 +1037,7 @@ export async function creerPrescriptionAction(
           return {
             error: `Alerte age bloquante : ${medicament.nom} est contre-indique avant ${libelleAgeMinimum(ageMinimumMois)}. Retirez cette ligne ou forcez la prescription avec une justification.`,
             success: false,
+            code: CODE_ERREUR_ALERTE_BLOQUANTE,
           };
         }
 
@@ -1027,6 +1045,7 @@ export async function creerPrescriptionAction(
           return {
             error: `La justification du forcage de l'alerte age sur ${medicament.nom} doit comporter au moins ${LONGUEUR_MIN_JUSTIFICATION_FORCAGE} caracteres.`,
             success: false,
+            code: CODE_ERREUR_ALERTE_BLOQUANTE,
           };
         }
 
@@ -1055,6 +1074,7 @@ export async function creerPrescriptionAction(
           return {
             error: `Alerte grossesse bloquante : ${medicament.nom} est contre-indique pendant la grossesse, or la patiente a une grossesse en cours declaree. Retirez cette ligne ou forcez la prescription avec une justification.`,
             success: false,
+            code: CODE_ERREUR_ALERTE_BLOQUANTE,
           };
         }
 
@@ -1062,6 +1082,7 @@ export async function creerPrescriptionAction(
           return {
             error: `La justification du forcage de l'alerte grossesse sur ${medicament.nom} doit comporter au moins ${LONGUEUR_MIN_JUSTIFICATION_FORCAGE} caracteres.`,
             success: false,
+            code: CODE_ERREUR_ALERTE_BLOQUANTE,
           };
         }
 
@@ -1641,14 +1662,19 @@ export async function renouvelerPrescriptionAction(
     );
     const lignesDejaRetenues: LigneComparable[] = [...traitementsActifs];
 
+    // RG-PRE-10 : meme table de correspondance allergie -> classe ATC que
+    // creerPrescriptionAction, chargee une seule fois pour tout le renouvellement.
+    const correspondancesAllergieAtc = await getCorrespondancesAllergieAtcActives();
+
     for (const ligne of ancienne.lignes) {
       const medicament = ligne.medicament;
 
-      const allergie = allergieCorrespondante(medicament, allergiesPatient);
+      const allergie = allergieCorrespondante(medicament, allergiesPatient, correspondancesAllergieAtc);
       if (allergie) {
         return {
           error: `Renouvellement impossible : alerte allergie bloquante sur ${medicament.nom} ("${allergie}"). Creez une nouvelle prescription manuellement pour revoir cette ligne.`,
           success: false,
+          code: CODE_ERREUR_ALERTE_BLOQUANTE,
         };
       }
 
@@ -1657,6 +1683,7 @@ export async function renouvelerPrescriptionAction(
         return {
           error: `Renouvellement impossible : ${medicament.nom} est contre-indique avant ${libelleAgeMinimum(ageMinimumMois)}. Creez une nouvelle prescription manuellement pour revoir cette ligne.`,
           success: false,
+          code: CODE_ERREUR_ALERTE_BLOQUANTE,
         };
       }
 
@@ -1664,6 +1691,7 @@ export async function renouvelerPrescriptionAction(
         return {
           error: `Renouvellement impossible : ${medicament.nom} est contre-indique pendant la grossesse. Creez une nouvelle prescription manuellement pour revoir cette ligne.`,
           success: false,
+          code: CODE_ERREUR_ALERTE_BLOQUANTE,
         };
       }
 

@@ -6107,3 +6107,34 @@ Domaine (repartition corrigee par 21) : pilotage F-PIL-01/02/03/05/06/07, rendez
   src/modules/analytics src/modules/pilotage` : 3697/3697 verts ; garde anti-tiret passee.
 - Fichiers prets pour revue/commit : `src/modules/analytics/actions.ts`,
   `src/modules/analytics/actions.test.ts`, `docs/reste-a-faire.md`. Rien committe.
+
+### Point F-PRE-02 (Claude), 2026-09-29
+
+- Chantier : F-PRE-02 "Controles de securite" de la prescription, les 3 manques notes dans
+  `docs/reste-a-faire.md` (correspondance allergie sur 11 mots-cles en dur, refus par message texte
+  sans code d'erreur structure, CA-1 non teste).
+- Livre : nouvelle table administrable `CorrespondanceAllergieAtc` (Prisma, migration additive
+  `20260929200000_correspondance_allergie_atc`) : allergie declaree -> prefixes de code ATC (J01C
+  penicillines, J01D cephalosporines, J01E/P01BD sulfamides, M01A AINS, N02BA/B01AC aspirine, N02A
+  opioides, D08AG iode). `referentiel-allergies.ts` compare desormais DCI (inchange) ET classe ATC par
+  prefixe sur `Medicament.codeAtc` (deja existant), au lieu du dictionnaire `classeTherapeutique` en
+  dur. Les 3 controles bloquants (allergie/age/grossesse) de `creerPrescriptionAction` et
+  `renouvelerPrescriptionAction` renvoient desormais `code: "PRE_BLOCKING_ALERT"` en plus du message
+  (`PrescriptionActionState.code`, catalogue section 18.8). CA-1 teste
+  (`prescription/referentiel-allergies.test.ts`).
+- Ressource RBAC reutilisee sans toucher `security/permissions.ts` : `referentiel_medicament`
+  (admin_national), meme perimetre que `referentiel-medicaments.ts` (voir en-tete du nouveau fichier
+  `administration/correspondance-allergie-atc.ts` pour la justification).
+- Fichiers touches : `prisma/schema.prisma` (+modele), `prisma/migrations/20260929200000_.../migration.sql`,
+  `src/modules/administration/correspondance-allergie-atc.ts` (nouveau), `-catalogue.ts` (nouveau),
+  `correspondance-allergie-atc.test.ts` (nouveau), `src/modules/prescription/referentiel-allergies.ts`,
+  `referentiel-allergies.test.ts` (nouveau), `src/modules/prescription/actions.ts`,
+  `src/modules/prescription/composition-ordonnance.test.ts` (mock du nouveau module),
+  `src/modules/administration/medicaments-depart.test.ts`, `docs/reste-a-faire.md`.
+- Verifie : `npx prisma generate` ok ; `npx tsc --noEmit` propre sur ces fichiers (seule erreur
+  restante : `app/etablissement/page.tsx`, chantier actif d'une autre session, confirme ci-dessus, pas
+  touche) ; `npx eslint` propre ; `npx vitest run src/modules/prescription src/modules/administration`
+  (en excluant les copies dans `.claude/worktrees/**`, sinon vitest execute aussi les tests des autres
+  sessions avec MES modules via l'alias `@`, cf. `vitest.config.ts` qui n'exclut que `.kilo/**` :
+  signale ici, non corrige, hors perimetre de ce chantier) : 480/480 verts.
+- Rien committe.

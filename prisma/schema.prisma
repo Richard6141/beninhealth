@@ -2009,6 +2009,34 @@ model ReferentielSimple {
   @@schema("public")
 }
 
+// F-PRE-02 / RG-PRE-10 du pack : "vraie" table de correspondance allergie <->
+// classe therapeutique, section 18.4 ("seed/allergy-classes.csv", absent de
+// ce depot). Remplace le dictionnaire de mots-cles en dur qui vivait dans
+// src/modules/prescription/referentiel-allergies.ts : une allergie declaree
+// (ex. "penicilline") est desormais liee a un ou plusieurs prefixes de code
+// ATC (ex. "J01C"), compares au champ Medicament.codeAtc deja existant
+// (prefixe, pas egalite stricte : la hierarchie ATC est faite de prefixes).
+// Meme principe RG-ADM-20 que ReferentielSimple : desactivation seule,
+// jamais de suppression.
+model CorrespondanceAllergieAtc {
+  id               String   @id @default(cuid())
+  // Terme d'allergie tel que declare par le patient/le medecin (compare
+  // normalise, insensible aux accents/casse, voir referentiel-allergies.ts).
+  allergie         String   @unique
+  libelleClasse    String
+  // Prefixes de code ATC, stockes en une chaine separee par des virgules
+  // (ex. "J01E,P01BD") plutot qu'un tableau Postgres : coherent avec
+  // Medicament.nomsCommerciaux qui, lui, est un tableau natif, mais ici
+  // l'ecran d'administration n'a besoin que d'une saisie texte simple
+  // (memes contraintes que ReferentielSimple, pas de type dedie).
+  prefixesAtc      String
+  actif            Boolean  @default(true)
+  dateCreation     DateTime @default(now())
+  dateModification DateTime @default(now())
+
+  @@schema("public")
+}
+
 // F-ADM-04 du pack : sous-liste CIM-10 administrable (diagnostics courants),
 // avec groupe de maladies et indicateur de code sensible (RG-PIL-05,
 // RG-CLI-52). Table dediee (recherche par code ou libelle, colonnes typees)

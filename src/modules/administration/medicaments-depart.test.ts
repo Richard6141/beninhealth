@@ -3,6 +3,7 @@ import { allergieCorrespondante } from "@/modules/prescription/referentiel-aller
 import { rechercherMedicaments } from "@/modules/prescription/recherche-medicaments";
 import { FORMAT_CODE_ATC, FORMES_CONNUES } from "./referentiel-medicaments-catalogue";
 import { MEDICAMENTS_DEPART, memePresentation } from "./medicaments-depart";
+import { DEFAUTS_CORRESPONDANCE_ALLERGIE_ATC } from "./correspondance-allergie-atc-catalogue";
 
 const compact = (texte: string) =>
   texte
@@ -47,15 +48,27 @@ describe("catalogue de depart des medicaments (F-PRE-03)", () => {
     }
   });
 
-  it("porte les classes lues par le controle allergie (penicillines, sulfamides, ains, iode...)", () => {
+  it("porte des codes ATC couverts par la table de correspondance allergie (penicillines, sulfamides, ains, iode...)", () => {
+    // RG-PRE-10 : la correspondance allergie -> classe se fait desormais par
+    // prefixe de code ATC (voir referentiel-allergies.ts et
+    // correspondance-allergie-atc-catalogue.ts), plus par le champ texte
+    // libre classeTherapeutique. Ce test verifie l'integration entre les
+    // vrais codeAtc du catalogue de depart et les vrais prefixes du
+    // catalogue de correspondance de depart, sans mock ni base.
     const parClasse = (classe: string) => MEDICAMENTS_DEPART.filter((m) => m.classeTherapeutique === classe);
 
-    for (const m of parClasse("penicillines")) expect(allergieCorrespondante(m, ["Penicilline"]), m.nom).toBe("Penicilline");
-    for (const m of parClasse("sulfamides")) expect(allergieCorrespondante(m, ["Sulfamide"]), m.nom).toBe("Sulfamide");
-    for (const m of parClasse("ains")) expect(allergieCorrespondante(m, ["AINS"]), m.nom).toBe("AINS");
-    for (const m of parClasse("cephalosporines")) expect(allergieCorrespondante(m, ["Cephalosporine"]), m.nom).toBe("Cephalosporine");
-    for (const m of parClasse("opioides")) expect(allergieCorrespondante(m, ["Morphine"]), m.nom).toBe("Morphine");
-    for (const m of parClasse("produits iodes")) expect(allergieCorrespondante(m, ["Iode"]), m.nom).toBe("Iode");
+    for (const m of parClasse("penicillines"))
+      expect(allergieCorrespondante(m, ["Penicilline"], DEFAUTS_CORRESPONDANCE_ALLERGIE_ATC), m.nom).toBe("Penicilline");
+    for (const m of parClasse("sulfamides"))
+      expect(allergieCorrespondante(m, ["Sulfamide"], DEFAUTS_CORRESPONDANCE_ALLERGIE_ATC), m.nom).toBe("Sulfamide");
+    for (const m of parClasse("ains"))
+      expect(allergieCorrespondante(m, ["AINS"], DEFAUTS_CORRESPONDANCE_ALLERGIE_ATC), m.nom).toBe("AINS");
+    for (const m of parClasse("cephalosporines"))
+      expect(allergieCorrespondante(m, ["Cephalosporine"], DEFAUTS_CORRESPONDANCE_ALLERGIE_ATC), m.nom).toBe("Cephalosporine");
+    for (const m of parClasse("opioides"))
+      expect(allergieCorrespondante(m, ["Morphine"], DEFAUTS_CORRESPONDANCE_ALLERGIE_ATC), m.nom).toBe("Morphine");
+    for (const m of parClasse("produits iodes"))
+      expect(allergieCorrespondante(m, ["Iode"], DEFAUTS_CORRESPONDANCE_ALLERGIE_ATC), m.nom).toBe("Iode");
     expect(parClasse("penicillines").length).toBeGreaterThan(5);
     expect(parClasse("ains").length).toBeGreaterThan(3);
   });
